@@ -1,0 +1,14 @@
+-- Teacher dashboard aggregates + optional faculty linkage (PostgreSQL).
+-- Runtime `ensureSchema` in server/api/state.js also creates assignments /
+-- faculties.employee_id / faculties.specialization; this file documents manual linkage.
+
+-- Optional: link roster row employee_id/faculty_code FADEREK to a Better Auth user by email.
+-- Replace the email with the faculty account used for Better Auth sign-in.
+-- UPDATE public.faculties
+-- SET auth_user_id = (
+--   SELECT id FROM "user"
+--   WHERE lower(trim(email)) = lower(trim('your-faculty@email.com'))
+--   LIMIT 1
+-- )
+-- WHERE lower(trim(coalesce(employee_id, ''))) = 'faderek'
+--    OR lower(trim(coalesce(faculty_code, ''))) = 'faderek';

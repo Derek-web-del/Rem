@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 400 300" role="img" aria-label="Subject">
+  <rect width="400" height="300" fill="#e5e7eb"/>
+  <rect x="140" y="80" width="120" height="140" rx="8" fill="#cbd5e1"/>
+  <rect x="155" y="95" width="90" height="12" rx="4" fill="#94a3b8"/>
+  <rect x="155" y="118" width="70" height="8" rx="4" fill="#94a3b8"/>
+  <rect x="155" y="136" width="80" height="8" rx="4" fill="#94a3b8"/>
+  <text x="200" y="260" text-anchor="middle" fill="#64748b" font-family="system-ui,sans-serif" font-size="16">Subject</text>
+</svg>

@@ -1,0 +1,15 @@
+diff --git a/node_modules/better-auth/dist/plugins/two-factor/otp/index.mjs b/node_modules/better-auth/dist/plugins/two-factor/otp/index.mjs
+index 4efc59b..016ff2e 100644
+--- a/node_modules/better-auth/dist/plugins/two-factor/otp/index.mjs
++++ b/node_modules/better-auth/dist/plugins/two-factor/otp/index.mjs
+@@ -83,9 +83,7 @@ const otp2fa = (options) => {
+ 					user: session.user,
+ 					otp: code
+ 				}, ctx);
+-				if (sendOTPResult instanceof Promise) await ctx.context.runInBackgroundOrAwait(sendOTPResult.catch((e) => {
+-					ctx.context.logger.error("Failed to send two-factor OTP", e);
+-				}));
++				if (sendOTPResult instanceof Promise) await sendOTPResult;
+ 				return ctx.json({ status: true });
+ 			}),
+ 			verifyTwoFactorOTP: createAuthEndpoint("/two-factor/verify-otp", {
