@@ -699,3 +699,97 @@ Uploaded files for parsing are stored temporarily under `public/uploads/original
 **Note:** OpenAI mode sends text snippets to OpenAI for embedding. Local mode runs entirely on your server but requires sufficient RAM/CPU for the first model download.
 
 **API disclosure:** See [`docs/AI_CHECKER_API_DISCLOSURE.md`](docs/AI_CHECKER_API_DISCLOSURE.md) for every outbound integration, the free-only `.env` profile, and panel Q&A. See [`docs/AI_CHECKER_TECHNICAL_VERIFICATION.md`](docs/AI_CHECKER_TECHNICAL_VERIFICATION.md) for proof that semantic AI (transformer embeddings) is real machine learning, not just web search.
+
+---
+
+## 13. Production deployment (Railway)
+
+Use this section when deploying LenLearn to **Railway** (or a similar Node + PostgreSQL host). For a step-by-step checklist, see **[docs/DEPLOYMENT_CHECKLIST.md](docs/DEPLOYMENT_CHECKLIST.md)**.
+
+### 13.1 Overview
+
+LenLearn runs as a **single Node process** in production:
+
+1. **Build** — `npm run build` compiles the React frontend to `Frontend/dist`
+2. **Start** — `node server/index.js` serves the API and static SPA
+3. **Database** — PostgreSQL (Better Auth + LMS tables)
+
+Copy **[`.env.production.example`](.env.production.example)** as a reference when setting Railway variables. **Never commit real production secrets.**
+
+### 13.2 Railway services
+
+| Service | Purpose |
+|---------|---------|
+| **PostgreSQL** | Empty database; link `DATABASE_URL` to the web service |
+| **Web (Rem)** | GitHub repo, branch `release/railway-deploy` (or your deploy branch) |
+| **Volume** (optional) | Mount at `/app/public/uploads` for persistent file uploads |
+
+The repo includes **[`railway.toml`](railway.toml)** with build/start commands and health check path `/api/health`.
+
+### 13.3 Required environment variables
+
+Set these in the Railway dashboard for the **web service** (not in a committed `.env` file):
+
+| Variable | Required | Notes |
+|----------|----------|-------|
+| `NODE_ENV` | Yes | `production` |
+| `DATABASE_URL` | Yes | Reference `${{Postgres.DATABASE_URL}}` |
+| `BETTER_AUTH_URL` | Yes | Public HTTPS URL, e.g. `https://your-app.up.railway.app` |
+| `BETTER_AUTH_SECRET` | Yes | `openssl rand -base64 32` (min 32 chars) |
+| `AES_256_SECRET_KEY` | Yes | 64 hex chars — see `.env.production.example` |
+| `AUTH_DISABLE_SIGNUP` | Yes | `true` |
+| `AUTH_TWO_FACTOR_SKIP_VERIFY_ON_ENABLE` | Yes | `false` |
+| `AUTH_REQUIRE_MFA_ALL` | Yes | `true` |
+| `SMTP_*` | Yes | Gmail App Password for OTP emails |
+| `TRUST_PROXY` | Recommended | `1` (Railway sits behind a reverse proxy) |
+
+Optional: `BETTER_AUTH_API_KEY` for Better Auth Dash audit logs.
+
+### 13.4 First-time setup commands
+
+Run these **once** against the production `DATABASE_URL` (locally with `railway run`, or from CI):
+
+```powershell
+# 1. Apply auth + LMS migrations
+npm run db:migrate
+
+# 2. Create institute admin (set SEED_ADMIN_* first)
+npm run db:seed
+
+# 3. Enable MFA on all portal accounts
+npm run ensure:portal-mfa
+npm run verify:portal-mfa
+
+# 4. Encrypt existing student PII (if restoring data)
+npm run pii:encrypt
+
+# 5. Verify SMTP
+npm run smtp:test
+
+# 6. Verify database connectivity
+npm run pg:ping
+```
+
+### 13.5 Deploy and verify
+
+1. Push to your deploy branch or trigger a Railway deploy.
+2. Confirm build logs show `npm run build` completing without errors.
+3. Health check: `GET https://your-domain/api/health` → `{ "status": "ok", "database": "connected" }`.
+4. Open the site root — the login SPA should load from `Frontend/dist`.
+5. Sign in as admin, complete OTP, accept terms, change the seed password.
+
+### 13.6 Domain and Cloudflare
+
+1. In Railway, generate a service domain or add a custom domain.
+2. In **Cloudflare DNS**, create a **CNAME** pointing to your Railway hostname.
+3. Set SSL mode to **Full (strict)**.
+4. Update `BETTER_AUTH_URL` to the final `https://` domain and redeploy if needed.
+
+### 13.7 Build notes
+
+- Vite output directory: **`Frontend/dist`** (served by Express in `server/index.js`).
+- Start command: **`node server/index.js`** (reads env from the process environment, not a `.env` file).
+- Health endpoint: **`/api/health`** (used by Railway health checks in `railway.toml`).
+
+For the full pre/post deploy checklist, see **[docs/DEPLOYMENT_CHECKLIST.md](docs/DEPLOYMENT_CHECKLIST.md)**.
+

@@ -217,6 +217,39 @@ function parseCorsOrigins() {
     }),
   )
 
+  app.get('/api/health', async (_req, res) => {
+    try {
+      const pool = getPgPool()
+      if (!pool) {
+        res.status(503).json({
+          status: 'error',
+          database: 'disconnected',
+          error: 'Service unavailable',
+        })
+        return
+      }
+      await pool.query('SELECT 1')
+      res.json({
+        status: 'ok',
+        timestamp: new Date().toISOString(),
+        environment: process.env.NODE_ENV,
+        database: 'connected',
+        version: '1.0.0',
+      })
+    } catch {
+      res.status(503).json({
+        status: 'error',
+        database: 'disconnected',
+        error: 'Service unavailable',
+      })
+    }
+  })
+
+  // Legacy alias used by dev.mjs and local health probes
+  app.get('/health', (_req, res) => {
+    res.redirect(307, '/api/health')
+  })
+
   app.use('/api', sanitizeInput)
 
   // Per-IP rate limits (separate instances per endpoint).
@@ -448,33 +481,31 @@ app.all('/api/auth/*', toNodeHandler(auth))
   }
 
   const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-  const distDir = path.join(projectRoot, 'dist')
+  const distPath = path.join(projectRoot, 'Frontend', 'dist')
   const uploadsDir = path.join(projectRoot, 'public', 'uploads')
-  const spaIndexPath = path.join(distDir, 'index.html')
+  const spaIndexPath = path.join(distPath, 'index.html')
   const serveProductionSpa = fs.existsSync(spaIndexPath)
 
   if (fs.existsSync(uploadsDir)) {
     app.use('/uploads', express.static(uploadsDir))
   }
 
-  app.get('/health', (_req, res) => {
-    res.json({ ok: true })
-  })
-
   if (serveProductionSpa) {
     app.use(
-      express.static(distDir, {
+      express.static(distPath, {
         index: false,
         maxAge: isProduction ? '1d' : 0,
       }),
     )
     app.get('*', (req, res, next) => {
       if (req.method !== 'GET' && req.method !== 'HEAD') return next()
-      const p = String(req.path || '')
-      if (p.startsWith('/api') || p === '/health' || p.startsWith('/uploads/')) return next()
+      if (req.path.startsWith('/api')) {
+        return res.status(404).json({ error: 'API route not found' })
+      }
+      if (req.path.startsWith('/uploads/')) return next()
       res.sendFile(spaIndexPath)
     })
-    console.log(`[server] Serving Vite production UI from ${distDir}`)
+    console.log(`[server] Serving Vite production UI from ${distPath}`)
   } else {
     app.get('/', (_req, res) => {
       res.status(200).json({
@@ -482,7 +513,7 @@ app.all('/api/auth/*', toNodeHandler(auth))
         service: 'lenlearn-auth-server',
         hint: 'Run npm run build to serve the SPA from this process in production.',
         endpoints: {
-          health: '/health',
+          health: '/api/health',
           auth: '/api/auth/*',
           state: '/api/v1/state',
           monitoring: '/api/monitoring/*',

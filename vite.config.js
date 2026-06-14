@@ -9,6 +9,8 @@ const authProxyPort = process.env.VITE_PROXY_AUTH_PORT || '3001'
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   build: {
+    outDir: 'Frontend/dist',
+    emptyOutDir: true,
     rollupOptions: {
       output: {
         manualChunks(id) {

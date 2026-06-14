@@ -88,7 +88,9 @@ function assertAuthSecretConfigured() {
       throw new Error('[auth] BETTER_AUTH_SECRET is required in production.')
     }
     if (!infraApiKey) {
-      throw new Error('[auth] BETTER_AUTH_API_KEY is required in production for dash() audit logs.')
+      console.warn(
+        '[auth] WARNING: BETTER_AUTH_API_KEY is not set; dash() audit logs and Infra activity tracking are disabled.',
+      )
     }
     if (envSecret === DEV_DEFAULT_SECRET) {
       throw new Error(
@@ -984,17 +986,21 @@ export const auth = betterAuth({
           }),
         ]
       : []),
-    dash({
-      apiKey: process.env.BETTER_AUTH_API_KEY,
-      ...(infraApiUrl ? { apiUrl: infraApiUrl } : {}),
-      ...(infraKvUrl ? { kvUrl: infraKvUrl } : {}),
-      activityTracking: {
-        // Requires BETTER_AUTH_API_KEY. In development, also set BETTER_AUTH_DASH_ACTIVITY=true.
-        enabled:
-          !!infraApiKey &&
-          (isProduction || String(process.env.BETTER_AUTH_DASH_ACTIVITY || '').toLowerCase() === 'true'),
-        updateInterval: Number(process.env.BETTER_AUTH_ACTIVITY_INTERVAL_MS || 300000),
-      },
-    }),
+    ...(infraApiKey
+      ? [
+          dash({
+            apiKey: process.env.BETTER_AUTH_API_KEY,
+            ...(infraApiUrl ? { apiUrl: infraApiUrl } : {}),
+            ...(infraKvUrl ? { kvUrl: infraKvUrl } : {}),
+            activityTracking: {
+              // Requires BETTER_AUTH_API_KEY. In development, also set BETTER_AUTH_DASH_ACTIVITY=true.
+              enabled:
+                isProduction ||
+                String(process.env.BETTER_AUTH_DASH_ACTIVITY || '').toLowerCase() === 'true',
+              updateInterval: Number(process.env.BETTER_AUTH_ACTIVITY_INTERVAL_MS || 300000),
+            },
+          }),
+        ]
+      : []),
   ],
 })

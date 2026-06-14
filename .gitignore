@@ -10,6 +10,7 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
+Frontend/dist
 *.local
 .env
 # Legacy local SQLite auth dir (data/auth.db) — no longer used; PostgreSQL only
