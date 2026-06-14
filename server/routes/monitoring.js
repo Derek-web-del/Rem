@@ -8,7 +8,7 @@ import {
   toAuditIsoDate,
 } from '../api/logs.js'
 import { fetchAuthAuditLogPage, logAuditInfraError } from '../lib/fetchAuthAuditLogs.js'
-import { queryLocalAuditLogsPage } from '../lib/auditLogsLedger.js'
+import { queryLocalAuditLogsPage, AUDIT_LOGS_CLEARED_TYPE } from '../lib/auditLogsLedger.js'
 import { customActivityLogger } from '../services/CustomActivityLogger.js'
 import { getInstituteAuditStatistics } from '../lib/auditStatisticsService.js'
 import { pickAuditEventDate } from '../../shared/auditTime.js'
@@ -288,12 +288,20 @@ export function createMonitoringRouter(express, auth) {
         filters.eventType === 'profile_updated' ||
         filters.eventType === 'user_profile_updated' ||
         filters.eventType === 'user_account_changed'
+      const ledgerFilter = String(filters.activityType || filters.eventType || '')
+        .trim()
+        .toLowerCase()
+      const isLedgerMutationFilter =
+        ledgerFilter === AUDIT_LOGS_CLEARED_TYPE ||
+        ledgerFilter === 'audit_cleared' ||
+        ledgerFilter === 'auth_lockout'
       const includeAuth = !filters.activityType || isProfileEventFilter
       const includeLms = !filters.eventType || isProfileEventFilter
       const includeLedger =
         !filters.activityType ||
         isProfileEventFilter ||
-        String(filters.activityType || '').toUpperCase() === 'USER_ACCOUNT_CHANGED'
+        String(filters.activityType || '').toUpperCase() === 'USER_ACCOUNT_CHANGED' ||
+        isLedgerMutationFilter
 
       let authEvents = []
       let authTotal = 0
@@ -359,6 +367,10 @@ export function createMonitoringRouter(express, auth) {
           dateFrom: filters.dateFrom || undefined,
           dateTo: filters.dateTo || undefined,
           search: filters.search || undefined,
+          module: filters.module || undefined,
+          action: filters.action || undefined,
+          performedByName: filters.performedByName || undefined,
+          targetLabel: filters.targetLabel || undefined,
         })
         ledgerEvents = (ledger.events || []).map(normalizeLedgerEvent)
         ledgerTotal = ledger.total
@@ -375,7 +387,8 @@ export function createMonitoringRouter(express, auth) {
       mergedAll.sort((a, b) => eventSortMs(b) - eventSortMs(a))
 
       const merged = mergedAll.slice(filters.offset, filters.offset + filters.limit)
-      const total = Math.max(authTotal + lmsTotal + ledgerTotal, mergedAll.length)
+      // Local PostgreSQL counts (lms_activity_logs + audit_logs); avoid summing auth Infra total on top.
+      const total = Math.max(mergedAll.length, lmsTotal + ledgerTotal)
 
       res.json({
         events: merged,

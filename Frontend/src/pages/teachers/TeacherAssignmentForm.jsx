@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 
-import { useNavigate, useOutletContext, useParams } from 'react-router-dom'
+import { useNavigate, useOutletContext, useParams, useSearchParams } from 'react-router-dom'
 
 import BackButton from '../../components/BackButton.jsx'
 
@@ -35,10 +35,23 @@ import {
 import TeacherMainHeader from './TeacherMainHeader.jsx'
 
 import { ACTION_BLUE } from './instituteChrome.js'
+import {
+  curriculumReturnPath,
+  linkCreatedItemToCurriculum,
+  prefillSubjectFromQuery,
+  readCurriculumQuery,
+} from '../../lib/curriculumFormPrefill.js'
+import { fetchGradeComponentsForSubject } from '../../lib/teacherSubjectCurriculum.js'
+
+import {
+  GENERIC_UPLOAD_MAX_BYTES,
+  GENERIC_UPLOAD_MAX_MSG,
+  DEFAULT_UPLOAD_LABEL,
+} from '../../lib/uploadLimits.js'
 
 
 
-const MAX_FILE_BYTES = 10 * 1024 * 1024
+const MAX_FILE_BYTES = GENERIC_UPLOAD_MAX_BYTES
 const ACCEPT = '.pdf,.doc,.docx'
 const ALLOWED_FILE_TYPES = [
   'application/pdf',
@@ -49,7 +62,7 @@ const ALLOWED_FILE_TYPES = [
 const FALLBACK_SUBJECTS = ['English', 'Math', 'Science', 'Filipino']
 
 const FALLBACK_GRADES = ['Grade 7', 'Grade 8', 'Grade 9', 'Grade 10']
-const QUARTER_OPTIONS = ['1', '2', '3', '4']
+import { SEMESTER_LABELS, SEMESTER_OPTIONS } from '../../lib/quizQuestionTypes.js'
 
 
 
@@ -60,6 +73,8 @@ export default function TeacherAssignmentForm({ mode = 'add' }) {
   const { id } = useParams()
 
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const curriculumQuery = readCurriculumQuery(searchParams)
 
   const { logoutToPortal, setSidebarNavLocked } = useOutletContext() || {}
 
@@ -76,6 +91,11 @@ export default function TeacherAssignmentForm({ mode = 'add' }) {
   const [subjectOptions, setSubjectOptions] = useState(FALLBACK_SUBJECTS)
 
   const [gradeOptions, setGradeOptions] = useState(FALLBACK_GRADES)
+  const [gradeComponents, setGradeComponents] = useState([])
+  const [loadedSubjectId, setLoadedSubjectId] = useState('')
+  const [includeComponentId, setIncludeComponentId] = useState('')
+  const [fallbackComponentName, setFallbackComponentName] = useState('')
+  const linkedSubjectId = curriculumQuery.subjectId || loadedSubjectId
 
   const [loading, setLoading] = useState(isEdit)
 
@@ -93,7 +113,7 @@ export default function TeacherAssignmentForm({ mode = 'add' }) {
 
     grade_level: '',
 
-    quarter: '',
+    semester: '',
 
     description: '',
 
@@ -102,6 +122,7 @@ export default function TeacherAssignmentForm({ mode = 'add' }) {
     submission_time: '',
 
     total_score: '100',
+    grade_component_id: '',
 
   })
 
@@ -147,7 +168,22 @@ export default function TeacherAssignmentForm({ mode = 'add' }) {
 
   }, [])
 
-
+  useEffect(() => {
+    if (isEdit || !curriculumQuery.subjectId) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        await prefillSubjectFromQuery(curriculumQuery.subjectId, (patch) => {
+          if (!cancelled) setForm((p) => ({ ...p, ...patch }))
+        })
+      } catch (e) {
+        console.error('[TeacherAssignmentForm] curriculum prefill', e)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [isEdit, curriculumQuery.subjectId])
 
   useEffect(() => {
 
@@ -175,7 +211,7 @@ export default function TeacherAssignmentForm({ mode = 'add' }) {
 
           grade_level: row.grade_level || '',
 
-          quarter: row.quarter != null && String(row.quarter).trim() !== '' ? String(row.quarter) : '',
+          semester: row.semester != null && String(row.semester).trim() !== '' ? String(row.semester) : '',
 
           description: row.description || '',
 
@@ -184,16 +220,27 @@ export default function TeacherAssignmentForm({ mode = 'add' }) {
           submission_time: time,
 
           total_score: String(row.total_score ?? 100),
+          grade_component_id:
+            row.grade_component_id != null && String(row.grade_component_id).trim() !== ''
+              ? String(row.grade_component_id)
+              : '',
 
         })
 
         setExistingFileName(row.file_name || '')
+        if (row.grade_component_id != null && String(row.grade_component_id).trim() !== '') {
+          setIncludeComponentId(String(row.grade_component_id).trim())
+        }
+        setFallbackComponentName(String(row.grade_component_name || '').trim())
+        if (row.subject_id != null && String(row.subject_id).trim() !== '') {
+          setLoadedSubjectId(String(row.subject_id).trim())
+        }
 
       } catch (e) {
 
         console.error('[TeacherAssignmentForm]', e)
 
-        toastRef.current.error(FACULTY_MSG.assignments.updateFailed, {
+        toastRef.current.error(FACULTY_MSG.assignments.loadFailed, {
 
           toastId: FACULTY_TOAST_ID.assignmentEditError,
 
@@ -216,6 +263,44 @@ export default function TeacherAssignmentForm({ mode = 'add' }) {
     }
 
   }, [isEdit, id])
+
+  useEffect(() => {
+    if (!linkedSubjectId) {
+      setGradeComponents([])
+      if (!curriculumQuery.subjectId) {
+        setForm((p) => ({ ...p, grade_component_id: '' }))
+      }
+      return
+    }
+    let cancelled = false
+    ;(async () => {
+      try {
+        const rows = await fetchGradeComponentsForSubject(linkedSubjectId, 'assignment', {
+          includeComponentId: includeComponentId || undefined,
+        })
+        if (cancelled) return
+        setGradeComponents(rows)
+        if (!isEdit) {
+          setForm((p) => {
+            const selected = String(p.grade_component_id || '').trim()
+            if (selected && rows.some((r) => String(r.id) === selected)) return p
+            return {
+              ...p,
+              grade_component_id: rows[0]?.id != null ? String(rows[0].id) : '',
+            }
+          })
+        }
+      } catch (e) {
+        if (!cancelled) {
+          console.error('[TeacherAssignmentForm] grade components', e)
+          setGradeComponents([])
+        }
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [linkedSubjectId, curriculumQuery.subjectId, includeComponentId, isEdit])
 
 
 
@@ -290,11 +375,11 @@ export default function TeacherAssignmentForm({ mode = 'add' }) {
 
     }
 
-    if (!String(form.quarter || '').trim()) {
+    if (!String(form.semester || '').trim()) {
 
-      toastRef.current.error(FACULTY_MSG.assignments.quarterRequired, {
+      toastRef.current.error(FACULTY_MSG.assignments.semesterRequired, {
 
-        toastId: FACULTY_TOAST_ID.quarterRequiredError,
+        toastId: FACULTY_TOAST_ID.semesterRequiredError,
 
         durationMs: FACULTY_ANNOUNCEMENT_TOAST_MS,
 
@@ -304,13 +389,13 @@ export default function TeacherAssignmentForm({ mode = 'add' }) {
 
     }
 
-    const quarterNum = Number.parseInt(String(form.quarter).trim(), 10)
+    const semesterNum = Number.parseInt(String(form.semester).trim(), 10)
 
-    if (!Number.isFinite(quarterNum) || quarterNum < 1 || quarterNum > 4) {
+    if (!Number.isFinite(semesterNum) || semesterNum < 1 || semesterNum > 3) {
 
-      toastRef.current.error(FACULTY_MSG.assignments.quarterRequired, {
+      toastRef.current.error(FACULTY_MSG.assignments.semesterRequired, {
 
-        toastId: FACULTY_TOAST_ID.quarterRequiredError,
+        toastId: FACULTY_TOAST_ID.semesterRequiredError,
 
         durationMs: FACULTY_ANNOUNCEMENT_TOAST_MS,
 
@@ -398,6 +483,23 @@ export default function TeacherAssignmentForm({ mode = 'add' }) {
       }
     }
 
+    if (linkedSubjectId) {
+      if (!gradeComponents.length) {
+        toastRef.current.error('Configure grade criteria on the subject Grades tab first.', {
+          toastId: FACULTY_TOAST_ID.assignmentAddError,
+          durationMs: FACULTY_ANNOUNCEMENT_TOAST_MS,
+        })
+        return false
+      }
+      if (!String(form.grade_component_id || '').trim()) {
+        toastRef.current.error('Grade component is required.', {
+          toastId: FACULTY_TOAST_ID.assignmentAddError,
+          durationMs: FACULTY_ANNOUNCEMENT_TOAST_MS,
+        })
+        return false
+      }
+    }
+
     return true
 
   }
@@ -424,17 +526,21 @@ export default function TeacherAssignmentForm({ mode = 'add' }) {
 
       fd.append('grade_level', form.grade_level.trim())
 
-      fd.append('quarter', String(form.quarter).trim())
+      fd.append('semester', String(form.semester).trim())
 
       fd.append('total_score', String(form.total_score))
+      if (linkedSubjectId) {
+        fd.append('subject_id', linkedSubjectId)
+        fd.append('grade_component_id', String(form.grade_component_id).trim())
+      }
 
       const iso = combineDateAndTimeToIso(form.submission_date, form.submission_time)
 
       fd.append('submission_deadline', iso)
 
       if (file) fd.append('file', file)
-
-
+      if (curriculumQuery.moduleId) fd.append('module_id', curriculumQuery.moduleId)
+      if (curriculumQuery.topicId) fd.append('topic_id', curriculumQuery.topicId)
 
       if (isEdit) {
 
@@ -450,7 +556,13 @@ export default function TeacherAssignmentForm({ mode = 'add' }) {
 
       } else {
 
-        await createTeacherAssignment(fd)
+        const created = await createTeacherAssignment(fd)
+        await linkCreatedItemToCurriculum({
+          itemType: 'assignment',
+          itemId: created?.id,
+          moduleId: curriculumQuery.moduleId,
+          topicId: curriculumQuery.topicId,
+        })
 
         toastRef.current.success(FACULTY_MSG.assignments.added, {
 
@@ -462,7 +574,7 @@ export default function TeacherAssignmentForm({ mode = 'add' }) {
 
       }
 
-      navigate('/teacher/assignments')
+      navigate(curriculumReturnPath(curriculumQuery.subjectId, '/teacher/assignments'))
 
     } catch (e) {
 
@@ -470,7 +582,7 @@ export default function TeacherAssignmentForm({ mode = 'add' }) {
 
       if (isEdit) {
 
-        toastRef.current.error(FACULTY_MSG.assignments.updateFailed, {
+        toastRef.current.error(msg || FACULTY_MSG.assignments.updateFailed, {
 
           toastId: FACULTY_TOAST_ID.assignmentEditError,
 
@@ -481,14 +593,14 @@ export default function TeacherAssignmentForm({ mode = 'add' }) {
       } else {
 
         toastRef.current.error(
-          msg.includes('10MB') || msg.includes('exceed')
+          msg.includes('File too large') || msg.includes('Maximum size') || msg.includes('exceed')
             ? FACULTY_MSG.assignments.fileSize
             : msg.includes('PDF') || msg.includes('DOC')
               ? FACULTY_MSG.assignments.fileType
               : FACULTY_MSG.assignments.addFailed,
           {
             toastId:
-              msg.includes('10MB') || msg.includes('exceed')
+              msg.includes('File too large') || msg.includes('Maximum size') || msg.includes('exceed')
                 ? FACULTY_TOAST_ID.assignmentFileSizeError
                 : msg.includes('PDF') || msg.includes('DOC')
                   ? FACULTY_TOAST_ID.assignmentFileTypeError
@@ -547,7 +659,7 @@ export default function TeacherAssignmentForm({ mode = 'add' }) {
 
                 <p className="text-sm font-bold text-neutral-900">Assignment File</p>
                 <p className="mt-1 text-sm text-neutral-500">Allowed: PDF, DOC, DOCX</p>
-                <p className="text-sm text-neutral-500">Maximum file size: 10MB</p>
+                <p className="text-sm text-neutral-500">{DEFAULT_UPLOAD_LABEL}</p>
 
               </div>
 
@@ -711,27 +823,27 @@ export default function TeacherAssignmentForm({ mode = 'add' }) {
 
               <label className="block text-sm font-medium text-neutral-700">
 
-                Quarter
+                Semester
 
                 <select
 
                   className="mt-1 w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
 
-                  value={form.quarter}
+                  value={form.semester}
 
-                  onChange={(e) => setForm((p) => ({ ...p, quarter: e.target.value }))}
+                  onChange={(e) => setForm((p) => ({ ...p, semester: e.target.value }))}
 
                   required
 
                 >
 
-                  <option value="">Select Quarter</option>
+                  <option value="">Select Semester</option>
 
-                  {QUARTER_OPTIONS.map((q) => (
+                  {SEMESTER_OPTIONS.map((q) => (
 
                     <option key={q} value={q}>
 
-                      {q}
+                      {SEMESTER_LABELS[q]}
 
                     </option>
 
@@ -742,6 +854,39 @@ export default function TeacherAssignmentForm({ mode = 'add' }) {
               </label>
 
             </div>
+            {linkedSubjectId ? (
+              <label className="block max-w-md text-sm font-medium text-neutral-700">
+                Grade Component
+                <select
+                  className="mt-1 w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
+                  value={form.grade_component_id}
+                  onChange={(e) => setForm((p) => ({ ...p, grade_component_id: e.target.value }))}
+                  disabled={gradeComponents.length === 0 && !form.grade_component_id}
+                  required
+                >
+                  {gradeComponents.length === 0 && !form.grade_component_id ? (
+                    <option value="">No components available</option>
+                  ) : null}
+                  {isEdit &&
+                  form.grade_component_id &&
+                  !gradeComponents.some((c) => String(c.id) === String(form.grade_component_id)) ? (
+                    <option value={form.grade_component_id}>
+                      {fallbackComponentName || 'Linked component'} (current)
+                    </option>
+                  ) : null}
+                  {gradeComponents.map((component) => (
+                    <option key={String(component.id)} value={String(component.id)}>
+                      {component.name} ({component.percentage}%)
+                    </option>
+                  ))}
+                </select>
+                {gradeComponents.length === 0 ? (
+                  <p className="mt-1 text-xs text-amber-700">
+                    Configure grade criteria on the subject Grades tab first.
+                  </p>
+                ) : null}
+              </label>
+            ) : null}
 
 
 

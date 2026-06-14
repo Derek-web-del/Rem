@@ -12,11 +12,14 @@ dist
 dist-ssr
 *.local
 .env
+# Legacy local SQLite auth dir (data/auth.db) — no longer used; PostgreSQL only
 data/
 public/uploads/faculties/*
 !public/uploads/faculties/.gitkeep
 server/backups/*
 !server/backups/.gitkeep
+backups/*
+!backups/.gitkeep
 
 # Editor directories and files
 .vscode/*

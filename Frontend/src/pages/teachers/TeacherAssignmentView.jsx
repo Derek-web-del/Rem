@@ -2,18 +2,24 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useOutletContext, useParams } from 'react-router-dom'
 import {
   downloadSubmissionFile,
-  fetchTeacherAssignmentSubmissions,
   formatDateYmd,
+  isPastDeadline,
   resolveAssignmentFileUrl,
   submissionStatusBadge,
   updateSubmissionScore,
 } from '../../lib/teacherAssignments.js'
+import { fetchTeacherAssignmentView } from '../../lib/teacherPortalOffline.js'
+import OfflineCacheIndicator from '../../components/OfflineCacheIndicator.jsx'
+import PdfViewerModal from '../../components/PdfViewerModal.jsx'
 import {
   FACULTY_MSG,
   FACULTY_TOAST_ID,
   FACULTY_ANNOUNCEMENT_TOAST_MS,
+  SCORE_LOCKED_MSG,
   useFacultyNotify,
 } from '../../lib/facultyNotify.js'
+import { countGradedSubmissions, computePercent, formatScoreWithPercent, submissionStatusBadgeClass } from '../../lib/gradeStatus.js'
+import { GradesScoreBar, GradesStatusBadge } from '../../components/GradesPanel.jsx'
 import TeacherMainHeader from './TeacherMainHeader.jsx'
 import BackButton from '../../components/BackButton.jsx'
 import { ACTION_BLUE, SIDEBAR_GOLD_DARK } from './instituteChrome.js'
@@ -59,10 +65,10 @@ function SortHeader({ label, active, direction, onClick }) {
 
 function StatusBadge({ submission }) {
   const badge = submissionStatusBadge(submission)
-  const bg = badge.tone === 'red' ? '#FEE2E2' : '#FEF3C7'
-  const color = badge.tone === 'red' ? '#B91C1C' : '#B45309'
   return (
-    <span className="inline-block rounded-full px-3 py-1 text-xs font-semibold" style={{ background: bg, color }}>
+    <span
+      className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${submissionStatusBadgeClass(badge.tone)}`}
+    >
       {badge.label}
     </span>
   )
@@ -101,7 +107,8 @@ export default function TeacherAssignmentView() {
   const [scoreTarget, setScoreTarget] = useState(null)
   const [scoreValue, setScoreValue] = useState('')
   const [savingScore, setSavingScore] = useState(false)
-  const [viewTarget, setViewTarget] = useState(null)
+  const [pdfViewer, setPdfViewer] = useState(null)
+  const [fromCache, setFromCache] = useState(false)
 
   useEffect(() => {
     setSidebarNavLocked?.(false)
@@ -112,9 +119,10 @@ export default function TeacherAssignmentView() {
     setLoading(true)
     setLoadError('')
     try {
-      const data = await fetchTeacherAssignmentSubmissions(id)
+      const { data, fromCache: cached } = await fetchTeacherAssignmentView(id)
       setAssignment(data.assignment)
       setSubmissions(data.submissions)
+      setFromCache(cached)
       if (data.expiredUpdated) {
         toastRef.current.info(FACULTY_MSG.assignments.deadlineExpired, {
           toastId: FACULTY_TOAST_ID.deadlineExpired,
@@ -191,6 +199,8 @@ export default function TeacherAssignmentView() {
 
   const assignmentIndex = assignment?.id ? assignment.id : '1'
   const totalScore = assignment?.total_score ?? 100
+  const scoreLocked = isPastDeadline(assignment?.submission_deadline)
+  const gradingSummary = useMemo(() => countGradedSubmissions(submissions), [submissions])
 
   function openEditScore(sub) {
     setScoreTarget(sub)
@@ -217,7 +227,7 @@ export default function TeacherAssignmentView() {
         durationMs: FACULTY_ANNOUNCEMENT_TOAST_MS,
       })
     } catch (e) {
-      toastRef.current.error(FACULTY_MSG.assignments.scoreUpdateFailed, {
+      toastRef.current.error(String(e?.message || FACULTY_MSG.assignments.scoreUpdateFailed), {
         toastId: FACULTY_TOAST_ID.scoreEditError,
         durationMs: FACULTY_ANNOUNCEMENT_TOAST_MS,
       })
@@ -226,7 +236,11 @@ export default function TeacherAssignmentView() {
     }
   }
 
-  const viewUrl = viewTarget ? resolveAssignmentFileUrl(viewTarget.file_path) : ''
+  function openPdfViewer(filePath, name) {
+    const url = resolveAssignmentFileUrl(filePath)
+    if (!url) return
+    setPdfViewer({ url, fileName: String(name || 'file.pdf').trim() || 'file.pdf' })
+  }
 
   return (
     <>
@@ -236,6 +250,7 @@ export default function TeacherAssignmentView() {
           <h2 className="text-2xl font-bold text-neutral-900">Assignment</h2>
           <BackButton to="/teacher/assignments" className="" />
         </div>
+        <OfflineCacheIndicator fromCache={fromCache} className="mb-2" />
 
         {loading ? (
           <div className="flex flex-col items-center justify-center py-16 text-sm text-neutral-500">
@@ -294,13 +309,23 @@ export default function TeacherAssignmentView() {
 
             <section className="rounded-xl border border-neutral-200 bg-white p-5 shadow-md md:p-6">
               <div className="border-b-2 pb-2" style={{ borderColor: ACTION_BLUE }}>
-                <div className="inline-flex items-center gap-2">
+                <div className="inline-flex flex-wrap items-center gap-2">
                   <h3 className="text-base font-bold text-neutral-800">Assignment Submissions</h3>
                   <span className="rounded-full bg-neutral-200 px-2 py-0.5 text-xs font-bold text-neutral-600 tabular-nums">
                     {submissions.length}
                   </span>
+                  <span className="text-xs font-medium text-neutral-500">
+                    Graded: {gradingSummary.graded}/{gradingSummary.total}
+                  </span>
                 </div>
               </div>
+
+              {scoreLocked ? (
+                <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                  <i className="ti ti-lock mr-1.5 inline-block align-middle" aria-hidden="true" />
+                  {SCORE_LOCKED_MSG}
+                </div>
+              ) : null}
 
               <div className="relative mt-4 max-w-xs">
                 <i className="ti ti-search pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" aria-hidden="true" />
@@ -330,6 +355,9 @@ export default function TeacherAssignmentView() {
                         <SortHeader label="Upload Date" active={sortKey === 'upload_date'} direction={sortDir} onClick={() => toggleSort('upload_date')} />
                       </th>
                       <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-500">
+                        Score
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-500">
                         Action
                       </th>
                     </tr>
@@ -337,7 +365,7 @@ export default function TeacherAssignmentView() {
                   <tbody className="divide-y divide-neutral-100">
                     {pageRows.length === 0 ? (
                       <tr>
-                        <td colSpan={5} className="px-4 py-10 text-center text-sm text-neutral-500">
+                        <td colSpan={6} className="px-4 py-10 text-center text-sm text-neutral-500">
                           {submissions.length === 0 ? 'No submissions yet.' : 'No submissions found.'}
                         </td>
                       </tr>
@@ -350,14 +378,36 @@ export default function TeacherAssignmentView() {
                             <StatusBadge submission={sub} />
                           </td>
                           <td className="px-4 py-4 tabular-nums">{formatDateYmd(sub.submitted_at)}</td>
+                          <td className="px-4 py-4 min-w-[10rem]">
+                            {sub.score != null && Number.isFinite(Number(sub.score)) ? (
+                              <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center">
+                                <GradesScoreBar percent={computePercent(sub.score, totalScore)} />
+                                <GradesStatusBadge percent={computePercent(sub.score, totalScore)} />
+                              </div>
+                            ) : (
+                              <span className="text-sm text-neutral-500">—</span>
+                            )}
+                          </td>
                           <td className="px-4 py-4">
-                            <div className="flex flex-wrap gap-2">
-                              <ActionBtn label="Edit Score" style={BTN_EDIT} onClick={() => openEditScore(sub)} />
+                            <div className="flex flex-wrap items-center gap-2">
+                              {scoreLocked ? (
+                                <span
+                                  className="inline-flex items-center gap-1 text-sm text-neutral-600"
+                                  title={SCORE_LOCKED_MSG}
+                                >
+                                  <i className="ti ti-lock" aria-hidden="true" />
+                                  {sub.score != null
+                                    ? `${formatScoreWithPercent(sub.score, totalScore)} (locked)`
+                                    : '— (locked)'}
+                                </span>
+                              ) : (
+                                <ActionBtn label="Edit Score" style={BTN_EDIT} onClick={() => openEditScore(sub)} />
+                              )}
                               <ActionBtn
-                                label="View"
+                                label="View File"
                                 style={BTN_VIEW}
                                 disabled={!sub.file_path}
-                                onClick={() => setViewTarget(sub)}
+                                onClick={() => openPdfViewer(sub.file_path, sub.file_name)}
                               />
                               <ActionBtn
                                 label="Download"
@@ -440,25 +490,17 @@ export default function TeacherAssignmentView() {
         </div>
       ) : null}
 
-      {viewTarget && viewUrl ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="flex max-h-[90vh] w-full max-w-4xl flex-col rounded-xl bg-white shadow-xl">
-            <div className="flex items-center justify-between border-b border-neutral-200 px-4 py-3">
-              <h3 className="font-bold text-neutral-900">{viewTarget.student_name} — Submission</h3>
-              <button
-                type="button"
-                className="rounded-lg px-3 py-1.5 text-sm font-semibold text-neutral-700 hover:bg-neutral-100"
-                onClick={() => setViewTarget(null)}
-              >
-                Close
-              </button>
-            </div>
-            <div className="min-h-0 flex-1 overflow-auto p-4">
-              <iframe title="Submission preview" src={viewUrl} className="h-[min(70vh,560px)] w-full border-0" />
-            </div>
-          </div>
-        </div>
+      {pdfViewer ? (
+        <PdfViewerModal
+          fileUrl={pdfViewer.url}
+          fileName={pdfViewer.fileName}
+          onClose={() => setPdfViewer(null)}
+        />
       ) : null}
     </>
   )
 }
+
+
+
+

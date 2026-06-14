@@ -1,69 +1,32 @@
 import { useCallback, useEffect, useState } from 'react'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate, Link } from 'react-router-dom'
 import { authClient, passwordPolicyHint } from './lib/auth-client.js'
 import { INSTITUTE_ADMIN_EMAIL } from '../../shared/constants.js'
 import { isLoginPath, loginViewFromPath, roleFromLoginPath, ROLE_TO_LOGIN_PATH } from './lib/loginRoutes.js'
+import {
+  homePathForRole,
+  loginPathForPortal,
+  portalMatchesUserRole,
+  portalMismatchMessage,
+  resolveAuthRoleForPortal,
+} from './lib/roleAccess.js'
+import { clearTermsAcceptance } from './lib/termsSession.js'
+import { resolveStudentPostLoginPath } from './lib/studentPortal.js'
+import { maskEmail } from './lib/maskEmail.js'
+import ForgotPassword from './pages/ForgotPassword.jsx'
+import GlendaleLogo from './assets/GlendaleLogo.png'
+import LoginSceneBackground from './components/LoginSceneBackground.jsx'
 
 const PRIMARY_BLUE = '#3182ce'
-const LABEL_BLUE = '#4A90E2'
-const ICON_GREY = '#757575'
+const OTP_SENDER_EMAIL =
+  import.meta.env.VITE_OTP_SENDER_EMAIL || 'noreply.lenlearnotp@gmail.com'
+const TAGLINE_GREEN = 'rgba(80, 220, 130, 1)'
 
-function PersonIcon() {
-  return (
-    <svg
-      width="48"
-      height="48"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke={ICON_GREY}
-      strokeWidth="1.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden
-    >
-      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-      <circle cx="12" cy="7" r="4" />
-    </svg>
-  )
-}
-
-function BookIcon() {
-  return (
-    <svg
-      width="48"
-      height="48"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke={ICON_GREY}
-      strokeWidth="1.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden
-    >
-      <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
-      <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
-      <path d="M8 7h8M8 11h6" />
-    </svg>
-  )
-}
-
-function MortarboardIcon() {
-  return (
-    <svg
-      width="48"
-      height="48"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke={ICON_GREY}
-      strokeWidth="1.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden
-    >
-      <path d="M22 10v6M2 10l10-5 10 5-10 5z" />
-      <path d="M6 12v5c0 2 2 3 6 3s6-1 6-3v-5" />
-    </svg>
-  )
+function loginPortalHeader(roleId) {
+  if (roleId === 'INSTITUTE') return 'admin'
+  if (roleId === 'FACULTY') return 'faculty'
+  if (roleId === 'STUDENT') return 'student'
+  return ''
 }
 
 function EyeIcon({ off }) {
@@ -104,13 +67,25 @@ function EyeIcon({ off }) {
 }
 
 const ROLES = [
-  { id: 'INSTITUTE', label: 'INSTITUTE', Icon: PersonIcon },
-  { id: 'FACULTY', label: 'FACULTY', Icon: BookIcon },
-  { id: 'STUDENT', label: 'STUDENT', Icon: MortarboardIcon },
+  { id: 'INSTITUTE', label: 'INSTITUTE', icon: 'ti-building' },
+  { id: 'FACULTY', label: 'FACULTY', icon: 'ti-notebook' },
+  { id: 'STUDENT', label: 'STUDENT', icon: 'ti-school' },
 ]
 
 /** Cap wait on POST `/two-factor/verify-otp` so a hung proxy/network does not spin forever. */
 const VERIFY_OTP_TIMEOUT_MS = 30_000
+
+const SESSION_WAIT_MAX_RETRIES = 8
+const SESSION_WAIT_DELAY_MS = 400
+
+async function waitForEstablishedSession() {
+  for (let i = 0; i < SESSION_WAIT_MAX_RETRIES; i++) {
+    const { data } = await authClient.getSession()
+    if (data?.session && data?.user?.id) return data
+    await new Promise((r) => setTimeout(r, SESSION_WAIT_DELAY_MS))
+  }
+  return null
+}
 
 function formatAuthError(error) {
   if (!error) return 'Something went wrong.'
@@ -156,6 +131,7 @@ export default function App() {
   const [identifier, setIdentifier] = useState('')
   const [password, setPassword] = useState('')
   const [otpCode, setOtpCode] = useState('')
+  const [otpDestinationEmail, setOtpDestinationEmail] = useState('')
   const [otpFailedAttempts, setOtpFailedAttempts] = useState(0)
   const [authError, setAuthError] = useState('')
   const [authBusy, setAuthBusy] = useState(false)
@@ -171,78 +147,107 @@ export default function App() {
   }, [location.pathname, navigate])
 
   useEffect(() => {
+    const params = new URLSearchParams(location.search)
+    if (params.get('reset') === 'success') {
+      setLoginHint('Password reset successfully. Sign in with your new password.')
+      void authClient.signOut()
+    }
+  }, [location.search])
+
+  useEffect(() => {
     setShowPassword(false)
     setAuthError('')
     setLoginHint('')
     setLoginStep('credentials')
     setPassword('')
     setOtpCode('')
+    setOtpDestinationEmail('')
     setOtpFailedAttempts(0)
     setIdentifier('')
   }, [roleId, view])
 
-  const handleAuthSuccess = useCallback(async (prefetchedSessionData) => {
+  const handleAuthSuccess = useCallback(async (prefetchedSessionData, { fromOtp = false } = {}) => {
     setLoginStep('credentials')
     setPassword('')
     setOtpCode('')
+    setOtpDestinationEmail('')
     setOtpFailedAttempts(0)
     setAuthError('')
-    const hasPrefetch =
-      prefetchedSessionData != null &&
-      typeof prefetchedSessionData === 'object' &&
-      prefetchedSessionData.user != null
-    const { data } = hasPrefetch
-      ? { data: prefetchedSessionData }
-      : await authClient.getSession()
-    const user = data?.user
-    const isInstituteAdmin =
-      roleId === 'INSTITUTE' ||
-      user?.role === 'admin' ||
-      String(user?.email || '').toLowerCase() === INSTITUTE_ADMIN_EMAIL.toLowerCase()
-    if (isInstituteAdmin) {
-      navigate('/admin/institute_dashboard', { replace: true })
+
+    const sessionData = await waitForEstablishedSession()
+    if (import.meta.env.DEV) {
+      console.log('[OTP] Session after verify:', sessionData)
+    }
+    if (!sessionData?.user?.id) {
+      setAuthError('Session could not be established. Please sign in again.')
       return
     }
-    if (roleId === 'FACULTY') {
-      const r = String(user?.role || '').trim().toLowerCase()
-      if (r === 'teacher' || r === 'user' || r === 'admin') {
-        const fromEmailOtp =
-          hasPrefetch && typeof data.token === 'string' && data.token.length > 0
-        if (fromEmailOtp) {
-          void authClient.getSession()
-          window.location.assign('/teacher/dashboard')
-          return
-        }
-        navigate('/teacher/dashboard')
-        return
+
+    const user = sessionData.user
+    const resolvedRole = resolveAuthRoleForPortal(user, roleId, INSTITUTE_ADMIN_EMAIL)
+
+    const go = (path) => {
+      if (import.meta.env.DEV) {
+        console.log('[OTP] Navigating to:', path, 'fromOtp:', fromOtp)
+      }
+      if (fromOtp) {
+        window.location.assign(path)
+      } else {
+        navigate(path, { replace: true })
       }
     }
-    if (roleId === 'STUDENT') {
-      const r = String(user?.role || '').trim().toLowerCase()
-      if (r === 'student') {
-        navigate('/student/quizzes', { replace: true })
-        return
-      }
+
+    if (!roleId || !portalMatchesUserRole(roleId, resolvedRole)) {
+      await authClient.signOut()
+      setAuthError(portalMismatchMessage(roleId, resolvedRole))
+      const correctPortal =
+        resolvedRole === 'student'
+          ? 'STUDENT'
+          : resolvedRole === 'teacher' || resolvedRole === 'faculty'
+            ? 'FACULTY'
+            : resolvedRole === 'admin'
+              ? 'INSTITUTE'
+              : null
+      if (correctPortal) navigate(loginPathForPortal(correctPortal), { replace: true })
+      return
     }
-    setLoginHint('You are signed in. Open the Institute role to reach the admin dashboard.')
+
+    if (resolvedRole === 'student') {
+      clearTermsAcceptance()
+      go(await resolveStudentPostLoginPath())
+      return
+    }
+    go(homePathForRole(resolvedRole))
   }, [roleId, navigate])
 
   useEffect(() => {
     if (sessionPending) return
+    const params = new URLSearchParams(location.search)
+    if (params.get('reset') === 'success') return
     if (!session || !isLoginPath(location.pathname)) return
-    const isInstituteAdmin =
-      sessionUser?.role === 'admin' ||
-      String(sessionUser?.email || '').toLowerCase() ===
-        INSTITUTE_ADMIN_EMAIL.toLowerCase()
-    if (isInstituteAdmin) {
-      navigate('/admin/institute_dashboard', { replace: true })
+
+    const portal = roleFromLoginPath(location.pathname)
+    if (!portal) return
+
+    const resolvedRole = resolveAuthRoleForPortal(sessionUser, portal, INSTITUTE_ADMIN_EMAIL)
+    if (!portalMatchesUserRole(portal, resolvedRole)) {
+      void authClient.signOut()
       return
     }
-    const role = String(sessionUser?.role || '').trim().toLowerCase()
-    if (role === 'student') {
-      navigate('/student/quizzes', { replace: true })
+
+    if (resolvedRole === 'student') {
+      let cancelled = false
+      clearTermsAcceptance()
+      void (async () => {
+        const dest = await resolveStudentPostLoginPath()
+        if (!cancelled) navigate(dest, { replace: true })
+      })()
+      return () => {
+        cancelled = true
+      }
     }
-  }, [session, sessionUser, sessionPending, location.pathname, navigate])
+    navigate(homePathForRole(resolvedRole), { replace: true })
+  }, [session, sessionUser, sessionPending, location.pathname, location.search, navigate])
 
   async function handleCredentialSubmit(e) {
     e.preventDefault()
@@ -254,7 +259,7 @@ export default function App() {
         roleId === 'FACULTY'
           ? 'Enter your Faculty Code ID and password.'
           : roleId === 'STUDENT'
-            ? 'Enter your login ID and password.'
+            ? 'Enter your Student Login ID and password.'
             : roleId === 'INSTITUTE'
               ? 'Enter your Institute Login ID and password.'
               : 'Enter your username and password.',
@@ -264,7 +269,13 @@ export default function App() {
 
     setAuthBusy(true)
     try {
-      const signIn = authClient.signIn.username({ username: id, password })
+      const portalHeader = loginPortalHeader(roleId)
+      const signIn = authClient.signIn.username(
+        { username: id, password },
+        portalHeader
+          ? { fetchOptions: { headers: { 'X-LMS-Login-Portal': portalHeader } } }
+          : undefined,
+      )
 
       const { data, error } = await signIn
 
@@ -277,6 +288,9 @@ export default function App() {
         setLoginStep('otp')
         setOtpFailedAttempts(0)
         try {
+          const sessionPeek = await authClient.getSession()
+          const peekEmail = String(sessionPeek?.data?.user?.email || '').trim()
+          if (peekEmail) setOtpDestinationEmail(peekEmail)
           const send = await authClient.twoFactor.sendOtp({})
           if (send?.error) {
             setAuthError(formatAuthError(send.error) || 'Could not send email code.')
@@ -332,7 +346,10 @@ export default function App() {
         setAuthError(`${formatAuthError(result.error)} (${3 - nextAttempts} attempt(s) left)`)
         return
       }
-      await handleAuthSuccess(result.data)
+      if (import.meta.env.DEV) {
+        console.log('[OTP] Verification result:', result)
+      }
+      await handleAuthSuccess(result.data, { fromOtp: true })
     } catch (err) {
       setAuthError(formatAuthError(err) || 'Verification failed. Check your connection and try again.')
     } finally {
@@ -344,6 +361,7 @@ export default function App() {
     await authClient.signOut()
     setLoginStep('credentials')
     setOtpCode('')
+    setOtpDestinationEmail('')
     setOtpFailedAttempts(0)
     setAuthError('')
   }
@@ -361,21 +379,13 @@ export default function App() {
       className="relative min-h-svh w-full overflow-hidden font-[Inter,system-ui,sans-serif]"
       style={{ fontFamily: 'Inter, system-ui, sans-serif' }}
     >
-      <div
-        className="absolute inset-0 bg-cover bg-center"
-        style={{ backgroundImage: 'url(/school-bg.png)' }}
-        role="presentation"
-      />
-      <div
-        className="absolute inset-0 bg-black/40 backdrop-blur-[1px]"
-        aria-hidden
-      />
+      <LoginSceneBackground />
 
-      {view === 'login' && (
+      {(view === 'login' || view === 'forgot') && (
         <button
           type="button"
           onClick={backToSelection}
-          className="absolute left-4 top-4 z-20 flex items-center gap-2 rounded-full border border-white/10 bg-black/45 px-4 py-2.5 text-sm font-medium text-white shadow-lg backdrop-blur-md transition hover:bg-black/55 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70 md:left-6 md:top-6"
+          className="login-back-btn absolute left-4 top-[4.5rem] z-20 flex items-center gap-2 rounded-full px-4 py-2.5 text-sm font-medium text-white shadow-lg transition hover:border-[rgba(80,200,130,0.4)] hover:bg-[rgba(80,200,130,0.1)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(80,220,130,0.5)] md:left-6 md:top-[4.5rem]"
         >
           <span className="text-base leading-none" aria-hidden>
             ‹
@@ -384,19 +394,27 @@ export default function App() {
         </button>
       )}
 
-      <div className="relative z-10 flex min-h-svh items-center justify-center px-4 pb-10 pt-24 md:px-6 md:pb-12 md:pt-28">
-        <div
-          className="w-full max-w-110 rounded-3xl border border-white/30 bg-white/20 p-8 shadow-2xl backdrop-blur-[14px] md:p-10"
-          style={{ WebkitBackdropFilter: 'blur(14px)' }}
-        >
-          <h1 className="text-center text-3xl font-bold tracking-tight text-white md:text-4xl">
-            Sign in
-          </h1>
+      <div className="relative z-10 flex min-h-svh items-center justify-center px-4 py-10 md:px-6">
+        <div className="login-card flex flex-col items-center">
+          <div className="relative z-[1] flex w-full flex-col items-center text-center">
+            <div className="login-card__seal-wrap">
+              <img src={GlendaleLogo} alt="Glendale School seal" />
+            </div>
+            <h2 className="login-card__name">LenLearn</h2>
+            <p className="login-card__school">Glendale High School LMS</p>
+          </div>
+
+          <div className="login-card__line" />
+
+          <div className="relative z-[1] w-full">
+            <h1 className="login-card__signin text-center">
+              {view === 'forgot' ? 'Forgot password' : 'Sign in'}
+            </h1>
 
           {view === 'select' && (
             <p
-              className="mt-2 text-center text-base font-medium md:text-lg"
-              style={{ color: LABEL_BLUE }}
+              className="login-card__access text-center"
+              style={{ color: TAGLINE_GREEN }}
             >
               access to your dashboard.
             </p>
@@ -404,45 +422,47 @@ export default function App() {
 
           {view === 'login' && selected && loginStep === 'credentials' && (
             <p
-              className="mt-2 text-center text-base font-medium md:text-lg"
-              style={{ color: LABEL_BLUE }}
+              className="login-card__access text-center"
+              style={{ color: TAGLINE_GREEN }}
             >
               access to <span className="font-bold">{selected.id}</span> dashboard.
             </p>
           )}
 
+          {view === 'forgot' && (
+            <p className="mt-2 text-center text-sm text-white/85">
+              Reset link is sent to your registered email — not your Login ID.
+            </p>
+          )}
+
           {view === 'login' && selected && loginStep === 'otp' && (
             <p
-              className="mt-2 text-center text-base font-medium md:text-lg"
-              style={{ color: LABEL_BLUE }}
+              className="login-card__access text-center"
+              style={{ color: TAGLINE_GREEN }}
             >
               Enter the code sent to <span className="font-bold break-all text-white">your inbox</span>.
             </p>
           )}
 
           {view === 'select' && (
-            <div className="mt-8 grid grid-cols-3 gap-3 sm:gap-4">
-              {ROLES.map(({ id, label, Icon }) => (
+            <div className="grid w-full grid-cols-3 gap-[9px]">
+              {ROLES.map(({ id, label, icon }) => (
                 <button
                   key={id}
                   type="button"
                   onClick={() => selectRole(id)}
-                  className="flex aspect-square flex-col items-center justify-center gap-3 rounded-xl bg-white p-3 shadow-md transition duration-200 hover:scale-[1.04] hover:shadow-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-white/80 active:scale-[0.98] sm:p-4"
+                  className="login-role-btn focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(80,220,130,0.5)]"
+                  aria-label={label}
                 >
-                  <Icon />
-                  <span
-                    className="text-[10px] font-semibold tracking-wider sm:text-xs"
-                    style={{ color: LABEL_BLUE }}
-                  >
-                    {label}
-                  </span>
+                  <i className={`ti ${icon}`} aria-hidden="true" />
+                  {label}
                 </button>
               ))}
             </div>
           )}
 
           {view === 'login' && loginStep === 'credentials' && (
-            <form className="mt-8 flex flex-col gap-5" onSubmit={handleCredentialSubmit}>
+            <form className="mt-6 flex flex-col gap-5" onSubmit={handleCredentialSubmit}>
               <div>
                 <label
                   htmlFor="portal-identifier"
@@ -451,7 +471,7 @@ export default function App() {
                   {roleId === 'FACULTY'
                     ? 'Faculty Code ID'
                     : roleId === 'STUDENT'
-                      ? 'Login ID'
+                      ? 'Student Login ID'
                       : roleId === 'INSTITUTE'
                         ? 'Institute Login ID'
                         : 'Username'}
@@ -465,7 +485,7 @@ export default function App() {
                     roleId === 'FACULTY'
                       ? 'Enter Faculty Code ID'
                       : roleId === 'STUDENT'
-                        ? 'Enter login ID'
+                        ? 'Enter Student Login ID'
                         : roleId === 'INSTITUTE'
                           ? 'Enter Institute Login ID'
                           : 'Enter username'
@@ -509,6 +529,14 @@ export default function App() {
               {loginHint ? (
                 <p className="text-center text-sm text-amber-100/95">{loginHint}</p>
               ) : null}
+              <div className="flex justify-end">
+                <Link
+                  to="/login/forgot-password"
+                  className="text-sm font-medium text-white/90 underline-offset-2 hover:underline"
+                >
+                  Forgot Password?
+                </Link>
+              </div>
               <button
                 type="submit"
                 disabled={authBusy}
@@ -520,8 +548,18 @@ export default function App() {
             </form>
           )}
 
+          {view === 'forgot' && <ForgotPassword />}
+
           {view === 'login' && loginStep === 'otp' && (
-            <form className="mt-8 flex flex-col gap-5" onSubmit={handleOtpSubmit}>
+            <form className="mt-6 flex flex-col gap-5" onSubmit={handleOtpSubmit}>
+              {otpDestinationEmail ? (
+                <p className="text-center text-sm text-white/90">
+                  Code sent to: <span className="font-medium">{maskEmail(otpDestinationEmail)}</span>
+                </p>
+              ) : null}
+              <p className="text-center text-xs text-white/80">
+                Check your school email inbox. The code was sent from {OTP_SENDER_EMAIL}.
+              </p>
               <div>
                 <label htmlFor="portal-otp" className="mb-1.5 block text-sm font-medium text-white">
                   Verification code
@@ -540,6 +578,9 @@ export default function App() {
               {authError ? (
                 <p className="text-center text-sm text-red-200">{authError}</p>
               ) : null}
+              <p className="text-center text-xs text-white/70">
+                Didn&apos;t receive a code? Check your spam or junk folder.
+              </p>
               <button
                 type="submit"
                 disabled={authBusy}
@@ -557,6 +598,11 @@ export default function App() {
               </button>
             </form>
           )}
+
+          <p className="login-card__footer relative z-[1] mt-8 w-full">
+            © 2026 LenLearn LMS. All rights reserved.
+          </p>
+          </div>
         </div>
       </div>
     </div>

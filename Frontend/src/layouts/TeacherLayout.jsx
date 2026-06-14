@@ -2,8 +2,9 @@ import { Suspense, useCallback, useState } from 'react'
 import { Outlet, useNavigate } from 'react-router-dom'
 import { authClient } from '../lib/auth-client.js'
 import { useIdleSession } from '../hooks/useIdleSession.js'
-import { clearTeacherTermsAcceptance } from '../TermsAndConditions.jsx'
+import { clearTermsAcceptance } from '../lib/termsSession.js'
 import TeacherSidebar from '../pages/teachers/TeacherSidebar.jsx'
+import OfflineBanner from '../components/OfflineBanner.jsx'
 
 const IDLE_MS = 30 * 60 * 1000
 
@@ -24,7 +25,7 @@ export default function TeacherLayout() {
   const session = sessionData?.session
 
   const logoutToPortal = useCallback(async () => {
-    clearTeacherTermsAcceptance()
+    clearTermsAcceptance()
     await authClient.signOut()
     navigate('/login', { replace: true })
   }, [navigate])
@@ -41,7 +42,8 @@ export default function TeacherLayout() {
       style={{ fontFamily: 'Inter, system-ui, sans-serif' }}
     >
       <TeacherSidebar onLogout={logoutToPortal} navLocked={sidebarNavLocked} />
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-neutral-100">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-auto bg-neutral-100">
+        <OfflineBanner />
         <Suspense fallback={<TeacherOutletFallback />}>
           <Outlet context={{ logoutToPortal, setSidebarNavLocked }} />
         </Suspense>

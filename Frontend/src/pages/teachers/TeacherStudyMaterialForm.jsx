@@ -1,20 +1,28 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useNavigate, useParams, useLocation } from 'react-router-dom'
+import { useNavigate, useParams, useLocation, useSearchParams } from 'react-router-dom'
 import { apiUrl } from '../../lib/lmsStateStorage.js'
 import { FACULTY_MSG, useFacultyNotify } from '../../lib/facultyNotify.js'
+import {
+  SUBJECT_MATERIAL_MAX_BYTES,
+  SUBJECT_MATERIAL_MAX_MSG,
+  DEFAULT_UPLOAD_LABEL,
+} from '../../lib/uploadLimits.js'
 import TeacherBackButton from './TeacherBackButton.jsx'
 import TeacherMainHeader from './TeacherMainHeader.jsx'
 import { ACTION_BLUE } from './instituteChrome.js'
+import { linkCreatedItemToCurriculum, readCurriculumQuery } from '../../lib/curriculumFormPrefill.js'
 
 const ACCEPT_EDIT = '.pdf,.doc,.docx'
-const ACCEPT_ADD = '.pdf,.doc,.docx'
+const ACCEPT_ADD = '.pdf'
 const DOC_EXT = new Set(['pdf', 'doc', 'docx'])
+const PDF_EXT = new Set(['pdf'])
 
 function isAdminSyllabusMaterialId(id) {
   return String(id || '').startsWith('admin-syllabus')
 }
 const FILE_TYPE_MSG = FACULTY_MSG.studyMaterial.fileType
-const FILE_SIZE_MAX_MSG = FACULTY_MSG.studyMaterial.fileSize
+const FILE_SIZE_MAX_MSG = SUBJECT_MATERIAL_MAX_MSG
+const ADD_FILE_TYPE_MSG = 'Only PDF files are allowed.'
 
 function isAllowedDocument(file) {
   if (!file) return false
@@ -28,11 +36,24 @@ function isAllowedDocument(file) {
   )
 }
 
+function isAllowedAddDocument(file) {
+  if (!file) return false
+  const ext = file.name.split('.').pop()?.toLowerCase() || ''
+  if (PDF_EXT.has(ext)) return true
+  return String(file.type || '').toLowerCase() === 'application/pdf'
+}
+
+function validateAddFile(file) {
+  if (!file) return ''
+  if (!isAllowedAddDocument(file)) return ADD_FILE_TYPE_MSG
+  if (file.size > SUBJECT_MATERIAL_MAX_BYTES) return FILE_SIZE_MAX_MSG
+  return ''
+}
+
 function validateEditFile(file) {
   if (!file) return ''
   if (!isAllowedDocument(file)) return FILE_TYPE_MSG
-  const maxSize = 25 * 1024 * 1024
-  if (file.size > maxSize) return FILE_SIZE_MAX_MSG
+  if (file.size > SUBJECT_MATERIAL_MAX_BYTES) return FILE_SIZE_MAX_MSG
   return ''
 }
 
@@ -81,13 +102,13 @@ function EditStudyMaterialForm({
       <div className="grid grid-cols-12 gap-4">
         <div className="col-span-12 sm:col-span-2">
           <TextField
-            label="Subject Quarter"
+            label="Subject Semester"
             required
-            value={form.quarter}
-            error={fieldErrors.quarter}
+            value={form.semester}
+            error={fieldErrors.semester}
             onChange={(e) => {
-              setForm((p) => ({ ...p, quarter: e.target.value }))
-              setFieldErrors((p) => ({ ...p, quarter: '' }))
+              setForm((p) => ({ ...p, semester: e.target.value }))
+              setFieldErrors((p) => ({ ...p, semester: '' }))
             }}
           />
         </div>
@@ -139,8 +160,7 @@ function EditStudyMaterialForm({
           <p className="text-sm font-semibold text-neutral-900">
             Study Material File ({subjectLabel})
           </p>
-          <p className="mt-2 text-sm text-neutral-600">Allowed: PDF, DOC, DOCX</p>
-          <p className="text-sm text-neutral-600">Maximum file size: 25MB</p>
+          <p className="mt-2 text-sm text-neutral-600">{DEFAULT_UPLOAD_LABEL}</p>
         </div>
         <div>
           <div
@@ -214,13 +234,13 @@ function AddStudyMaterialForm({
       <div className="grid grid-cols-12 gap-4">
         <div className="col-span-12 sm:col-span-2">
           <TextField
-            label="Subject Quarter"
+            label="Subject Semester"
             required
-            value={form.quarter}
-            error={fieldErrors.quarter}
+            value={form.semester}
+            error={fieldErrors.semester}
             onChange={(e) => {
-              setForm((p) => ({ ...p, quarter: e.target.value }))
-              setFieldErrors((p) => ({ ...p, quarter: '' }))
+              setForm((p) => ({ ...p, semester: e.target.value }))
+              setFieldErrors((p) => ({ ...p, semester: '' }))
             }}
           />
         </div>
@@ -272,8 +292,7 @@ function AddStudyMaterialForm({
           <p className="text-sm font-semibold text-neutral-900">
             Study Material File ({subjectLabel})
           </p>
-          <p className="mt-2 text-sm text-neutral-600">Allowed: PDF, DOC, DOCX</p>
-          <p className="text-sm text-neutral-600">Maximum file size: 25MB</p>
+          <p className="mt-2 text-sm text-neutral-600">PDF only • Max 15MB</p>
         </div>
         <div>
           <div
@@ -328,6 +347,8 @@ export default function TeacherStudyMaterialForm({
 }) {
   const navigate = useNavigate()
   const location = useLocation()
+  const [searchParams] = useSearchParams()
+  const curriculumQuery = readCurriculumQuery(searchParams)
   const { subjectId, materialId } = useParams()
   const fileRef = useRef(null)
   const toast = useFacultyNotify()
@@ -341,7 +362,7 @@ export default function TeacherStudyMaterialForm({
   const [file, setFile] = useState(null)
   const [existingFileName, setExistingFileName] = useState('')
   const [form, setForm] = useState({
-    quarter: '1',
+    semester: '1',
     unit_no: '1',
     unit_name: '',
     material_name: '',
@@ -382,7 +403,7 @@ export default function TeacherStudyMaterialForm({
           nextUnit = '1'
         }
         setForm({
-          quarter: String(subData.quarter ?? '1'),
+          semester: String(subData.semester ?? '1'),
           unit_no: nextUnit,
           unit_name: '',
           material_name: '',
@@ -397,7 +418,7 @@ export default function TeacherStudyMaterialForm({
             throw new Error('Material not found.')
           }
           setForm({
-            quarter: String(adminMat.quarter ?? subData.quarter ?? '1'),
+            semester: String(adminMat.semester ?? subData.semester ?? '1'),
             unit_no: String(adminMat.unit_no ?? '1'),
             unit_name: String(adminMat.unit_name ?? adminMat.material_name ?? ''),
             material_name: String(adminMat.material_name ?? adminMat.unit_name ?? ''),
@@ -412,7 +433,7 @@ export default function TeacherStudyMaterialForm({
           const matData = await matRes.json().catch(() => ({}))
           if (!matRes.ok) throw new Error(matData?.message || matData?.error || 'Failed to load material.')
           setForm({
-            quarter: String(matData.quarter ?? subData.quarter ?? '1'),
+            semester: String(matData.semester ?? subData.semester ?? '1'),
             unit_no: String(matData.unit_no ?? '1'),
             unit_name: String(matData.unit_name ?? ''),
             material_name: String(matData.material_name ?? matData.unit_name ?? ''),
@@ -433,15 +454,20 @@ export default function TeacherStudyMaterialForm({
     void load()
   }, [load])
 
+  const validateFile = mode === 'add' ? validateAddFile : validateEditFile
+
   const onFilePick = (picked) => {
     if (!picked) return
-    const fileErr = validateEditFile(picked)
+    const fileErr = validateFile(picked)
     if (fileErr) {
       setError(fileErr)
       setFieldErrors((p) => ({ ...p, file: fileErr }))
       setFile(null)
-      if (fileErr === FILE_TYPE_MSG) toast.error(FACULTY_MSG.studyMaterial.fileType)
-      else if (fileErr === FILE_SIZE_MAX_MSG) toast.error(FACULTY_MSG.studyMaterial.fileSize)
+      if (fileErr === ADD_FILE_TYPE_MSG || fileErr === FILE_TYPE_MSG) {
+        toast.error(mode === 'add' ? ADD_FILE_TYPE_MSG : FACULTY_MSG.studyMaterial.fileType)
+      } else if (fileErr === FILE_SIZE_MAX_MSG) {
+        toast.error(SUBJECT_MATERIAL_MAX_MSG)
+      }
       return
     }
     setFile(picked)
@@ -451,7 +477,7 @@ export default function TeacherStudyMaterialForm({
 
   function collectValidationErrors() {
     const errs = {}
-    if (!String(form.quarter || '').trim()) errs.quarter = 'Subject quarter is required.'
+    if (!String(form.semester || '').trim()) errs.semester = 'Subject semester is required.'
     if (!String(form.unit_no || '').trim()) errs.unit_no = 'Unit no. is required.'
     if (mode === 'edit' && !String(form.unit_name || '').trim()) {
       errs.unit_name = 'Unit name is required.'
@@ -463,15 +489,18 @@ export default function TeacherStudyMaterialForm({
       errs.file = 'Please upload a study material file.'
     }
     if (file) {
-      const fileErr = validateEditFile(file)
+      const fileErr = validateFile(file)
       if (fileErr) errs.file = fileErr
     }
     return errs
   }
 
   function notifyFileValidationError(fileErr) {
-    if (fileErr === FILE_TYPE_MSG) toast.error(FACULTY_MSG.studyMaterial.fileType)
-    else if (fileErr === FILE_SIZE_MAX_MSG) toast.error(FACULTY_MSG.studyMaterial.fileSize)
+    if (fileErr === ADD_FILE_TYPE_MSG || fileErr === FILE_TYPE_MSG) {
+      toast.error(mode === 'add' ? ADD_FILE_TYPE_MSG : FACULTY_MSG.studyMaterial.fileType)
+    } else if (fileErr === FILE_SIZE_MAX_MSG) {
+      toast.error(SUBJECT_MATERIAL_MAX_MSG)
+    }
   }
 
   async function onSubmit(e) {
@@ -491,7 +520,7 @@ export default function TeacherStudyMaterialForm({
     try {
       if (isAdminSyllabusEdit) {
         const fd = new FormData()
-        fd.append('quarter', String(form.quarter || '').trim())
+        fd.append('semester', String(form.semester || '').trim())
         fd.append('subject_name', String(form.subject_name || '').trim())
         fd.append('grade_level', String(form.grade_level || '').trim())
         if (file) fd.append('file', file)
@@ -509,12 +538,14 @@ export default function TeacherStudyMaterialForm({
 
       const fd = new FormData()
       fd.append('subject_id', String(subjectId))
-      fd.append('quarter', String(form.quarter || '').trim())
+      fd.append('semester', String(form.semester || '').trim())
       fd.append('unit_no', String(form.unit_no || '1').trim())
       fd.append('unit_name', materialName)
       fd.append('material_name', materialName)
       fd.append('subject_name', String(form.subject_name || '').trim())
       fd.append('grade_level', String(form.grade_level || '').trim())
+      if (curriculumQuery.moduleId) fd.append('module_id', curriculumQuery.moduleId)
+      if (curriculumQuery.topicId) fd.append('topic_id', curriculumQuery.topicId)
       if (file) fd.append('file', file)
 
       const url =
@@ -531,6 +562,14 @@ export default function TeacherStudyMaterialForm({
         throw new Error(data?.message || data?.error || 'Save failed.')
       }
       toast.success(isEdit ? FACULTY_MSG.studyMaterial.updated : FACULTY_MSG.studyMaterial.added)
+      if (!isEdit && data?.material?.id) {
+        await linkCreatedItemToCurriculum({
+          itemType: 'material',
+          itemId: data.material.id,
+          moduleId: curriculumQuery.moduleId,
+          topicId: curriculumQuery.topicId,
+        })
+      }
       navigate(`/teacher/subjects/${encodeURIComponent(subjectId)}`)
     } catch (err) {
       const msg = String(err?.message || err)

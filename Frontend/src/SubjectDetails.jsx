@@ -5,6 +5,7 @@ import {
   resolveSubjectImageFromMap,
   subjectImageDisplaySrc,
 } from './lib/subjectImages.js'
+import { formatSemesterLabel, SEMESTER_LABELS } from './lib/quizQuestionTypes.js'
 import { apiUrl } from './lib/lmsStateStorage.js'
 
 function readFileAsDataUrl(file) {
@@ -72,7 +73,7 @@ export default function SubjectDetails({
     subjectCode: initial.subjectCode || '',
     subjectName: initial.subjectName || '',
     grade: initial.grade || '',
-    quarter: String(initial.quarter || '1'),
+    semester: String(initial.semester || '1'),
     semCode: initial.semCode || '',
     assignedFacultyId: initial.assignedFacultyId || '',
     syllabusFileName: initial.syllabusFileName || '',
@@ -102,7 +103,7 @@ export default function SubjectDetails({
       subjectCode: initial.subjectCode || '',
       subjectName: initial.subjectName || '',
       grade: initial.grade || '',
-      quarter: String(initial.quarter || '1'),
+      semester: String(initial.semester || '1'),
       semCode: initial.semCode || '',
       assignedFacultyId: initial.assignedFacultyId || '',
       syllabusFileName: initial.syllabusFileName || '',
@@ -122,10 +123,10 @@ export default function SubjectDetails({
 
   const computedSemCode = useMemo(() => {
     const gradeNum = String(form.grade || '').replace(/[^0-9]/g, '')
-    const q = String(form.quarter || '').trim()
+    const q = String(form.semester || '').trim()
     if (!gradeNum || !q) return ''
     return `${gradeNum.padStart(2, '0')}_${q}`
-  }, [form.grade, form.quarter])
+  }, [form.grade, form.semester])
 
   useEffect(() => {
     if (!form.semCode) {
@@ -157,7 +158,7 @@ export default function SubjectDetails({
     if (!String(form.subjectCode || '').trim()) return 'Subject Code is required.'
     if (!String(form.subjectName || '').trim()) return 'Subject Name is required.'
     if (!String(form.grade || '').trim()) return 'Subject Grade Level is required.'
-    if (!String(form.quarter || '').trim()) return 'Subject Quarter is required.'
+    if (!String(form.semester || '').trim()) return 'Subject Semester is required.'
     if (!String(form.assignedFacultyId || '').trim()) return 'Faculty ID is required.'
     return ''
   }
@@ -175,7 +176,7 @@ export default function SubjectDetails({
       subjectCode: String(form.subjectCode || '').trim(),
       subjectName: String(form.subjectName || '').trim(),
       grade: form.grade,
-      quarter: Number(form.quarter || 1),
+      semester: Number(form.semester || 1),
       semCode: String(form.semCode || computedSemCode || '').trim() || computedSemCode,
       assignedFacultyId: form.assignedFacultyId,
       assignedFacultyName: faculty?.name || '',
@@ -284,15 +285,15 @@ export default function SubjectDetails({
             </SelectField>
 
             <SelectField
-              label="Subject Quarter"
+              label="Subject Semester"
               required
-              value={form.quarter}
-              onChange={(e) => setForm((p) => ({ ...p, quarter: e.target.value, semCode: '' }))}
+              value={form.semester}
+              onChange={(e) => setForm((p) => ({ ...p, semester: e.target.value, semCode: '' }))}
               disabled={submitting}
             >
-              {[1, 2, 3, 4].map((q) => (
+              {[1, 2, 3].map((q) => (
                 <option key={q} value={String(q)}>
-                  {q}
+                  {SEMESTER_LABELS[q]}
                 </option>
               ))}
             </SelectField>

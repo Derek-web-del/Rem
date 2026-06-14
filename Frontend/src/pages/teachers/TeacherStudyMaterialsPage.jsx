@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { useLocation, useNavigate, useOutletContext } from 'react-router-dom'
 
-import StudyMaterialPdfViewer, { StudyMaterialPdfThumb } from '../../components/StudyMaterialPdfViewer.jsx'
+import PdfViewerModal from '../../components/PdfViewerModal.jsx'
+import { StudyMaterialPdfThumb } from '../../components/StudyMaterialPdfViewer.jsx'
 
 import {
 
@@ -17,6 +18,10 @@ import {
   formatSubjectTag,
 
 } from '../../lib/facultyStudyMaterials.js'
+import { isOnline } from '../../lib/offlineSync.js'
+import { useOfflineStatus } from '../../hooks/useOfflineStatus.js'
+import OfflineCacheIndicator from '../../components/OfflineCacheIndicator.jsx'
+import PdfOfflineBadge from '../../components/PdfOfflineBadge.jsx'
 
 import {
 
@@ -68,7 +73,7 @@ function PdfBadgeIcon({ className }) {
 
 
 
-function StudyMaterialCard({ material, onView, onEdit, onDelete }) {
+function StudyMaterialCard({ material, onView, onEdit, onDelete, offlineDisabled = false, badgeRefreshKey = 0 }) {
 
   const [hover, setHover] = useState(false)
 
@@ -150,6 +155,8 @@ function StudyMaterialCard({ material, onView, onEdit, onDelete }) {
 
           </span>
 
+          <PdfOfflineBadge fileUrl={material.file_url} refreshKey={badgeRefreshKey} />
+
         </div>
 
         <h3 className="text-sm font-bold uppercase tracking-wide text-neutral-900">{title}</h3>
@@ -164,7 +171,7 @@ function StudyMaterialCard({ material, onView, onEdit, onDelete }) {
 
       <div className="flex flex-wrap gap-2 border-t border-neutral-100 px-4 py-3">
 
-        <button type="button" className={cardActionClass} onClick={() => onEdit(material)}>
+        <button type="button" className={cardActionClass} disabled={offlineDisabled} title={offlineDisabled ? 'Not available offline' : undefined} onClick={() => onEdit(material)}>
 
           <i className="ti ti-pencil text-sm" aria-hidden="true" />
 
@@ -180,7 +187,7 @@ function StudyMaterialCard({ material, onView, onEdit, onDelete }) {
 
         </button>
 
-        <button type="button" className={cardActionClass} onClick={() => onDelete(material)}>
+        <button type="button" className={cardActionClass} disabled={offlineDisabled} title={offlineDisabled ? 'Not available offline' : undefined} onClick={() => onDelete(material)}>
 
           <i className="ti ti-trash text-sm" aria-hidden="true" />
 
@@ -218,6 +225,10 @@ export default function TeacherStudyMaterialsPage() {
 
   const [loading, setLoading] = useState(true)
 
+  const [fromCache, setFromCache] = useState(false)
+
+  const { isOffline } = useOfflineStatus()
+
   const [query, setQuery] = useState('')
 
   const [deleteTarget, setDeleteTarget] = useState(null)
@@ -225,6 +236,7 @@ export default function TeacherStudyMaterialsPage() {
   const [deleting, setDeleting] = useState(false)
 
   const [viewing, setViewing] = useState(null)
+  const [badgeRefreshKey, setBadgeRefreshKey] = useState(0)
 
 
 
@@ -242,9 +254,13 @@ export default function TeacherStudyMaterialsPage() {
 
     try {
 
+      const offline = !isOnline()
+
       const list = await fetchFacultyStudyMaterials()
 
       setMaterials(Array.isArray(list) ? list : [])
+
+      setFromCache(offline)
 
     } catch (e) {
 
@@ -378,7 +394,11 @@ export default function TeacherStudyMaterialsPage() {
 
             type="button"
 
-            className="rounded-lg px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:brightness-110"
+            disabled={isOffline}
+
+            title={isOffline ? 'Not available offline' : undefined}
+
+            className="rounded-lg px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
 
             style={{ backgroundColor: ACTION_BLUE }}
 
@@ -391,6 +411,8 @@ export default function TeacherStudyMaterialsPage() {
           </button>
 
         </div>
+
+        <OfflineCacheIndicator fromCache={fromCache} className="mb-2" />
 
 
 
@@ -450,6 +472,10 @@ export default function TeacherStudyMaterialsPage() {
 
                   onDelete={setDeleteTarget}
 
+                  offlineDisabled={isOffline}
+
+                  badgeRefreshKey={badgeRefreshKey}
+
                 />
 
               )
@@ -464,7 +490,17 @@ export default function TeacherStudyMaterialsPage() {
 
 
 
-      {viewing ? <StudyMaterialPdfViewer material={viewing} onClose={() => setViewing(null)} /> : null}
+      {viewing ? (
+        <PdfViewerModal
+          fileUrl={viewing.file_url}
+          fileName={viewing.file_name || viewing.title || 'document.pdf'}
+          onClose={() => {
+            setViewing(null)
+            setBadgeRefreshKey((k) => k + 1)
+          }}
+          onDownloadUnavailable={(msg) => toast.error(msg)}
+        />
+      ) : null}
 
 
 

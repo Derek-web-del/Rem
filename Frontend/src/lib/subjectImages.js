@@ -13,6 +13,7 @@ import {
   subjectImages,
 
 } from '../../../shared/subjectImages.js'
+import { uploadsPathToApiUrl } from './fileUrls.js'
 
 
 
@@ -90,7 +91,9 @@ export function subjectImageDisplaySrc(subjectOrName, { apiUrlFn } = {}) {
 
   }
 
-  if (path.startsWith('/uploads/')) return resolve(path)
+  if (path.startsWith('/uploads/') || path.startsWith('/api/files/')) {
+    return resolve(uploadsPathToApiUrl(path))
+  }
 
   return path
 

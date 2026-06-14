@@ -1,12 +1,16 @@
-import { lazy, Suspense, useCallback, useEffect, useRef } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { Navigate, useLocation, useNavigate } from 'react-router-dom'
-import { clearInstituteTermsAcceptance } from '../TermsAndConditions.jsx'
+import { clearTermsAcceptance, isTermsAccepted, setTermsAccepted } from '../lib/termsSession.js'
+import { fetchAdminTermsStatus } from '../lib/adminPortal.js'
 import { useIdleSession } from '../hooks/useIdleSession.js'
 import { authClient } from '../lib/auth-client.js'
 import { navIdFromPath } from '../lib/adminNavRoutes.js'
 import { INSTITUTE_ADMIN_EMAIL } from '../../../shared/constants.js'
+import { markAccessDenied } from '../lib/roleAccess.js'
 
 const InstituteDashboard = lazy(() => import('../modules/dashboard/InstituteDashboardModule.jsx'))
+const AdminLayout = lazy(() => import('../layouts/AdminLayout.jsx'))
+const AdminTermsPage = lazy(() => import('../pages/admin/AdminTermsPage.jsx'))
 
 const IDLE_MS = 30 * 60 * 1000
 const SESSION_LOST_DEBOUNCE_MS = 3500
@@ -26,14 +30,41 @@ export default function AdminDashboardRoute() {
   const session = sessionState.data?.session
   const sessionUser = sessionState.data?.user
   const hadActiveSessionRef = useRef(false)
+  const [adminTermsChecked, setAdminTermsChecked] = useState(false)
+  const [adminTermsAccepted, setAdminTermsAccepted] = useState(false)
 
   useEffect(() => {
     if (session) hadActiveSessionRef.current = true
   }, [session])
 
   useEffect(() => {
+    if (!session) {
+      setAdminTermsChecked(false)
+      setAdminTermsAccepted(false)
+      return undefined
+    }
+    let cancelled = false
+    void (async () => {
+      try {
+        const status = await fetchAdminTermsStatus()
+        if (cancelled) return
+        const ok = status.accepted === true
+        setAdminTermsAccepted(ok)
+        if (ok) setTermsAccepted()
+      } catch {
+        if (!cancelled) setAdminTermsAccepted(isTermsAccepted())
+      } finally {
+        if (!cancelled) setAdminTermsChecked(true)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [session])
+
+  useEffect(() => {
     const id = navIdFromPath(location.pathname)
-    if (!id) {
+    if (!id && location.pathname.replace(/\/+$/, '') !== '/admin/terms') {
       navigate('/admin/institute_dashboard', { replace: true })
     }
   }, [location.pathname, navigate])
@@ -74,7 +105,7 @@ export default function AdminDashboardRoute() {
   }, [session])
 
   const onIdleSignOut = useCallback(async () => {
-    clearInstituteTermsAcceptance()
+    clearTermsAcceptance()
     await authClient.signOut()
     navigate('/login', { replace: true })
   }, [navigate])
@@ -86,7 +117,7 @@ export default function AdminDashboardRoute() {
   })
 
   async function handleDashboardLogout() {
-    clearInstituteTermsAcceptance()
+    clearTermsAcceptance()
     await authClient.signOut()
     navigate('/login', { replace: true })
   }
@@ -100,7 +131,48 @@ export default function AdminDashboardRoute() {
   }
 
   if (!session || !isInstituteAdminUser(sessionUser)) {
+    if (session && sessionUser) {
+      const role = String(sessionUser?.role || '').trim().toLowerCase()
+      if (role === 'student') {
+        markAccessDenied()
+        return <Navigate to="/student/dashboard" replace />
+      }
+      if (role === 'teacher' || role === 'faculty') {
+        return <Navigate to="/teacher/dashboard" replace />
+      }
+    }
     return <Navigate to="/login" replace />
+  }
+
+  const pathname = location.pathname.replace(/\/+$/, '') || '/admin'
+  const onTermsPage = pathname === '/admin/terms'
+
+  if (onTermsPage) {
+    return (
+      <Suspense
+        fallback={
+          <div className="flex h-svh items-center justify-center bg-neutral-100 text-sm font-medium text-neutral-600">
+            Loading…
+          </div>
+        }
+      >
+        <AdminLayout onLogout={handleDashboardLogout}>
+          <AdminTermsPage onLogout={handleDashboardLogout} />
+        </AdminLayout>
+      </Suspense>
+    )
+  }
+
+  if (!adminTermsChecked) {
+    return (
+      <div className="flex h-svh items-center justify-center bg-neutral-100 text-sm font-medium text-neutral-600">
+        Checking terms acceptance…
+      </div>
+    )
+  }
+
+  if (!adminTermsAccepted && !isTermsAccepted()) {
+    return <Navigate to="/admin/terms" replace />
   }
 
   return (

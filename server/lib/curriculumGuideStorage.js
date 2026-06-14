@@ -2,9 +2,13 @@ import fs from 'node:fs'
 import path from 'node:path'
 import multer from 'multer'
 import { randomUUID } from 'node:crypto'
+import {
+  DEFAULT_UPLOAD_MAX_BYTES,
+  DEFAULT_UPLOAD_MAX_MSG,
+} from './uploadLimitsConfig.js'
 
 export const CURRICULUM_UPLOAD_REL = '/uploads/curriculum'
-export const CURRICULUM_PDF_MAX_BYTES = 25 * 1024 * 1024
+export const CURRICULUM_PDF_MAX_BYTES = DEFAULT_UPLOAD_MAX_BYTES
 
 function curriculumUploadAbsDir() {
   return path.join(process.cwd(), 'public', 'uploads', 'curriculum')
@@ -21,7 +25,6 @@ function safeBaseName(name) {
   return base.replace(/[^\w.\-()+ ]+/g, '_').slice(0, 180) || 'guide.pdf'
 }
 
-/** Persist PDF buffer; returns public URL path `/uploads/curriculum/...`. */
 export function saveCurriculumPdf(buffer, originalName) {
   ensureCurriculumUploadDir()
   const ext = path.extname(originalName || '').toLowerCase() || '.pdf'
@@ -44,6 +47,19 @@ export function deleteCurriculumFileByUrl(fileUrl) {
       /* ignore */
     }
   }
+}
+
+export function validateCurriculumPdfFile(file) {
+  if (!file?.buffer?.length) return 'PDF file is required.'
+  const mime = String(file.mimetype || '').toLowerCase()
+  const name = String(file.originalname || '').toLowerCase()
+  if (mime !== 'application/pdf' && !name.endsWith('.pdf')) {
+    return 'Only PDF files are allowed.'
+  }
+  if (file.size > CURRICULUM_PDF_MAX_BYTES) {
+    return DEFAULT_UPLOAD_MAX_MSG
+  }
+  return ''
 }
 
 const upload = multer({
@@ -71,7 +87,7 @@ export function curriculumPdfUploadMiddleware(req, res, next) {
     const status = err.code === 'LIMIT_FILE_SIZE' ? 400 : 400
     res.status(status).json({
       success: false,
-      error: err.code === 'LIMIT_FILE_SIZE' ? 'PDF must be less than 25MB.' : String(err.message || err),
+      error: err.code === 'LIMIT_FILE_SIZE' ? DEFAULT_UPLOAD_MAX_MSG : String(err.message || err),
     })
   })
 }

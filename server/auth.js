@@ -3,7 +3,11 @@ import { betterAuth } from 'better-auth'
 import { dash, sentinel } from '@better-auth/infra'
 import { admin, jwt, twoFactor, username } from 'better-auth/plugins'
 import { APIError, createAuthMiddleware, isAPIError } from 'better-auth/api'
-import { sendTwoFactorOtpEmail } from './mail.js'
+import { sendPasswordResetEmail, sendTwoFactorOtpEmail } from './mail.js'
+import {
+  resolvePortalDisplayNameByEmail,
+  syncAuthUserNameFromRoster,
+} from './lib/portalDisplayName.js'
 import { fetchAuthUserSnapshotForAudit, fetchAuthUsersByIds } from './api/logs.js'
 import {
   computeAuthProfileDetailedDiffs,
@@ -11,8 +15,19 @@ import {
   isSelfUserUpdatePath,
   resolveProfileUpdateRequest,
 } from './lib/profileAudit.js'
-import { ensureAuditLogsSchema } from './lib/auditLogsLedger.js'
+import { ensureAuditLogsSchema, insertAuditLogRecord } from './lib/auditLogsLedger.js'
 import { customActivityLogger } from './services/CustomActivityLogger.js'
+import { recordStudentLoginAudit } from './lib/studentLoginAudit.js'
+import {
+  LOCKOUT_REASON,
+  MAX_LOCKOUT_ATTEMPTS,
+  accountTypeFromRole,
+  buildLockoutAuditPayload,
+  resolveClientIp,
+  resolveLoginPortal,
+  resolveUserAgent,
+} from './lib/loginLockoutAudit.js'
+import { clearPortalTermsOnLogout } from './lib/portalTermsReset.js'
 import { hashPasswordBcrypt, verifyPasswordCompat } from './password.js'
 import { getPgPool, isPgConfigured } from './pgPool.js'
 import {
@@ -34,7 +49,7 @@ function assertStrongPassword(password, label = 'Password') {
 
 const MAX_FAILED = 5
 /** Account lockout duration after repeated failed sign-ins (tests override via AUTH_LOCK_MS). */
-const LOCK_MS = Number(process.env.AUTH_LOCK_MS || 15 * 60 * 1000)
+const LOCK_MS = Number(process.env.AUTH_LOCK_MS || 5 * 60 * 1000)
 
 const isProduction = process.env.NODE_ENV === 'production'
 const isDevelopment = process.env.NODE_ENV === 'development'
@@ -55,20 +70,35 @@ const infraSecurityEnabled =
 
 const envSecret = (process.env.BETTER_AUTH_SECRET || '').trim()
 const DEV_DEFAULT_SECRET = 'lenlearn-local-dev-only-min-32-char-secret!'
+const isTest = process.env.NODE_ENV === 'test'
 
-if (isProduction) {
-  if (!envSecret) {
-    throw new Error('[auth] BETTER_AUTH_SECRET is required in production.')
+function assertAuthSecretConfigured() {
+  if (envSecret.length < 32) {
+    const msg =
+      '[auth] BETTER_AUTH_SECRET must be set to a random string of at least 32 characters (see .env.example).'
+    if (isProduction) {
+      throw new Error(msg)
+    }
+    if (!isTest && !isDevelopment) {
+      throw new Error(msg)
+    }
   }
-  if (!infraApiKey) {
-    throw new Error('[auth] BETTER_AUTH_API_KEY is required in production for dash() audit logs.')
-  }
-  if (envSecret === DEV_DEFAULT_SECRET) {
-    throw new Error(
-      '[auth] BETTER_AUTH_SECRET is set to a known dev default. Refusing to start in production.',
-    )
+  if (isProduction) {
+    if (!envSecret) {
+      throw new Error('[auth] BETTER_AUTH_SECRET is required in production.')
+    }
+    if (!infraApiKey) {
+      throw new Error('[auth] BETTER_AUTH_API_KEY is required in production for dash() audit logs.')
+    }
+    if (envSecret === DEV_DEFAULT_SECRET) {
+      throw new Error(
+        '[auth] BETTER_AUTH_SECRET is set to a known dev default. Refusing to start in production.',
+      )
+    }
   }
 }
+
+assertAuthSecretConfigured()
 
 const authSecret = envSecret || DEV_DEFAULT_SECRET
 if (!envSecret && isDevelopment) {
@@ -293,15 +323,24 @@ export const authStartupInfo = {
 }
 
 /**
- * When unset/false: JWT plugin stores signing private keys unencrypted in `jwks`, avoiding
- * "Failed to decrypt private key" after `BETTER_AUTH_SECRET` changes (still run `npm run auth:clear-jwks`
- * once if old encrypted rows remain). Set `BETTER_AUTH_JWKS_ENCRYPT_KEYS=true` to enable encryption.
+ * JWT JWKS private keys in Postgres: encrypted at rest with BETTER_AUTH_SECRET (Better Auth default).
+ * Set BETTER_AUTH_JWKS_DISABLE_ENCRYPTION=true only for local migration from legacy plaintext rows;
+ * then run `npm run auth:clear-jwks` and remove the flag.
  */
 const jwtJwkDisablePrivateKeyEncryption =
-  String(process.env.BETTER_AUTH_JWKS_ENCRYPT_KEYS || '').toLowerCase() !== 'true'
+  String(process.env.BETTER_AUTH_JWKS_DISABLE_ENCRYPTION || '').toLowerCase() === 'true'
+
+/** Production always verifies OTP before enabling 2FA; test may skip; dev only when env is explicit. */
+function resolveTwoFactorSkipVerificationOnEnable() {
+  const nodeEnv = process.env.NODE_ENV || 'development'
+  if (nodeEnv === 'production') return false
+  if (nodeEnv === 'test') return true
+  return process.env.AUTH_TWO_FACTOR_SKIP_VERIFY_ON_ENABLE === 'true'
+}
 
 export const auth = betterAuth({
   baseURL,
+  /** Session cookies, symmetric token crypto, and plugin field encryption derive from this secret. */
   secret: authSecret,
   database: authPgPool,
   trustedOrigins,
@@ -335,6 +374,51 @@ export const auth = betterAuth({
     minPasswordLength: 8,
     maxPasswordLength: 128,
     disableSignUp: process.env.AUTH_DISABLE_SIGNUP !== 'false',
+    resetPasswordTokenExpiresIn: 30 * 60,
+    revokeSessionsOnPasswordReset: true,
+    sendResetPassword: async ({ user, url }, request) => {
+      const rosterName = await resolvePortalDisplayNameByEmail(user.email)
+      const greetingName = rosterName || user.name || user.email
+      if (rosterName) {
+        await syncAuthUserNameFromRoster(user.id, rosterName, user.name)
+      }
+      await sendPasswordResetEmail({
+        to: user.email,
+        name: greetingName,
+        resetUrl: url,
+      })
+      const headers = request?.headers
+      const source =
+        (typeof headers?.get === 'function' ? headers.get('x-lenlearn-reset-source') : headers?.['x-lenlearn-reset-source']) ||
+        'self'
+      const initiatedByAdminId =
+        (typeof headers?.get === 'function'
+          ? headers.get('x-lenlearn-reset-initiated-by')
+          : headers?.['x-lenlearn-reset-initiated-by']) || null
+      const ipAddress = resolveClientIp({ headers: request?.headers, request })
+      try {
+        await customActivityLogger.logPasswordResetRequested(user.id, {
+          email: String(user.email || '').trim().toLowerCase(),
+          source: String(source || 'self').trim() || 'self',
+          ipAddress,
+          initiatedByAdminId: initiatedByAdminId ? String(initiatedByAdminId) : undefined,
+        })
+      } catch {
+        /* ignore */
+      }
+    },
+    onPasswordReset: async ({ user }, request) => {
+      const ipAddress = resolveClientIp({ headers: request?.headers, request })
+      try {
+        await customActivityLogger.logPasswordResetCompleted(user.id, {
+          email: String(user.email || '').trim().toLowerCase(),
+          source: 'self',
+          ipAddress,
+        })
+      } catch {
+        /* ignore */
+      }
+    },
     password: {
       hash: async (password) => hashPasswordBcrypt(password),
       verify: async ({ hash, password }) => verifyPasswordCompat({ hash, password }),
@@ -393,6 +477,28 @@ export const auth = betterAuth({
         sanitizeSelfUpdateBody(ctx.body)
       }
 
+      if (pathNorm.endsWith('/sign-out')) {
+        try {
+          const sessionCookieToken = await ctx.getSignedCookie(
+            ctx.context.authCookies.sessionToken.name,
+            ctx.context.secret,
+          )
+          if (sessionCookieToken) {
+            const found = await ctx.context.internalAdapter.findSession(sessionCookieToken)
+            const user = found?.user ?? null
+            if (user?.id) {
+              ctx.context._logoutUser = user
+            } else if (found?.session?.userId) {
+              const row = await ctx.context.internalAdapter.findUserById(String(found.session.userId))
+              const resolved = row?.user ?? row
+              if (resolved?.id) ctx.context._logoutUser = resolved
+            }
+          }
+        } catch {
+          /* session lookup optional */
+        }
+      }
+
       if (isAnyUserUpdatePath(pathNorm) && ctx.body) {
         const sessionUserId = ctx.context.session?.user?.id
         const { targetId, patch } = resolveProfileUpdateRequest(pathNorm, ctx.body, sessionUserId)
@@ -438,10 +544,37 @@ export const auth = betterAuth({
       if (user?.lockedUntil) {
         const until = new Date(user.lockedUntil).getTime()
         if (until > Date.now()) {
-          throw APIError.from('FORBIDDEN', {
-            code: 'ACCOUNT_LOCKED',
-            message:
-              'Sign-in temporarily unavailable. Please try again later.',
+          const identifier =
+            p === '/sign-in/username'
+              ? String(body.username || '').trim()
+              : String(body.email || '').trim().toLowerCase()
+          const portal = resolveLoginPortal(ctx)
+          const lockPayload = buildLockoutAuditPayload({
+            user,
+            identifier,
+            attempts: Number(user.failedLoginAttempts || MAX_LOCKOUT_ATTEMPTS),
+            lockedUntil: new Date(until).toISOString(),
+            portal,
+            ipAddress: resolveClientIp(ctx),
+            userAgent: resolveUserAgent(ctx),
+            cooldownMs: LOCK_MS,
+            reason: 'Sign-in blocked: account is in lockout cooldown after 5 failed attempts',
+          })
+          try {
+            await customActivityLogger.logLockedAccountSignInAttempt(
+              user.id,
+              lockPayload,
+              {
+                userEmail: lockPayload.userEmail || undefined,
+                userRole: lockPayload.userRole || undefined,
+              },
+            )
+          } catch {
+            /* ignore */
+          }
+          throw APIError.from('UNAUTHORIZED', {
+            code: 'INVALID_EMAIL_OR_PASSWORD',
+            message: 'Invalid email or password',
           })
         }
       }
@@ -531,8 +664,27 @@ export const auth = betterAuth({
                 detailedDiffs: { password: { old: '[redacted]', new: '[changed]' } },
                 source: 'admin',
               })
+              await customActivityLogger.logPasswordChanged(actorId, {
+                targetUserId: targetId,
+                source: 'admin',
+              })
             } catch (err) {
               console.warn('[auth] password audit log failed:', err?.message || err)
+            }
+          }
+        }
+
+        if (pathNorm.includes('/change-password') && !isAPIError(returned)) {
+          const session = ctx.context.session
+          const actorId = session?.user?.id ? String(session.user.id) : ''
+          if (actorId) {
+            try {
+              await customActivityLogger.logPasswordChanged(actorId, {
+                targetUserId: actorId,
+                source: 'self',
+              })
+            } catch {
+              /* ignore */
             }
           }
         }
@@ -565,12 +717,15 @@ export const auth = betterAuth({
                 userRole: String(returned.user?.role || '').trim() || undefined,
               },
             )
-            await customActivityLogger.logSessionCreated(String(returned.user.id), {
+            await customActivityLogger.logUserSessionStarted(String(returned.user.id), {
               sessionId: String(returned.session?.id || returned.sessionId || ''),
+              userName: String(returned.user?.name || '').trim(),
               userEmail: String(returned.user?.email || '').trim().toLowerCase(),
               userRole: String(returned.user?.role || '').trim(),
               method: p === '/sign-in/username' ? 'username' : 'email',
+              userAgent: String(ctx.headers?.get?.('user-agent') || '').trim(),
             })
+            await recordStudentLoginAudit(returned.user, '')
           } catch {
             /* ignore log failures */
           }
@@ -578,8 +733,8 @@ export const auth = betterAuth({
       }
 
       if (pathNorm.endsWith('/sign-out') && !isAPIError(returned)) {
-        const session = ctx.context.session
-        const uid = session?.user?.id ? String(session.user.id) : ''
+        const logoutUser = ctx.context._logoutUser || ctx.context.session?.user
+        const uid = logoutUser?.id ? String(logoutUser.id) : ''
         if (uid) {
           const ip =
             ctx.headers?.get?.('x-forwarded-for')?.split?.(',')?.[0]?.trim() ||
@@ -587,12 +742,17 @@ export const auth = betterAuth({
             ''
           try {
             await customActivityLogger.logUserSignedOut(uid, {
-              userName: String(session.user?.name || '').trim(),
-              userEmail: String(session.user?.email || '').trim().toLowerCase(),
-              userRole: String(session.user?.role || '').trim(),
+              userName: String(logoutUser?.name || '').trim(),
+              userEmail: String(logoutUser?.email || '').trim().toLowerCase(),
+              userRole: String(logoutUser?.role || '').trim(),
               ipAddress: ip,
               userAgent: String(ctx.headers?.get?.('user-agent') || '').slice(0, 512),
             })
+          } catch {
+            /* ignore */
+          }
+          try {
+            await clearPortalTermsOnLogout(authPgPool, logoutUser)
           } catch {
             /* ignore */
           }
@@ -644,15 +804,15 @@ export const auth = betterAuth({
           p === '/sign-in/username'
             ? String(body.username || '').trim()
             : String(body.email || '').trim().toLowerCase()
-        const ip =
-          ctx.headers?.get?.('x-forwarded-for')?.split?.(',')?.[0]?.trim() ||
-          ctx.headers?.get?.('x-real-ip') ||
-          ''
+        const portal = resolveLoginPortal(ctx)
         try {
           await customActivityLogger.logLoginFailed({
             identifier,
-            ipAddress: ip,
-            userAgent: String(ctx.headers?.get?.('user-agent') || '').slice(0, 512),
+            ipAddress: resolveClientIp(ctx),
+            userAgent: resolveUserAgent(ctx),
+            portal,
+            suspiciousLoginDetected: true,
+            reason: 'Invalid credentials',
           })
         } catch {
           /* ignore */
@@ -679,26 +839,34 @@ export const auth = betterAuth({
             p === '/sign-in/username'
               ? String(body.username || '').trim()
               : String(body.email || '').trim().toLowerCase()
-          const userName = String(user.name || '').trim()
-          const userEmail = String(user.email || '').trim().toLowerCase()
+          const portal = resolveLoginPortal(ctx)
+          const lockPayload = buildLockoutAuditPayload({
+            user,
+            identifier,
+            attempts: next,
+            maxAttempts: MAX_FAILED,
+            lockedUntil: until.toISOString(),
+            portal,
+            ipAddress: resolveClientIp(ctx),
+            userAgent: resolveUserAgent(ctx),
+            cooldownMs: LOCK_MS,
+            reason: LOCKOUT_REASON,
+          })
           try {
             await customActivityLogger.logAuthLockout(
               user.id,
+              lockPayload,
               {
-                identifier,
-                userName,
-                userEmail,
-                attempts: next,
-                lockedUntil: until.toISOString(),
-                reason: `Locked after ${next} failed sign-in attempts`,
-                userRole: String(user.role || '').trim(),
-                username: String(user.username || '').trim(),
-              },
-              {
-                userEmail: userEmail || undefined,
-                userRole: String(user.role || '').trim() || undefined,
+                userEmail: lockPayload.userEmail || undefined,
+                userRole: lockPayload.userRole || undefined,
               },
             )
+            await insertAuditLogRecord('AUTH_LOCKOUT', {
+              ...lockPayload,
+              userId: String(user.id),
+              displayType: 'Account Lockout',
+              action: 'auth_lockout',
+            })
           } catch {}
         }
       }
@@ -708,16 +876,26 @@ export const auth = betterAuth({
         p === '/sign-in/username'
           ? String(body.username || '').trim()
           : String(body.email || '').trim().toLowerCase()
-      const ip =
-        ctx.headers?.get?.('x-forwarded-for')?.split?.(',')?.[0]?.trim() ||
-        ctx.headers?.get?.('x-real-ip') ||
-        ''
+      const portal = resolveLoginPortal(ctx)
+      const userRole = String(user.role || '').trim()
       try {
         await customActivityLogger.logLoginFailed({
           identifier,
-          ipAddress: ip,
-          userAgent: String(ctx.headers?.get?.('user-agent') || '').slice(0, 512),
-          reason: `Failed sign-in (${next}/${MAX_FAILED} attempts)`,
+          targetUserId: String(user.id),
+          username: String(user.username || '').trim(),
+          userName: String(user.name || '').trim(),
+          userEmail: String(user.email || '').trim().toLowerCase(),
+          userRole,
+          portal,
+          accountType: accountTypeFromRole(userRole),
+          attempts: next,
+          ipAddress: resolveClientIp(ctx),
+          userAgent: resolveUserAgent(ctx),
+          suspiciousLoginDetected: true,
+          reason:
+            next >= MAX_FAILED
+              ? LOCKOUT_REASON
+              : `Failed sign-in (${next}/${MAX_FAILED} attempts)`,
         })
       } catch {
         /* ignore */
@@ -729,6 +907,7 @@ export const auth = betterAuth({
     admin({ defaultRole: 'user' }),
     jwt({
       jwks: {
+        // false = encrypt private keys in `jwks` using BETTER_AUTH_SECRET (required in production).
         disablePrivateKeyEncryption: jwtJwkDisablePrivateKeyEncryption,
       },
       jwt: {
@@ -748,12 +927,14 @@ export const auth = betterAuth({
     twoFactor({
       // Better Auth's 2FA "enable" endpoint defaults to requiring a TOTP verification
       // step before `user.twoFactorEnabled` flips true. LenLearn uses email-OTP 2FA,
-      // so we enable immediately (especially important for integration tests).
-      skipVerificationOnEnable:
-        process.env.AUTH_TWO_FACTOR_SKIP_VERIFY_ON_ENABLE === 'true' ||
-        process.env.NODE_ENV === 'test',
+      // so we enable immediately in test/dev when configured (not in production).
+      skipVerificationOnEnable: resolveTwoFactorSkipVerificationOnEnable(),
+      backupCodeOptions: {
+        storeBackupCodes: 'encrypted',
+      },
       otpOptions: {
-        storeOTP: 'hashed',
+        // Encrypted at rest in `twoFactor` using BETTER_AUTH_SECRET (not reversible hashes).
+        storeOTP: 'encrypted',
         // Real SMTP via `server/mail.js` (Gmail `service: 'gmail'` or host/port). Not skipped in development when SMTP_USER + SMTP_PASS are set; optional console fallback only if AUTH_SMTP_DEV_FALLBACK=1 after a send error.
         sendOTP: async ({ user, otp }) => {
           try {

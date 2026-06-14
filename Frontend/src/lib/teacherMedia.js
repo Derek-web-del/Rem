@@ -1,12 +1,7 @@
-import { apiUrl } from './lmsStateStorage.js'
+import { uploadsPathToApiUrl } from './fileUrls.js'
 
 export function resolveTeacherFileUrl(fileUrl) {
-  const t = String(fileUrl || '').trim()
-  if (!t) return ''
-  if (t.startsWith('data:') || t.startsWith('http://') || t.startsWith('https://')) return t
-  if (t.startsWith('/api/')) return apiUrl(t)
-  if (t.startsWith('/uploads/')) return apiUrl(t)
-  return t
+  return uploadsPathToApiUrl(fileUrl)
 }
 
 export function formatCreatedTagYmd(raw) {

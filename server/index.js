@@ -5,25 +5,37 @@ import {
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import bytes from 'bytes'
 import cors from 'cors'
 import express from 'express'
 import rateLimit from 'express-rate-limit'
 import helmet from 'helmet'
 import { toNodeHandler } from 'better-auth/node'
-import { createStateApiRouter } from './api/state.js'
+import { createStateApiRouter } from './api/state/index.js'
 import { createTeacherApiRouter } from './api/teacher.js'
+import { createTeacherSubjectCurriculumRouter } from './api/teacherSubjectCurriculum.js'
 import { createStudyMaterialsV1Router } from './api/studyMaterialsV1.js'
 import { createQuizzesV1Router } from './api/quizzesV1.js'
+import { createPlagiarismReportsV1Router } from './api/plagiarismReportsV1.js'
+import { createStudentV1Router } from './api/studentV1.js'
+import { createTermsV1Router } from './api/termsV1.js'
+import { createGradesV1Router } from './api/gradesV1.js'
+import { createTeacherGradebookV1Router } from './api/teacherGradebookV1.js'
+import { createGradeOverrideV1Router } from './api/gradeOverrideV1.js'
 import { createAdminCurriculumGuidesRouter } from './api/adminCurriculumGuides.js'
+import { createFileDownloadRouter } from './api/fileDownload.js'
 import { createMonitoringRouter } from './routes/monitoring.js'
 import { createBackupRouter } from './routes/backup.js'
 import { startBackupScheduler, stopBackupScheduler } from './jobs/backupScheduler.js'
 import { ensureBackupSchema, isBackupDbConfigured } from './lib/backupSchema.js'
 import { getPgPool } from './pgPool.js'
+import { assertAesConfiguredForProduction } from './lib/aes256.js'
 import { verifySmtpTransporter } from './mail.js'
 import sanitizeInput from './middleware/sanitizeInput.js'
 import { sendSafeServerError } from './lib/safeApiError.js'
+import {
+  EXPRESS_BODY_LIMIT,
+  EXPRESS_BODY_LIMIT_BYTES,
+} from './lib/uploadLimitsConfig.js'
 
 console.log('Current working directory:', process.cwd())
 console.log('[env] .env candidates (checked in order):', LENLEARN_DOTENV_CANDIDATES.join(' | '))
@@ -46,6 +58,11 @@ function rateLimitJsonHandler(_req, res) {
     .json({ error: 'Too many attempts. Please wait before trying again.' })
 }
 
+function passwordResetRateLimitHandler(_req, res) {
+  const message = 'Too many password reset requests. Please wait before trying again.'
+  res.status(429).json({ error: message, message })
+}
+
 function makeLimiter({ windowMs, max }) {
   return rateLimit({
     windowMs,
@@ -57,9 +74,8 @@ function makeLimiter({ windowMs, max }) {
 }
 
 /** Faculty / announcement images as base64 exceed body-parser's default ~100kb cap without this. */
-const BODY_PARSER_LIMIT = String(process.env.EXPRESS_BODY_LIMIT || '10mb').trim() || '10mb'
-const BODY_PARSER_BYTES =
-  typeof bytes.parse(BODY_PARSER_LIMIT) === 'number' ? bytes.parse(BODY_PARSER_LIMIT) : 10 * 1024 * 1024
+const BODY_PARSER_LIMIT = EXPRESS_BODY_LIMIT
+const BODY_PARSER_BYTES = EXPRESS_BODY_LIMIT_BYTES
 
 function isRequestAbortedError(err) {
   if (!err) return false
@@ -76,7 +92,7 @@ function expressBodyParserErrorHandler(err, req, res, next) {
     if (!res.headersSent) {
       res.status(413).json({
         success: false,
-        error: 'Request body too large. Use a smaller image or raise EXPRESS_BODY_LIMIT.',
+        error: `Request body too large. Maximum is ${BODY_PARSER_LIMIT}. Use a smaller file or raise EXPRESS_BODY_LIMIT.`,
       })
     }
     return
@@ -132,6 +148,18 @@ export async function createApp() {
     }),
   )
 
+  // Fail closed before loading Better Auth if production would run without a real secret.
+  const nodeEnv = process.env.NODE_ENV || 'development'
+  if (nodeEnv === 'production') {
+    const secret = String(process.env.BETTER_AUTH_SECRET || '').trim()
+    if (!secret || secret.length < 32) {
+      throw new Error(
+        '[server] BETTER_AUTH_SECRET must be set (min 32 chars) before starting in production.',
+      )
+    }
+  }
+  assertAesConfiguredForProduction()
+
   // Load auth module instance keyed by DATABASE_URL (+ optional AUTH_MODULE_INSTANCE) so tests
   // can swap connection targets in the same Node process without a stale Better Auth handle.
   const authInstanceKey = encodeURIComponent(
@@ -144,7 +172,13 @@ export async function createApp() {
   const { auth, authStartupInfo, findAuthUserIdByEmail } = await import(
     `./auth.js?instance=${authInstanceKey}`,
   )
+  const { findAuthUserIdByUsername } = await import('./api/logs.js')
   app.locals.authStartupInfo = authStartupInfo
+
+  const isProduction = (process.env.NODE_ENV || 'development') === 'production'
+  if (isProduction && process.env.AUTH_TWO_FACTOR_SKIP_VERIFY_ON_ENABLE === 'true') {
+    console.warn('[auth] AUTH_TWO_FACTOR_SKIP_VERIFY_ON_ENABLE ignored in production')
+  }
 
 function parseCorsOrigins() {
   const out = new Set()
@@ -164,15 +198,15 @@ function parseCorsOrigins() {
   console.log(
     `[server] express.json / urlencoded body limit: ${BODY_PARSER_LIMIT} (${BODY_PARSER_BYTES} bytes)`,
   )
-  app.use(express.json({ limit: BODY_PARSER_BYTES }))
-  app.use(express.urlencoded({ limit: BODY_PARSER_BYTES, extended: true }))
-  app.use(expressBodyParserErrorHandler)
+  app.use(express.json({ limit: BODY_PARSER_LIMIT }))
   app.use(
-    '/uploads',
-    express.static(path.join(__dirname, '..', 'public', 'uploads'), {
-      maxAge: env === 'production' ? '7d' : 0,
+    express.urlencoded({
+      limit: BODY_PARSER_LIMIT,
+      extended: true,
+      parameterLimit: 100000,
     }),
   )
+  app.use(expressBodyParserErrorHandler)
   app.use(
     cors({
       origin: parseCorsOrigins(),
@@ -228,6 +262,16 @@ function parseCorsOrigins() {
       max: Number(process.env.RATE_LIMIT_MAX_VERIFY_OTP || 10),
     }),
   )
+  app.post(
+    '/api/auth/request-password-reset',
+    rateLimit({
+      windowMs: parseMs(process.env.RATE_LIMIT_WINDOW_MS_PASSWORD_RESET, 60 * 60 * 1000),
+      max: Number(process.env.RATE_LIMIT_MAX_PASSWORD_RESET || 3),
+      standardHeaders: true,
+      legacyHeaders: false,
+      handler: passwordResetRateLimitHandler,
+    }),
+  )
   app.get(
     '/api/auth/token',
     makeLimiter({
@@ -255,9 +299,13 @@ app.all('/api/auth/api/auth/*', (req, res) => {
   res.redirect(307, fixed)
 })
 
+  // Google Drive OAuth (must register before Better Auth catch-all)
+  const { createGoogleAuthRouter } = await import('./routes/googleAuth.js')
+  app.use('/api/auth', createGoogleAuthRouter(express, auth))
+
 app.all('/api/auth/*', toNodeHandler(auth))
 
-  /** Institute admin: reliable email → auth user id (same DB as Better Auth; avoids empty `list-users` on SQLite). */
+  /** Institute admin: reliable email → auth user id (same PostgreSQL DB as Better Auth). */
   app.post('/api/lms/admin/auth-user-id-by-email', async (req, res) => {
     try {
       const session = await auth.api.getSession({ headers: req.headers })
@@ -275,6 +323,27 @@ app.all('/api/auth/*', toNodeHandler(auth))
       res.json({ userId: userId || null })
     } catch (e) {
       sendSafeServerError(res, e, 'POST /api/lms/admin/auth-user-id-by-email')
+    }
+  })
+
+  /** Institute admin: login id / faculty code → Better Auth user id. */
+  app.post('/api/lms/admin/auth-user-id-by-username', async (req, res) => {
+    try {
+      const session = await auth.api.getSession({ headers: req.headers })
+      const role = String(session?.user?.role || '').trim().toLowerCase()
+      if (!session?.user?.id || role !== 'admin') {
+        res.status(403).json({ error: 'FORBIDDEN', message: 'Institute admin session required.' })
+        return
+      }
+      const username = String(req.body?.username || req.body?.loginId || '').trim().toLowerCase()
+      if (!username) {
+        res.status(400).json({ error: 'BAD_REQUEST', message: 'username is required.' })
+        return
+      }
+      const userId = await findAuthUserIdByUsername(username)
+      res.json({ userId: userId || null })
+    } catch (e) {
+      sendSafeServerError(res, e, 'POST /api/lms/admin/auth-user-id-by-username')
     }
   })
 
@@ -314,16 +383,30 @@ app.all('/api/auth/*', toNodeHandler(auth))
     }
   })
 
+  app.use('/api/files', createFileDownloadRouter(express, { auth }))
+
+  // Terms routes before state router — /v1/faculty/:id would otherwise capture terms-status
+  app.use('/api', createTermsV1Router(express, auth))
+  app.use('/api', createStudentV1Router(express, auth))
+
   const stateApi = await createStateApiRouter(express, { auth })
   app.use('/api', stateApi.router)
   app.use('/api', createTeacherApiRouter(express, auth))
+  app.use('/api', createTeacherSubjectCurriculumRouter(express, auth))
   app.use('/api', createStudyMaterialsV1Router(express, auth))
   app.use('/api', createQuizzesV1Router(express, auth))
+  app.use('/api', createPlagiarismReportsV1Router(express, auth))
+  app.use('/api/v1/grades', createGradesV1Router(express, auth))
+  app.use('/api', createTeacherGradebookV1Router(express, auth))
+  app.use('/api/v1/admin', createGradeOverrideV1Router(express, auth))
+  const { createAdminPasswordResetV1Router } = await import('./api/adminPasswordResetV1.js')
+  app.use('/api/v1/admin', createAdminPasswordResetV1Router(express, auth))
   app.use('/api', createAdminCurriculumGuidesRouter(express, auth))
 
-  // Audit logs (LMS rows + target user JOIN)
-  const { createLogsApiRouter } = await import('./api/logs.js')
+  // Audit logs (LMS rows + target user JOIN); bulk clear at /api/logs/audit/*
+  const { createLogsApiRouter, createAuditLogsClearRouter } = await import('./api/logs.js')
   app.use('/api', createLogsApiRouter(express, auth))
+  app.use('/api/logs', createAuditLogsClearRouter(express, auth))
 
   // Monitoring APIs (LMS + Better Auth dash audit logs)
   app.use('/api', createMonitoringRouter(express, auth))
@@ -331,6 +414,12 @@ app.all('/api/auth/*', toNodeHandler(auth))
   // Data backup & restore (admin only) — schema once at startup (avoids concurrent CREATE races)
   if (isBackupDbConfigured()) {
     await ensureBackupSchema(getPgPool())
+    try {
+      const { logGoogleRedirectUriOnce } = await import('./lib/googleDriveUpload.js')
+      logGoogleRedirectUriOnce()
+    } catch {
+      /* optional */
+    }
   }
   try {
     const { isPgConfigured } = await import('./pgPool.js')
@@ -339,6 +428,8 @@ app.all('/api/auth/*', toNodeHandler(auth))
       await ensureFacultyStudyMaterialsSchema(getPgPool())
       const { ensureQuizzesSchema } = await import('./lib/quizzesDb.js')
       await ensureQuizzesSchema(getPgPool())
+      const { ensurePlagiarismReportsSchema } = await import('./lib/plagiarismReportsDb.js')
+      await ensurePlagiarismReportsSchema(getPgPool())
     }
   } catch (e) {
     console.warn('[startup] study_materials schema bootstrap skipped:', e?.message || e)
@@ -356,24 +447,51 @@ app.all('/api/auth/*', toNodeHandler(auth))
     } catch {}
   }
 
-  // Root route so http://localhost:3001/ is not a 404.
-  app.get('/', (_req, res) => {
-    res.status(200).json({
-      ok: true,
-      service: 'lenlearn-auth-server',
-      endpoints: {
-        health: '/health',
-        auth: '/api/auth/*',
-        state: '/api/v1/state',
-        monitoring: '/api/monitoring/*',
-        backup: '/api/backup/*',
-      },
-    })
-  })
+  const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+  const distDir = path.join(projectRoot, 'dist')
+  const uploadsDir = path.join(projectRoot, 'public', 'uploads')
+  const spaIndexPath = path.join(distDir, 'index.html')
+  const serveProductionSpa = fs.existsSync(spaIndexPath)
+
+  if (fs.existsSync(uploadsDir)) {
+    app.use('/uploads', express.static(uploadsDir))
+  }
 
   app.get('/health', (_req, res) => {
     res.json({ ok: true })
   })
+
+  if (serveProductionSpa) {
+    app.use(
+      express.static(distDir, {
+        index: false,
+        maxAge: isProduction ? '1d' : 0,
+      }),
+    )
+    app.get('*', (req, res, next) => {
+      if (req.method !== 'GET' && req.method !== 'HEAD') return next()
+      const p = String(req.path || '')
+      if (p.startsWith('/api') || p === '/health' || p.startsWith('/uploads/')) return next()
+      res.sendFile(spaIndexPath)
+    })
+    console.log(`[server] Serving Vite production UI from ${distDir}`)
+  } else {
+    app.get('/', (_req, res) => {
+      res.status(200).json({
+        ok: true,
+        service: 'lenlearn-auth-server',
+        hint: 'Run npm run build to serve the SPA from this process in production.',
+        endpoints: {
+          health: '/health',
+          auth: '/api/auth/*',
+          state: '/api/v1/state',
+          monitoring: '/api/monitoring/*',
+          auditLogsClear: '/api/logs/audit/clear',
+          backup: '/api/backup/*',
+        },
+      })
+    })
+  }
 
   app.use((err, req, res, next) => {
     if (isRequestAbortedError(err)) {
@@ -393,7 +511,7 @@ app.all('/api/auth/*', toNodeHandler(auth))
       if (!res.headersSent) {
         res.status(413).json({
           success: false,
-          error: 'Request body too large. Use a smaller image or raise EXPRESS_BODY_LIMIT.',
+          error: `Request body too large. Maximum is ${BODY_PARSER_LIMIT}. Use a smaller file or raise EXPRESS_BODY_LIMIT.`,
         })
       }
       return
@@ -412,12 +530,43 @@ app.all('/api/auth/*', toNodeHandler(auth))
   return app
 }
 
+async function assertPortalMfaOnStartup() {
+  const nodeEnv = process.env.NODE_ENV || 'development'
+  if (nodeEnv !== 'production') return
+
+  const { getPgPool } = await import('./pgPool.js')
+  const pool = getPgPool()
+  if (!pool) return
+
+  try {
+    const { rows } = await pool.query(`
+      SELECT COUNT(*)::int AS missing
+      FROM "user"
+      WHERE LOWER(role) IN ('admin', 'teacher', 'student', 'faculty')
+        AND ("twoFactorEnabled" IS NOT TRUE OR "emailVerified" IS NOT TRUE)
+    `)
+    const missing = rows[0]?.missing ?? 0
+    if (missing <= 0) return
+
+    console.error(
+      `[auth] ${missing} portal account(s) lack MFA or email verification. Run: npm run ensure:portal-mfa`,
+    )
+    const requireAll = process.env.AUTH_REQUIRE_MFA_ALL !== 'false'
+    if (requireAll) {
+      process.exit(1)
+    }
+  } catch (err) {
+    console.warn('[auth] MFA startup check skipped:', err?.message || err)
+  }
+}
+
 export async function startServer() {
   const port = Number(process.env.PORT || process.env.AUTH_SERVER_PORT || 3001)
   console.log(
     `[auth] Server bind: port=${port} (env PORT=${process.env.PORT || ''} AUTH_SERVER_PORT=${process.env.AUTH_SERVER_PORT || ''}; default 3001 for Vite proxy)`,
   )
   const app = await createApp()
+  await assertPortalMfaOnStartup()
   const server = app.listen(port, () => {
     console.log(`Better Auth server listening on http://localhost:${port}`)
   })
@@ -451,6 +600,20 @@ export async function startServer() {
   console.log(`[auth] database=${databaseUrl}`)
   console.log(`[auth] crossOriginSessionCookies (SameSite=None; Secure)=${crossOriginCookies ? 'yes' : 'no'}`)
   console.log(`[auth] SMTP configured=${smtpConfigured ? 'yes' : 'no'}`)
+
+  console.log('[originality] Web search: DuckDuckGo HTML (no API key required)')
+
+  const { resolveAiProviderForStartup } = await import('./lib/plagiarismAiEngine.js')
+  const aiProviderLabel = resolveAiProviderForStartup()
+  console.log(`[originality] AI provider: ${aiProviderLabel}`)
+  const configuredAi = String(process.env.PLAGIARISM_AI_PROVIDER || '').trim().toLowerCase()
+  const openaiKey = String(process.env.OPENAI_API_KEY || '').trim()
+  if (configuredAi === 'openai' && !openaiKey) {
+    console.warn(
+      '[originality] PLAGIARISM_AI_PROVIDER=openai but OPENAI_API_KEY is missing — falling back to local embeddings',
+    )
+  }
+
   console.log(`[auth] trustedOrigins (${trustedOrigins.length}):`)
   for (const o of trustedOrigins) console.log(`  - ${o}`)
 

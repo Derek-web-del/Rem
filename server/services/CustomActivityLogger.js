@@ -2,6 +2,13 @@ import { getPgPool, isPgConfigured } from '../pgPool.js'
 import { fetchAuthUsersByIds, queryLmsAuditLogsWithTargets } from '../api/logs.js'
 import { hasRecentUserAccountChangedLog } from '../lib/auditLogsLedger.js'
 import {
+  ADMIN_PORTAL_MODULES,
+  STUDENT_PORTAL_MODULES,
+  TEACHER_PORTAL_MODULES,
+  dashboardModuleForRole,
+  resolveInstituteActivityModule,
+} from '../../shared/auditPortalModules.js'
+import {
   AUTH_PROFILE_UPDATE_DISPLAY_TYPE,
   PROFILE_UPDATE_DISPLAY_TYPE,
   USER_ACCOUNT_CHANGED_DISPLAY,
@@ -198,11 +205,189 @@ export class CustomActivityLogger {
   }
 
   async logAssignmentSubmit(userId, assignmentId, plagiarismScore, ctx = {}) {
+    const { details: ctxDetails, ...rest } = ctx
+    const assignmentTitle = String(ctxDetails?.assignmentTitle || ctx?.assignmentTitle || '').trim()
+    const targetLabel = assignmentTitle || (assignmentId ? `Assignment ${assignmentId}` : null)
     return this._log({
       userId,
       activityType: 'ASSIGNMENT_SUBMITTED',
       resourceId: String(assignmentId || ''),
-      details: { assignmentId, plagiarismScore },
+      details: {
+        assignmentId,
+        plagiarismScore,
+        assignmentTitle: assignmentTitle || null,
+        target_label: targetLabel,
+        module: STUDENT_PORTAL_MODULES.ASSIGNMENTS,
+        ...(ctxDetails || {}),
+      },
+      ...rest,
+    })
+  }
+
+  async logActivitySubmit(userId, activityId, ctx = {}) {
+    const { details: ctxDetails, ...rest } = ctx
+    const activityTitle = String(ctxDetails?.activityTitle || ctx?.activityTitle || '').trim()
+    const targetLabel = activityTitle || (activityId ? `Activity ${activityId}` : null)
+    return this._log({
+      userId,
+      activityType: 'ACTIVITY_SUBMITTED',
+      resourceId: String(activityId || ''),
+      details: {
+        activityId,
+        activityTitle: activityTitle || null,
+        target_label: targetLabel,
+        module: STUDENT_PORTAL_MODULES.ACTIVITIES,
+        ...(ctxDetails || {}),
+      },
+      ...rest,
+    })
+  }
+
+  async logQuizSubmitted(
+    userId,
+    { quizId, quizTitle, score, totalPoints, timeSpent } = {},
+    ctx = {},
+  ) {
+    const { details: ctxDetails, ...rest } = ctx
+    const title = String(quizTitle || ctxDetails?.quizTitle || '').trim()
+    const targetLabel = title || (quizId ? `Quiz ${quizId}` : null)
+    return this._log({
+      userId,
+      activityType: 'QUIZ_SUBMITTED',
+      resourceId: String(quizId || ''),
+      details: {
+        quizId,
+        quizTitle: title || null,
+        score,
+        totalPoints,
+        timeSpent,
+        target_label: targetLabel,
+        module: STUDENT_PORTAL_MODULES.QUIZZES,
+        description: `Student submitted quiz: ${title || quizId || 'quiz'}`,
+        ...(ctxDetails || {}),
+      },
+      ...rest,
+    })
+  }
+
+  /** @deprecated No longer logged — quiz views are not audited (too noisy). */
+  async logQuizViewed() {
+    return { ok: true, skipped: true }
+  }
+
+  async logQuizCreated(userId, { quizId, quizTitle } = {}, ctx = {}) {
+    return this._log({
+      userId,
+      activityType: 'QUIZ_CREATED',
+      resourceId: String(quizId || ''),
+      details: { quizId, quizTitle },
+      ...ctx,
+    })
+  }
+
+  /** @deprecated No longer logged — file downloads are not audited (too noisy). */
+  async logMaterialDownloaded() {
+    return { ok: true, skipped: true }
+  }
+
+  /** @deprecated No longer logged — student roster/detail views are not audited (too noisy). */
+  async logStudentDataViewed() {
+    return { ok: true, skipped: true }
+  }
+
+  async logPasswordChanged(userId, { targetUserId, source } = {}, ctx = {}) {
+    return this._log({
+      userId,
+      activityType: 'PASSWORD_CHANGED',
+      resourceId: String(targetUserId || userId || ''),
+      details: { targetUserId, source },
+      ...ctx,
+    })
+  }
+
+  async logPasswordResetRequested(
+    userId,
+    { email, source, ipAddress, initiatedByAdminId } = {},
+    ctx = {},
+  ) {
+    return this._log({
+      userId,
+      activityType: 'PASSWORD_RESET_REQUESTED',
+      resourceId: String(userId || ''),
+      details: {
+        type: 'password_reset_requested',
+        eventType: 'password_reset_requested',
+        activityType: 'PASSWORD_RESET_REQUESTED',
+        email: String(email || '').trim().toLowerCase(),
+        source: String(source || 'self').trim() || 'self',
+        ipAddress: ipAddress || undefined,
+        initiatedByAdminId: initiatedByAdminId || undefined,
+      },
+      ...ctx,
+    })
+  }
+
+  async logPasswordResetCompleted(userId, { email, source, ipAddress } = {}, ctx = {}) {
+    return this._log({
+      userId,
+      activityType: 'PASSWORD_RESET_COMPLETED',
+      resourceId: String(userId || ''),
+      details: {
+        type: 'password_reset_completed',
+        eventType: 'password_reset_completed',
+        activityType: 'PASSWORD_RESET_COMPLETED',
+        email: String(email || '').trim().toLowerCase(),
+        source: String(source || 'self').trim() || 'self',
+        ipAddress: ipAddress || undefined,
+      },
+      ...ctx,
+    })
+  }
+
+  async logTermsAccepted(userId, { portal, acceptedAt, userName, userEmail } = {}, ctx = {}) {
+    const name = String(userName || '').trim() || 'User'
+    const email = String(userEmail || ctx.userEmail || '').trim().toLowerCase()
+    const description = `${name} has accepted the Terms & Conditions`
+    const portalKey = String(portal || ctx.userRole || '').trim().toLowerCase()
+    const dashboardModule = dashboardModuleForRole(portalKey || ctx.userRole)
+    return this._log({
+      userId,
+      activityType: 'TERMS_ACCEPTED',
+      resourceId: String(portal || 'portal'),
+      details: {
+        type: 'terms_accepted',
+        eventType: 'terms_accepted',
+        activityType: 'TERMS_ACCEPTED',
+        portal,
+        acceptedAt,
+        userName: name,
+        userEmail: email,
+        displayType: 'Terms & Conditions Accepted',
+        description,
+        module: dashboardModule,
+      },
+      userEmail: email,
+      userRole: ctx.userRole,
+      ...ctx,
+    })
+  }
+
+  async logAssignmentGraded(userId, assignmentId, submissionId, ctx = {}) {
+    return this._log({
+      userId,
+      activityType: 'ASSIGNMENT_GRADED',
+      resourceId: String(submissionId || assignmentId || ''),
+      details: { assignmentId, submissionId },
+      ...ctx,
+    })
+  }
+
+  async logActivityGraded(userId, activityId, submissionId, ctx = {}) {
+    return this._log({
+      userId,
+      activityType: 'ACTIVITY_GRADED',
+      resourceId: String(submissionId || activityId || ''),
+      details: { activityId, submissionId },
       ...ctx,
     })
   }
@@ -248,6 +433,7 @@ export class CustomActivityLogger {
   ) {
     const type = String(activityType || 'INSTITUTE_RECORD').toUpperCase()
     const uid = String(actorUserId || 'system').trim() || 'system'
+    const module = resolveInstituteActivityModule(type) || ADMIN_PORTAL_MODULES.DASHBOARD
     return this._log({
       userId: uid,
       activityType: type,
@@ -262,6 +448,8 @@ export class CustomActivityLogger {
         actorName: actorName ? String(actorName) : 'Administrator',
         actorEmail: actorEmail ? String(actorEmail) : null,
         actorRole: actorRole ? String(actorRole) : 'admin',
+        module,
+        target_label: details?.record_name || details?.recordName || description || null,
         ...details,
       },
       userEmail: actorEmail ? String(actorEmail) : null,
@@ -274,26 +462,51 @@ export class CustomActivityLogger {
     ipAddress = '',
     userAgent = '',
     reason = 'Invalid credentials',
+    targetUserId = '',
+    username = '',
+    userName = '',
+    userEmail = '',
+    userRole = '',
+    portal = null,
+    accountType = '',
+    attempts = null,
+    suspiciousLoginDetected = false,
   } = {}) {
+    const loginId = String(identifier || username || '').trim()
+    const accountLabel = accountType ? String(accountType) : ''
+    const description = targetUserId
+      ? `Failed login attempt for ${accountLabel || 'account'} (${loginId || username || userEmail})`
+      : loginId
+        ? `Failed login attempt for unknown account (${loginId})`
+        : 'Failed login attempt'
+
     return this._log({
-      userId: 'system',
+      userId: targetUserId ? String(targetUserId) : 'system',
       activityType: 'LOGIN_FAILED',
-      resourceId: identifier ? String(identifier).slice(0, 512) : null,
+      resourceId: loginId ? loginId.slice(0, 512) : null,
       details: {
         type: 'login_failed',
         eventType: 'login_failed',
         displayType: 'Sign In Failed',
-        description: identifier
-          ? `Failed login attempt for ${identifier}`
-          : 'Failed login attempt',
-        identifier: String(identifier || ''),
+        description,
+        identifier: loginId,
+        loginId,
+        targetUserId: targetUserId ? String(targetUserId) : null,
+        username: username ? String(username) : null,
+        userName: userName ? String(userName) : null,
+        userEmail: userEmail ? String(userEmail) : null,
+        userRole: userRole ? String(userRole) : null,
+        accountType: accountLabel || null,
+        portal: portal ? String(portal) : null,
+        attempts: attempts != null ? Number(attempts) : null,
         ipAddress: String(ipAddress || ''),
         userAgent: String(userAgent || '').slice(0, 512),
         reason: String(reason || ''),
+        suspiciousLoginDetected: Boolean(suspiciousLoginDetected),
         actorName: 'System',
       },
-      userEmail: null,
-      userRole: 'system',
+      userEmail: userEmail ? String(userEmail) : null,
+      userRole: userRole ? String(userRole) : 'system',
     })
   }
 
@@ -301,6 +514,7 @@ export class CustomActivityLogger {
     userId,
     { userName = '', userEmail = '', userRole = '', ipAddress = '', userAgent = '' } = {},
   ) {
+    const dashboardModule = dashboardModuleForRole(userRole)
     return this._log({
       userId: String(userId || 'unknown'),
       activityType: 'USER_SIGNED_OUT',
@@ -312,6 +526,7 @@ export class CustomActivityLogger {
         userName: String(userName || ''),
         userEmail: String(userEmail || ''),
         userRole: userRole ? String(userRole) : null,
+        module: dashboardModule,
         ipAddress: String(ipAddress || ''),
         userAgent: String(userAgent || '').slice(0, 512),
       },
@@ -320,26 +535,61 @@ export class CustomActivityLogger {
     })
   }
 
-  async logSessionCreated(
+  async logUserSessionStarted(
     userId,
-    { sessionId = '', userEmail = '', userRole = '', method = '' } = {},
+    {
+      sessionId = '',
+      userName = '',
+      userEmail = '',
+      userRole = '',
+      method = '',
+      userAgent = '',
+      signedInAt = '',
+    } = {},
   ) {
+    const name = String(userName || '').trim()
+    const email = String(userEmail || '').trim().toLowerCase()
+    const role = String(userRole || '').trim().toLowerCase()
+    const loginMethod = String(method || '').trim() || 'credentials'
+    const roleLabel =
+      role === 'admin' ? 'Admin' : role === 'teacher' || role === 'faculty' ? 'Faculty' : role === 'student' ? 'Student' : role
+    const displayType = roleLabel ? `${roleLabel} Session Started` : 'Session Started'
+    const signedInIso = signedInAt ? String(signedInAt) : new Date().toISOString()
+    const ua = String(userAgent || '').trim().slice(0, 512) || 'unknown'
+    const description = name
+      ? `${name} signed in via ${loginMethod}`
+      : `User signed in via ${loginMethod}`
+
     return this._log({
       userId: String(userId || 'unknown'),
-      activityType: 'SESSION_CREATED',
+      activityType: 'USER_SESSION_STARTED',
       resourceId: sessionId ? String(sessionId) : null,
       details: {
         type: 'session_created',
         eventType: 'session_created',
-        displayType: 'Session Created',
-        sessionId: sessionId ? String(sessionId) : null,
-        userEmail: String(userEmail || ''),
+        displayType,
+        description,
+        name,
+        userName: name,
+        email,
+        userEmail: email,
+        role: userRole ? String(userRole) : null,
         userRole: userRole ? String(userRole) : null,
-        method: String(method || ''),
+        login_method: loginMethod,
+        method: loginMethod,
+        user_agent: ua,
+        signed_in_at: signedInIso,
+        sessionId: sessionId ? String(sessionId) : null,
+        module: dashboardModuleForRole(role || userRole),
       },
-      userEmail: userEmail ? String(userEmail) : null,
+      userEmail: email || null,
       userRole: userRole ? String(userRole) : null,
     })
+  }
+
+  /** @deprecated Prefer logUserSessionStarted — kept for backward compatibility. */
+  async logSessionCreated(userId, payload = {}) {
+    return this.logUserSessionStarted(userId, payload)
   }
 
   async logSessionRevoked(
@@ -441,6 +691,7 @@ export class CustomActivityLogger {
         auditLogId: auditLogId ? String(auditLogId) : null,
         actorName: actorName ? String(actorName) : null,
         actorEmail: actorEmail ? String(actorEmail) : null,
+        module: ADMIN_PORTAL_MODULES.AUDIT_LOGS,
       },
       userEmail: actorEmail ? String(actorEmail) : null,
       userRole: 'admin',
@@ -496,7 +747,15 @@ export class CustomActivityLogger {
           ? 'Data Restored'
           : type === 'BACKUP_DELETED'
             ? 'Backup Deleted'
-            : 'Backup')
+            : type === 'GOOGLE_DRIVE_CONNECTED'
+              ? 'Google Drive Connected'
+              : type === 'GOOGLE_DRIVE_DISCONNECTED'
+                ? 'Google Drive Disconnected'
+                : type === 'BACKUP_UPLOADED_TO_GDRIVE'
+                  ? 'Backup Uploaded to Drive'
+                  : type === 'BACKUP_SCHEDULE_UPDATED'
+                    ? 'Backup Schedule Updated'
+                    : 'Backup')
     return this._log({
       userId: uid,
       activityType: type,
@@ -511,6 +770,8 @@ export class CustomActivityLogger {
         actorName: actorName ? String(actorName) : 'System',
         actorEmail: actorEmail ? String(actorEmail) : null,
         actorRole: actorRole ? String(actorRole) : 'admin',
+        module: ADMIN_PORTAL_MODULES.DATA_BACKUP,
+        target_label: backupName ? String(backupName) : null,
         performed_by: {
           id: uid,
           name: actorName ? String(actorName) : 'Administrator',
@@ -527,29 +788,117 @@ export class CustomActivityLogger {
     userId,
     {
       identifier = '',
+      loginId = '',
       userName = '',
       userEmail = '',
       attempts = 0,
+      maxAttempts = 5,
       lockedUntil = null,
+      cooldownMs = null,
       reason = '',
       userRole = '',
       username = '',
+      targetUserId = '',
+      accountType = '',
+      portal = null,
+      portalLabel = '',
+      description = '',
+      ipAddress = '',
+      userAgent = '',
+      suspiciousLoginDetected = true,
     } = {},
     ctx = {},
   ) {
+    const resolvedLoginId = String(loginId || identifier || username || '').trim()
+    const resolvedTargetId = String(targetUserId || userId || '').trim()
+    const lockReason = reason || 'Account locked after repeated failed sign-in attempts'
+
     return this._log({
-      userId,
+      userId: resolvedTargetId || String(userId || 'system'),
       activityType: 'AUTH_LOCKOUT',
-      resourceId: identifier ? String(identifier) : null,
+      resourceId: resolvedLoginId || null,
       details: {
-        identifier,
-        userName,
-        userEmail,
-        attempts,
-        lockedUntil,
-        reason: reason || 'Account locked after repeated failed sign-in attempts',
-        userRole: userRole ? String(userRole) : null,
+        type: 'auth_lockout',
+        eventType: 'auth_lockout',
+        displayType: 'Account Lockout',
+        description:
+          description ||
+          (accountType
+            ? `Suspicious sign-in: ${attempts} failed password attempts for ${accountType} account`
+            : 'Account locked after repeated failed sign-in attempts'),
+        identifier: resolvedLoginId || null,
+        loginId: resolvedLoginId || null,
+        targetUserId: resolvedTargetId || null,
         username: username ? String(username) : null,
+        userName: userName ? String(userName) : null,
+        userEmail: userEmail ? String(userEmail) : null,
+        userRole: userRole ? String(userRole) : null,
+        accountType: accountType ? String(accountType) : null,
+        portal: portal ? String(portal) : null,
+        portalLabel: portalLabel ? String(portalLabel) : null,
+        attempts,
+        maxAttempts,
+        lockedUntil,
+        cooldownMs: cooldownMs != null ? Number(cooldownMs) : null,
+        reason: lockReason,
+        ipAddress: String(ipAddress || ''),
+        userAgent: String(userAgent || '').slice(0, 512),
+        suspiciousLoginDetected: Boolean(suspiciousLoginDetected),
+      },
+      userEmail: userEmail || ctx.userEmail || null,
+      userRole: userRole || ctx.userRole || null,
+    })
+  }
+
+  async logLockedAccountSignInAttempt(
+    userId,
+    {
+      identifier = '',
+      loginId = '',
+      userName = '',
+      userEmail = '',
+      username = '',
+      userRole = '',
+      accountType = '',
+      portal = null,
+      portalLabel = '',
+      lockedUntil = null,
+      reason = '',
+      ipAddress = '',
+      userAgent = '',
+    } = {},
+    ctx = {},
+  ) {
+    const resolvedLoginId = String(loginId || identifier || username || '').trim()
+    const lockReason = reason || 'Sign-in blocked: account is in lockout cooldown'
+
+    return this._log({
+      userId: String(userId || 'unknown'),
+      activityType: 'LOGIN_FAILED',
+      resourceId: resolvedLoginId || null,
+      details: {
+        type: 'login_failed',
+        eventType: 'login_failed',
+        displayType: 'Sign In Failed (Locked Account)',
+        description: resolvedLoginId
+          ? `Suspicious sign-in during lockout for ${accountType || 'account'} (${resolvedLoginId})`
+          : 'Suspicious sign-in during account lockout cooldown',
+        identifier: resolvedLoginId || null,
+        loginId: resolvedLoginId || null,
+        targetUserId: String(userId || ''),
+        username: username ? String(username) : null,
+        userName: userName ? String(userName) : null,
+        userEmail: userEmail ? String(userEmail) : null,
+        userRole: userRole ? String(userRole) : null,
+        accountType: accountType ? String(accountType) : null,
+        portal: portal ? String(portal) : null,
+        portalLabel: portalLabel ? String(portalLabel) : null,
+        lockedUntil: lockedUntil ? String(lockedUntil) : null,
+        ipAddress: String(ipAddress || ''),
+        userAgent: String(userAgent || '').slice(0, 512),
+        reason: lockReason,
+        suspiciousLoginDetected: true,
+        duringLockout: true,
       },
       userEmail: userEmail || ctx.userEmail || null,
       userRole: userRole || ctx.userRole || null,

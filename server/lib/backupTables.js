@@ -1,4 +1,37 @@
 /** Logical backup keys → PostgreSQL identifiers (whitelist only). */
+export const LNBAK_TABLE_KEYS = [
+  'user',
+  'account',
+  'curriculum',
+  'curriculum_guides',
+  'sections',
+  'faculties',
+  'faculty_sections',
+  'subjects',
+  'students',
+  'announcements',
+  'study_materials',
+  'subject_materials',
+  'assignments',
+  'activities',
+  'assignment_submissions',
+  'activity_submissions',
+  'quizzes',
+  'quiz_password_access',
+  'quiz_parts',
+  'quiz_questions',
+  'quiz_choices',
+  'quiz_answers',
+  'quiz_submissions',
+  'quiz_student_answers',
+  'plagiarism_reports',
+  'audit_logs',
+  'lms_activity_logs',
+]
+
+/** Included in .lnbak `data` but restored separately (not truncated with roster tables). */
+export const LNBAK_EXTRA_DATA_KEYS = ['app_state']
+
 export const BACKUP_TABLE_REGISTRY = {
   sections: {
     fromSql: 'public.sections',
@@ -62,25 +95,15 @@ export const BACKUP_TABLE_REGISTRY = {
   },
 }
 
-export const DEFAULT_BACKUP_TABLE_KEYS = [
-  'sections',
-  'curriculum',
-  'students',
-  'faculties',
-  'faculty_sections',
-  'subjects',
-  'announcements',
-  'audit_logs',
-  'lms_activity_logs',
-  'users',
-]
+export const DEFAULT_BACKUP_TABLE_KEYS = [...LNBAK_TABLE_KEYS]
 
 export function normalizeBackupTableKeys(tables) {
   const raw = Array.isArray(tables) ? tables : DEFAULT_BACKUP_TABLE_KEYS
+  const allowed = new Set([...LNBAK_TABLE_KEYS, ...Object.keys(BACKUP_TABLE_REGISTRY)])
   const out = []
   for (const key of raw) {
     const k = String(key || '').trim()
-    if (k && BACKUP_TABLE_REGISTRY[k] && !out.includes(k)) out.push(k)
+    if (k && allowed.has(k) && !out.includes(k)) out.push(k)
   }
   return out.length ? out : [...DEFAULT_BACKUP_TABLE_KEYS]
 }

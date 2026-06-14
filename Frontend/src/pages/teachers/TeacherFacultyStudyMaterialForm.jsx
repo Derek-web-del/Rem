@@ -34,9 +34,15 @@ import BackButton from '../../components/BackButton.jsx'
 
 import { ACTION_BLUE } from './instituteChrome.js'
 
+import {
+  STUDY_MATERIAL_MAX_BYTES,
+  STUDY_MATERIAL_MAX_MSG,
+  STUDY_MATERIAL_UPLOAD_LABEL,
+} from '../../lib/uploadLimits.js'
 
 
-const MAX_FILE_BYTES = 10 * 1024 * 1024
+
+const MAX_FILE_BYTES = STUDY_MATERIAL_MAX_BYTES
 
 const ACCEPT = '.pdf,application/pdf'
 
@@ -488,7 +494,7 @@ export default function TeacherFacultyStudyMaterialForm({ mode = 'add' }) {
 
           ? FACULTY_MSG.studyMaterial.updateFailed
 
-          : msg.includes('10MB') || msg.includes('exceed')
+          : msg.includes('File too large') || msg.includes('Maximum size') || msg.includes('exceed')
 
             ? FACULTY_MSG.studyMaterial.fileSize
 
@@ -646,7 +652,7 @@ export default function TeacherFacultyStudyMaterialForm({ mode = 'add' }) {
 
                   </p>
 
-                  <p className="mt-1 text-xs text-neutral-500">PDF only • Max 10MB</p>
+                  <p className="mt-1 text-xs text-neutral-500">{STUDY_MATERIAL_UPLOAD_LABEL}</p>
 
                   <p className="mt-2 text-xs font-medium text-neutral-600">
 

@@ -3,6 +3,14 @@ import { getPgPool } from '../pgPool.js'
 import { sendSafeServerError } from '../lib/safeApiError.js'
 import { requireSuperAdminSession } from '../lib/security.js'
 import { customActivityLogger } from '../services/CustomActivityLogger.js'
+import { requireAdminSession, auditInstituteRecord } from './state/shared.js'
+import {
+  AUDIT_LOGS_CLEARED_TYPE,
+  countAuditLogsForClear,
+  deleteAuditLogsForClear,
+  insertAuditLogRecord,
+  parseAuditClearParams,
+} from '../lib/auditLogsLedger.js'
 import {
   AUTH_PROFILE_UPDATE_DISPLAY_TYPE,
   PROFILE_UPDATE_DISPLAY_TYPE,
@@ -60,9 +68,13 @@ export function parseAuditLogQuery(query = {}) {
   const eventType = String(query.eventType ?? query.event ?? '').trim()
   const activityType = String(query.activityType ?? '').trim()
   const userId = String(query.userId ?? '').trim()
+  const module = String(query.module ?? '').trim()
+  const action = String(query.action ?? '').trim()
+  const performedByName = String(query.performedByName ?? query.teacherName ?? '').trim().slice(0, 200)
+  const targetLabel = String(query.targetLabel ?? '').trim().slice(0, 200)
   const limit = Math.max(1, Math.min(500, Number(query.limit || 50)))
   const offset = Math.max(0, Number(query.offset || 0))
-  return { dateFrom, dateTo, search, eventType, activityType, userId, limit, offset }
+  return { dateFrom, dateTo, search, eventType, activityType, userId, module, action, performedByName, targetLabel, limit, offset }
 }
 
 export function expandAuthEventTypes(eventType) {
@@ -354,6 +366,17 @@ export async function findAuthUserIdByEmail(email) {
   return rows?.[0]?.id ? String(rows[0].id) : null
 }
 
+export async function findAuthUserIdByUsername(username) {
+  const pool = getPgPool()
+  const u = String(username || '').trim().toLowerCase()
+  if (!pool || !u) return null
+  const { rows } = await pool.query(
+    `SELECT id FROM "user" WHERE LOWER(username) = LOWER($1) LIMIT 1`,
+    [u],
+  )
+  return rows?.[0]?.id ? String(rows[0].id) : null
+}
+
 export async function fetchAuthUsersByIds(ids) {
   const pool = getPgPool()
   const unique = [...new Set(ids.map((id) => String(id || '').trim()).filter(Boolean))]
@@ -426,6 +449,93 @@ export async function enrichAuthAuditEvents(events) {
       targetEmail: ed.targetEmail ?? raw.targetEmail ?? null,
     }
   })
+}
+
+function registerAuditClearRoutes(router, auth) {
+  /**
+   * GET /api/logs/audit/clear-preview
+   * Query: clearType, beforeDate, fromDate, toDate
+   */
+  router.get('/audit/clear-preview', async (req, res) => {
+    try {
+      if (!(await requireAdminSession(req, res, auth))) return
+      const params = parseAuditClearParams(req.query)
+      const preview = await countAuditLogsForClear(params)
+      res.json(preview)
+    } catch (e) {
+      const code = Number(e?.status) >= 400 && Number(e?.status) < 600 ? Number(e.status) : 500
+      if (code === 400) {
+        res.status(400).json({ error: 'BAD_REQUEST', message: String(e?.message || e) })
+        return
+      }
+      sendSafeServerError(res, e, 'GET /api/logs/audit/clear-preview')
+    }
+  })
+
+  /**
+   * DELETE /api/logs/audit/clear
+   * Body: { clearType, beforeDate?, fromDate?, toDate? }
+   */
+  router.delete('/audit/clear', async (req, res) => {
+    try {
+      const session = await requireAdminSession(req, res, auth)
+      if (!session) return
+
+      const params = parseAuditClearParams(req.body || {})
+      const result = await deleteAuditLogsForClear(params)
+      const { deleted, auditLogs, lmsActivityLogs } = result
+
+      const actor = session?.user || session?.data?.user || {}
+      await insertAuditLogRecord(AUDIT_LOGS_CLEARED_TYPE, {
+        message: `Admin cleared ${deleted} local audit log entries`,
+        deleted,
+        auditLogs,
+        lmsActivityLogs,
+        clearType: params.clearType,
+        beforeDate: req.body?.beforeDate ?? null,
+        fromDate: req.body?.fromDate ?? null,
+        toDate: req.body?.toDate ?? null,
+        actorUserId: String(actor.id || '').trim(),
+        actorName: String(actor.name || '').trim(),
+        actorEmail: String(actor.email || '').trim(),
+      })
+      await auditInstituteRecord(session, 'AUDIT_LOGS_CLEARED', {
+        recordType: 'audit_logs',
+        description: `Audit logs cleared (${deleted} entries)`,
+        details: {
+          deleted,
+          auditLogs,
+          lmsActivityLogs,
+          clearType: params.clearType,
+        },
+      })
+
+      res.json({
+        deleted,
+        auditLogs,
+        lmsActivityLogs,
+        message: `${deleted} entries deleted`,
+      })
+    } catch (e) {
+      const code = Number(e?.status) >= 400 && Number(e?.status) < 600 ? Number(e.status) : 500
+      if (code === 400) {
+        res.status(400).json({ error: 'BAD_REQUEST', message: String(e?.message || e) })
+        return
+      }
+      console.error('[DELETE /api/logs/audit/clear]', e?.message || e)
+      res.status(500).json({ message: 'Failed to clear logs' })
+    }
+  })
+}
+
+/** Admin audit-log bulk clear (mounted at /api/logs). */
+export function createAuditLogsClearRouter(express, auth) {
+  const router = express.Router()
+  registerAuditClearRoutes(router, auth)
+  router.use((_req, res) => {
+    res.status(404).json({ error: 'NOT_FOUND', message: 'Logs endpoint not found.' })
+  })
+  return router
 }
 
 export function createLogsApiRouter(express, auth) {

@@ -1,3 +1,7 @@
+// TODO: migrate to apiFetch from ./apiClient.js
+import { uploadsPathToApiUrl } from './fileUrls.js'
+import { getListSnapshot, saveListSnapshot } from './indexedDB.js'
+import { isOnline } from './offlineSync.js'
 import { apiUrl } from './lmsStateStorage.js'
 
 export const ANNOUNCEMENT_TYPES = ['Institute', 'Campus', 'Department', 'General']
@@ -23,9 +27,12 @@ export function resolveAnnouncementImageSrc(item) {
   if (!item) return ''
   const path = String(item.imagePath ?? item.image_path ?? '').trim()
   if (path && !path.startsWith('data:')) {
-    return path.startsWith('http') ? path : apiUrl(path.startsWith('/') ? path : `/${path}`)
+    return uploadsPathToApiUrl(path)
   }
   const dataUrl = String(item.imageDataUrl ?? item.announcement_image ?? item.imageSrc ?? '').trim()
+  if (dataUrl.startsWith('/uploads/') || dataUrl.startsWith('/api/files/')) {
+    return uploadsPathToApiUrl(dataUrl)
+  }
   return dataUrl
 }
 
@@ -89,13 +96,22 @@ export async function downloadAnnouncementImage(item, onStart) {
 }
 
 export async function fetchTeacherAnnouncements() {
-  const res = await fetch(apiUrl('/api/teacher/announcements'), { credentials: 'include' })
-  const data = await res.json().catch(() => ({}))
-  if (!res.ok) {
-    throw new Error(String(data?.message || data?.error || `Failed to load announcements (${res.status}).`))
+  try {
+    if (!isOnline()) throw new Error('offline')
+    const res = await fetch(apiUrl('/api/teacher/announcements'), { credentials: 'include' })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) {
+      throw new Error(String(data?.message || data?.error || `Failed to load announcements (${res.status}).`))
+    }
+    const list = Array.isArray(data.announcements) ? data.announcements : []
+    const rows = list.map(mapAnnouncementRow).filter(Boolean)
+    await saveListSnapshot('announcements', rows, 'faculty_list')
+    return rows
+  } catch (e) {
+    const cached = await getListSnapshot('announcements', 'faculty_list')
+    if (cached.length > 0) return cached
+    throw e
   }
-  const list = Array.isArray(data.announcements) ? data.announcements : []
-  return list.map(mapAnnouncementRow).filter(Boolean)
 }
 
 export async function fetchTeacherAnnouncement(id) {

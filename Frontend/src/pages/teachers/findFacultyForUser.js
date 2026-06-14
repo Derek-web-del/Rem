@@ -89,7 +89,7 @@ export function findLocalFacultyExclusiveMatch(faculties, sessionUser) {
 }
 
 /**
- * Overlay SQLite-backed user profile fields onto a faculty row (server snapshot or local browser cache)
+ * Overlay Better Auth user profile fields onto a faculty row (server snapshot or local browser cache)
  * when the roster row omits them.
  */
 export function mergeFacultyWithSessionUser(faculty, sessionUser) {

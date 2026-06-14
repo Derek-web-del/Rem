@@ -87,8 +87,8 @@ export function computeStudentProfileDetailedDiffs(oldRow, newData, flags = {}) 
   if (valuesDiffer(newData.gradeLevel, oldRow.grade_level)) {
     pushDiff(changedFields, 'Student Grade Level', oldRow.grade_level, newData.gradeLevel)
   }
-  if (valuesDiffer(newData.quarter, oldRow.quarter)) {
-    pushDiff(changedFields, 'Student Quarter', oldRow.quarter, newData.quarter)
+  if (valuesDiffer(newData.semester, oldRow.semester)) {
+    pushDiff(changedFields, 'Student Semester', oldRow.semester, newData.semester)
   }
 
   const oldSecId = normId(oldRow.section_id)

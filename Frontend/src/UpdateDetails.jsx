@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import BackButton from './components/BackButton.jsx'
+import { PROFILE_PHOTO_MAX_BYTES, PROFILE_PHOTO_MAX_MSG, PHOTO_UPLOAD_LABEL } from './lib/uploadLimits.js'
 
 const UPDATE_TYPES = ['Institute', 'Campus', 'Announcement', 'Event', 'News']
 
@@ -57,8 +58,8 @@ export default function UpdateDetails({
       setError('Only PNG or JPG images are allowed.')
       return
     }
-    if (file.size > 2 * 1024 * 1024) {
-      setError('Image must be less than 2MB.')
+    if (file.size > PROFILE_PHOTO_MAX_BYTES) {
+      setError(PROFILE_PHOTO_MAX_MSG)
       return
     }
     setError('')
@@ -148,7 +149,7 @@ export default function UpdateDetails({
           )}
           <div>
             <p className="font-semibold text-neutral-900">Announcement Image</p>
-            <p className="mt-1 text-sm text-neutral-500">Only allowed PNG or JPG less than 2MB</p>
+            <p className="mt-1 text-sm text-neutral-500">{PHOTO_UPLOAD_LABEL}</p>
           </div>
         </div>
         <div

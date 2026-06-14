@@ -8,7 +8,7 @@ This guide walks you through installing and running **LenLearn** (Glendale High 
 - A **backend API** (Node.js + Express) for sign-in, school data, and file uploads
 - A **PostgreSQL** database that stores users, institute data, curriculum, and more
 
-> **Note:** Older docs in `docs/migrations.md` and `docs/xampp-mysql-windows.md` describe **MySQL/SQLite**. The app today uses **PostgreSQL only** for both sign-in (Better Auth) and LMS data. You do **not** need to start XAMPP MySQL for LenLearn to work.
+> **Note:** LenLearn uses **PostgreSQL only** for both sign-in (Better Auth) and LMS data. You do **not** need XAMPP MySQL. See **[docs/migrations.md](docs/migrations.md)** for schema and migration commands.
 
 ---
 
@@ -150,20 +150,64 @@ These are the values most new members need filled in first:
 
 ### 4.5 Gmail SMTP (for sign-in codes)
 
-Institute admin and faculty accounts use **email OTP (two-factor)**. To receive codes in a real inbox:
+All portal roles (admin, faculty, student) use **email OTP** after username + password. SMTP must be configured in `.env` or sign-in will fail when sending a code.
 
-1. Use a Gmail account with **2-Step Verification** turned on.
-2. Create a Google **App Password** (16 characters): Google Account → Security → App passwords.
-3. In `.env`:
+For the recommended **two-account** setup (dedicated OTP sender + separate admin login), see **§4.5.1 GSuite / Gmail configuration** below.
+
+Quick generic example:
 
 ```env
-SMTP_USER=your.email@gmail.com
+SMTP_USER=your.sender@gmail.com
 SMTP_PASS=your16charapppassword
+SMTP_FROM="LenLearn LMS <your.sender@gmail.com>"
 ```
 
-Spaces in `SMTP_PASS` are ignored. This is **not** your normal Gmail password.
+Spaces in `SMTP_PASS` are ignored. Use a Google **App Password**, not your normal Gmail password.
 
-Without SMTP, sign-in may fail when the app tries to send a code (unless a developer enables a dev-only fallback).
+Verify delivery: `npm run smtp:test`
+
+### 4.5.1 GSuite / Gmail configuration
+
+LenLearn supports school **Google Workspace (GSuite) emails** on faculty and student accounts. Users receive OTP codes at their school inbox (e.g. `@glendaleschool.edu`). They still sign in with **Login ID + LenLearn password**, not “Sign in with Google” (see [docs/GSUITE_SSO_PLAN.md](docs/GSUITE_SSO_PLAN.md) for future SSO).
+
+#### Two Gmail accounts used
+
+| Account | Purpose |
+|---------|---------|
+| `noreply.lenlearnotp@gmail.com` | Sends OTP codes to **all** users (`SMTP_USER` in `.env`) |
+| `olympus.grp123@gmail.com` | Institute **admin login only** — not the SMTP sender |
+
+#### Step-by-step: OTP sender (`noreply.lenlearnotp@gmail.com`)
+
+1. Sign in to that Gmail account.
+2. Open [myaccount.google.com](https://myaccount.google.com) → **Security** → **2-Step Verification** (enable first).
+3. **Security** → **App passwords** → Create → name it `LenLearn LMS OTP`.
+4. Copy the 16-character password into `.env`:
+
+```env
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=noreply.lenlearnotp@gmail.com
+SMTP_PASS=paste16charapppassword
+SMTP_FROM="LenLearn LMS <noreply.lenlearnotp@gmail.com>"
+SEED_ADMIN_EMAIL=olympus.grp123@gmail.com
+SEED_ADMIN_USERNAME=admin
+```
+
+5. Test: `npm run smtp:test` (optional: set `SMTP_TEST_TO=olympus.grp123@gmail.com` to receive the test at the admin inbox).
+
+#### Faculty and student emails
+
+- Use any valid email on accounts, including school GSuite addresses (`teacher@glendaleschool.edu`).
+- **Per-user Gmail App Passwords are not required** — OTP is sent only from the system sender in `.env`.
+- Faculty sign in with **Faculty Code ID**; students with **Student Login ID** (not email at the login screen).
+
+#### What GSuite means in LenLearn today
+
+| Supported | Not yet implemented |
+|-----------|---------------------|
+| GSuite email on account; OTP delivered to that inbox | “Sign in with Google” / Workspace SSO |
+| Dedicated `noreply` sender for all verification codes | Auto-provisioning users from Google |
 
 ### 4.6 Full environment variable reference
 
@@ -174,7 +218,7 @@ Variables marked **(dev)** are mainly for local testing or advanced setups.
 | Variable | Default / example | Description |
 |----------|-------------------|-------------|
 | `BETTER_AUTH_SECRET` | *(you must set)* | Secret for Better Auth (min 32 chars). |
-| `BETTER_AUTH_JWKS_ENCRYPT_KEYS` | off | If `true`, JWT private keys are encrypted in DB; rotating secret without `npm run auth:clear-jwks` can break login. |
+| `BETTER_AUTH_JWKS_DISABLE_ENCRYPTION` | off | If `true`, stores JWT private keys in plaintext (legacy only). Default encrypts JWKS with `BETTER_AUTH_SECRET`. |
 | `BETTER_AUTH_RESET_JWKS` | off | If `1`/`true`, deletes JWT keys on startup (tests only; do not use in production casually). |
 | `BETTER_AUTH_URL` | `http://localhost:5173` | Public site origin the browser uses. |
 | `BETTER_AUTH_TRUSTED_ORIGINS` | — | Comma-separated extra allowed origins (e.g. ngrok URLs). |
@@ -221,6 +265,35 @@ Variables marked **(dev)** are mainly for local testing or advanced setups.
 | `PG_QUERY_TIMEOUT_MS` | `15000` | Query timeout. |
 | `TEST_DATABASE_URL` | — | (dev) Separate DB for `npm test`. |
 
+#### Google Drive backup (admin)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `GOOGLE_CLIENT_ID` | — | OAuth 2.0 client ID from Google Cloud Console. |
+| `GOOGLE_CLIENT_SECRET` | — | OAuth 2.0 client secret. |
+| `GOOGLE_REDIRECT_URI` | `{BETTER_AUTH_URL}/api/auth/google/callback` (e.g. `http://localhost:5173/api/auth/google/callback`) | Must match an **Authorized redirect URI** in Google Cloud **exactly**. If unset, LenLearn derives it from `BETTER_AUTH_URL`. Use the **Vite UI port (5173)**, not the auth API port (3001). |
+| `GOOGLE_DRIVE_FOLDER_NAME` | `LenLearn Backups` | Folder name created in the admin's Drive for `.lnbak` files. |
+| `GOOGLE_OAUTH_SUCCESS_REDIRECT` | `{BETTER_AUTH_URL}/admin/backup` | Browser redirect after OAuth consent. |
+
+1. In [Google Cloud Console](https://console.cloud.google.com/), enable the **Google Drive API**.
+2. Create an **OAuth 2.0 Client ID** (Web application).
+3. Under **Google Auth Platform → Data Access**, add OAuth scopes:
+   - `https://www.googleapis.com/auth/drive.file`
+   - `https://www.googleapis.com/auth/userinfo.email`
+4. Under **Google Auth Platform → Clients → Authorized redirect URIs**, add the URI shown on the admin **Data Backup** page (or run `node --env-file=.env scripts/verify-google-drive.mjs`). For local dev, typically:
+   - `http://localhost:5173/api/auth/google/callback`
+   - Optional: `http://127.0.0.1:5173/api/auth/google/callback`
+5. Paste `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` into `.env`.
+6. Add your Gmail under **Audience → Test users** while the app is in Testing mode.
+7. Restart `npm run dev`, open **`http://localhost:5173`** (same host as `BETTER_AUTH_URL`), sign in as admin.
+8. Open **Data Backup** → **Connect Google Drive** → Continue → Allow **all** requested permissions.
+9. New backups upload automatically to the admin's Drive folder (local copies are still saved).
+
+**Troubleshooting:**
+- `redirect_uri_mismatch` — URI in Google Cloud does not match LenLearn's effective redirect (see diagnostics on Data Backup page).
+- `invalid_state` — browser host/port differed between starting connect and callback; use `localhost:5173` consistently.
+- `insufficient authentication scopes` on upload — add **Data Access** scopes above, then **Disconnect** and **Connect Google Drive** again in LenLearn (old tokens do not gain new scopes automatically).
+
 #### Email (SMTP)
 
 | Variable | Default | Description |
@@ -230,6 +303,9 @@ Variables marked **(dev)** are mainly for local testing or advanced setups.
 | `SMTP_USER` | — | Sender account (e.g. Gmail address). |
 | `SMTP_PASS` | — | App password or SMTP password. |
 | `SMTP_FROM` | `SMTP_USER` | “From” address on outgoing mail. |
+| `SMTP_TEST_TO` | `SMTP_USER` | Recipient for `npm run smtp:test`. |
+| `VITE_OTP_SENDER_EMAIL` | `noreply.lenlearnotp@gmail.com` | Sender shown on login OTP screen. |
+| `SCHOOL_DOMAIN` | — | Reference only (e.g. `glendaleschool.edu`). |
 | `SMTP_USE_HOST_TRANSPORT` | off | Set `1` to use host/port instead of Gmail preset. |
 | `SMTP_DEBUG` | off | Set `1` to log SMTP traffic in the terminal. |
 | `SMTP_VERIFY_STRICT` | off | Set `1` to exit if SMTP verify fails on startup. |
@@ -344,6 +420,11 @@ psql -U postgres -d lenlearn_db -f Database\migrations\012_study_materials.sql
 | `010_teacher_profile_stats_faculty.sql` | Teacher profile stats on faculties |
 | `011_curriculum_guides_publish.sql` | Published curriculum guide columns |
 | `012_study_materials.sql` | Study materials (teacher uploads; API can also create this table) |
+| `036_student_pii_encryption.sql` | `students.dob` → TEXT for AES ciphertext |
+| `037_faculty_terms_accepted.sql` | `faculties.terms_accepted*` columns |
+| `038_user_terms_accepted.sql` | `user.terms_accepted*` columns (admin) |
+
+After applying 036–038, verify with `npm run verify:migrations`. For a full step-by-step run guide including PII encryption and PWA setup, see **[docs/HOW_TO_RUN.md](docs/HOW_TO_RUN.md)**.
 
 **npm helpers** (if present in your copy of the repo):
 
@@ -367,7 +448,13 @@ This creates or updates the **institute admin** user:
 - **Email:** `olympus.grp123@gmail.com` by default (see `shared/constants.js`)
 - **Password:** `Admin123@` by default (override with `SEED_ADMIN_PASSWORD` in `.env`)
 
-Sign-in uses **email OTP** if 2FA is enabled — configure SMTP (§4.5).
+Sign-in uses **email OTP** — configure SMTP (§4.5). All portal roles (admin, faculty, student) require MFA on sign-in.
+
+If OTP is skipped after a DB restore or live testing, run:
+
+```powershell
+npm run ensure:portal-mfa
+```
 
 ### 5.6 Optional — teacher / faculty test account
 
@@ -437,10 +524,33 @@ If port 5173 was busy, the terminal will say which port to use (e.g. `5174`).
 
 | Role | How to sign in | Notes |
 |------|----------------|-------|
-| **Institute admin** | Main login → institute flow | Username `admin` or seeded email; password from seed; OTP to email if 2FA on |
-| **Faculty / teacher** | Faculty tile on login page | Use **Faculty Code ID** (username), not email; account from `npm run ensure:teacher` |
+| **Institute admin** | Main login → institute flow | Username `admin` or seeded email; password from seed; **email OTP** then **terms** gate |
+| **Faculty / teacher** | Faculty tile on login page | Use **Faculty Code ID** (username), not email; **email OTP** then `/teacher/terms` |
+| **Student** | Student tile on login page | Login ID (username); **email OTP** then `/student/terms` |
+
+**Terms and Conditions:** Each role must accept terms before using the portal. Terms are **reset on logout** (server clears `terms_accepted`); the next sign-in shows the terms page again. `terms_accepted_at` is kept for audit.
+
+**MFA on account creation:** Admin-created faculty and student accounts always get `twoFactorEnabled=true` (enforced in `provisionPortalAuthUser`).
 
 Default seeded admin password (unless changed): **`Admin123@`**
+
+### Forgot password (all roles)
+
+Self-service reset is available from the login screen (**Forgot Password?**).
+
+1. Open `/login/forgot-password` and enter the **registered email** on the account (not the Login ID).
+2. Check inbox for **LenLearn LMS — Password Reset** (configure SMTP first — see §4.5.1; run `npm run smtp:test` to verify).
+3. Open the link within **30 minutes** (single-use). Set a strong new password on `/reset-password`.
+4. Sign in again with your **Login ID + new password + email OTP** (OTP is still required after reset).
+
+**Admin options:**
+
+| Action | Where | Effect |
+|--------|-------|--------|
+| **Send Reset Email** | Faculty/Student list or profile | Emails a self-service reset link (safer; user chooses password) |
+| **Set Password** | Faculty/Student edit form | Admin sets password immediately (audit: `PASSWORD_CHANGED`) |
+
+Reset requests are rate-limited (3 per hour per IP). Unknown emails still show a generic success message (no account enumeration).
 
 ---
 
@@ -537,7 +647,7 @@ Then restart `npm run dev`. Users may need to sign in again.
 | `.env` | Your local secrets (create from `.env.example`) |
 | `public/uploads/` | Uploaded PDFs and images |
 | `data/` | Created at runtime (local data; gitignored) |
-| `docs/` | Extra developer notes (some MySQL-era docs are legacy) |
+| `docs/` | Developer notes (migrations, faculty guides) |
 
 ---
 
@@ -555,7 +665,7 @@ When reporting a bug, include: OS version, `node -v`, whether PostgreSQL is runn
 
 | Control | Configuration |
 |--------|----------------|
-| Account lockout | 5 failed sign-ins → 15 min lock (`AUTH_LOCK_MS` overrides in tests) |
+| Account lockout | 5 failed sign-ins → 5 min lock (`AUTH_LOCK_MS` overrides in tests) |
 | Admin API | `/api/v1/students`, `/api/v1/faculty`, etc. require admin session |
 | Teacher API | `/api/teacher/*` requires `faculty` or `teacher` role; students scoped to advisory sections |
 | Rate limits | Auth routes: dedicated limits; other `/api/*`: 100 GET / 50 write per 15 min per IP |
@@ -564,3 +674,28 @@ When reporting a bug, include: OS version, `node -v`, whether PostgreSQL is runn
 | Record integrity | Run migration `Database/migrations/013_record_integrity.sql` (or restart server; columns auto-added) |
 
 Run `npm run test` after security changes; includes lockout, sanitize-input, and helmet header checks.
+
+---
+
+## 12. AI-Powered Plagiarism Checker (faculty)
+
+The faculty **AI-Powered Plagiarism Checker** (`/teacher/originality-checker`) analyzes pasted text or uploaded `.txt`, `.docx`, and `.pdf` files using **lexical TF-IDF + cosine similarity** and **semantic AI embeddings** (local transformer model by default) against web sources fetched at analysis time. See [`docs/AI_CHECKER_TECHNICAL_VERIFICATION.md`](docs/AI_CHECKER_TECHNICAL_VERIFICATION.md) for proof that the semantic layer is real AI, not just web search.
+
+| Setting | Purpose |
+|--------|---------|
+| `PLAGIARISM_AI_PROVIDER` | `local` (default), `openai`, or `off` — semantic embedding provider |
+| `OPENAI_API_KEY` | Required when `PLAGIARISM_AI_PROVIDER=openai` |
+| `OPENAI_EMBEDDING_MODEL` | Optional — default `text-embedding-3-small` |
+| `LOCAL_EMBEDDING_MODEL` | Optional — default `Xenova/all-MiniLM-L6-v2` (downloaded on first use) |
+
+Web source discovery uses **DuckDuckGo HTML search** only (no API key required). On startup the auth server logs the web search and AI provider modes.
+
+When AI is enabled, the final similarity score blends **40% lexical + 60% semantic**. Set `PLAGIARISM_AI_PROVIDER=off` for TF-IDF-only behavior (matches pre-upgrade analysis).
+
+Apply migrations `Database/migrations/032_plagiarism_reports_web_sources.sql` and `033_plagiarism_reports_ai_metadata.sql` (or restart the server — columns are also added via `ensurePlagiarismReportsSchema`).
+
+Uploaded files for parsing are stored temporarily under `public/uploads/originality/` and deleted after text extraction.
+
+**Note:** OpenAI mode sends text snippets to OpenAI for embedding. Local mode runs entirely on your server but requires sufficient RAM/CPU for the first model download.
+
+**API disclosure:** See [`docs/AI_CHECKER_API_DISCLOSURE.md`](docs/AI_CHECKER_API_DISCLOSURE.md) for every outbound integration, the free-only `.env` profile, and panel Q&A. See [`docs/AI_CHECKER_TECHNICAL_VERIFICATION.md`](docs/AI_CHECKER_TECHNICAL_VERIFICATION.md) for proof that semantic AI (transformer embeddings) is real machine learning, not just web search.

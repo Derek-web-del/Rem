@@ -17,11 +17,23 @@ import {
   fetchSubmissionsForActivity,
   mapActivityRow,
   mapActivitySubmissionRow,
+  refreshActivitySubmissionStudentNames,
   resolveSubjectIdForActivity,
   seedSubmissionsForActivityGradeLevel,
 } from '../lib/activitiesDb.js'
 import { isAllowedHighSchoolGradeLevel } from '../lib/gradeLevels.js'
-import { parseRequiredQuarter } from '../lib/quarterValidation.js'
+import { parseRequiredSemester } from '../lib/semesterValidation.js'
+import {
+  diffRecords,
+  logTeacherAuditEvent,
+  TEACHER_AUDIT_ACTIONS,
+  TEACHER_AUDIT_MODULES,
+} from '../lib/teacherAuditLog.js'
+import { activityAuditSnapshot, buildTargetLabel } from '../lib/teacherAuditSnapshots.js'
+import { customActivityLogger } from '../services/CustomActivityLogger.js'
+import { deleteSubmissionFileByUrl } from '../lib/submissionStorage.js'
+import { isDeadlinePassed } from '../lib/studentWorkPortal.js'
+import { validateGradeComponentForWork } from '../lib/subjectGradeCriteriaDb.js'
 
 export function mountTeacherActivitiesRoutes(router, {
   auth,
@@ -73,7 +85,7 @@ export function mountTeacherActivitiesRoutes(router, {
         name: 'a.title',
         subject: 'COALESCE(a.subject_name, sub.subject_name)',
         grade_level: 'COALESCE(a.grade_level, sub.grade_level)',
-        quarter: 'a.quarter',
+        semester: 'a.semester',
         upload_date: 'a.created_at',
         submission_date: 'a.submission_deadline',
         created_at: 'a.created_at',
@@ -89,7 +101,7 @@ export function mountTeacherActivitiesRoutes(router, {
           lower(a.title) LIKE $${qi}
           OR lower(COALESCE(a.subject_name, sub.subject_name, '')) LIKE $${qi}
           OR lower(COALESCE(a.grade_level, sub.grade_level, '')) LIKE $${qi}
-          OR lower(COALESCE(a.quarter::text, '')) LIKE $${qi}
+          OR lower(COALESCE(a.semester::text, '')) LIKE $${qi}
         )`
       }
 
@@ -112,6 +124,7 @@ export function mountTeacherActivitiesRoutes(router, {
         SELECT ${ACTIVITY_SELECT}
         FROM activities a
         LEFT JOIN subjects sub ON sub.id = a.subject_id
+        LEFT JOIN subject_grade_components sgc ON sgc.id = a.grade_component_id
         ${whereSql}
         ORDER BY ${orderBy} ${sortDir} NULLS LAST, a.id DESC
         LIMIT $${params.length + 1} OFFSET $${params.length + 2}
@@ -181,14 +194,18 @@ export function mountTeacherActivitiesRoutes(router, {
         return
       }
       await seedSubmissionsForActivityGradeLevel(pool, id, gradeLevel)
+      await refreshActivitySubmissionStudentNames(pool, id)
       const expiredCount = await expireUnsubmittedForActivity(pool, id)
       const totalScore = Number(activityRow.total_score) || 100
       const rows = await fetchSubmissionsForActivity(pool, id, gradeLevel)
+      const submissions = rows
+        .map((r) => mapActivitySubmissionRow(r, totalScore))
+        .sort((a, b) => String(a.student_name || '').localeCompare(String(b.student_name || '')))
       res.json({
         ok: true,
         expiredUpdated: expiredCount > 0,
         activity: mapActivityRow(activityRow),
-        submissions: rows.map((r) => mapActivitySubmissionRow(r, totalScore)),
+        submissions,
       })
     } catch (e) {
       sendSafeServerError(res, e, 'GET /api/teacher/activities/:id/submissions')
@@ -213,6 +230,11 @@ export function mountTeacherActivitiesRoutes(router, {
       const subjectName = String(b.subject_name ?? b.subjectName ?? '').trim()
       const gradeLevel = String(b.grade_level ?? b.gradeLevel ?? '').trim()
       const totalScore = Number(b.total_score ?? b.totalScore ?? 100)
+      const bodySubjectId = Number(b.subject_id)
+      const parsedGradeComponentId =
+        b.grade_component_id == null || String(b.grade_component_id).trim() === ''
+          ? null
+          : Number(b.grade_component_id)
       const deadline = parseActivityDeadline(b.submission_deadline ?? b.submissionDeadline)
       if (!title) {
         res.status(400).json({ error: 'BAD_REQUEST', message: 'Activity title is required.' })
@@ -226,9 +248,9 @@ export function mountTeacherActivitiesRoutes(router, {
         res.status(400).json({ error: 'BAD_REQUEST', message: 'Please select a Grade Level.' })
         return
       }
-      const quarter = parseRequiredQuarter(b.quarter)
-      if (!quarter) {
-        res.status(400).json({ error: 'BAD_REQUEST', message: 'Please select a Quarter.' })
+      const semester = parseRequiredSemester(b.semester)
+      if (!semester) {
+        res.status(400).json({ error: 'BAD_REQUEST', message: 'Please select a Semester.' })
         return
       }
       if (!deadline) {
@@ -240,7 +262,26 @@ export function mountTeacherActivitiesRoutes(router, {
         return
       }
       const linked = await resolveSubjectIdForActivity(pool, facultyRow.id, subjectName, gradeLevel)
-      const subjectId = linked?.subjectId ?? null
+      const subjectId =
+        Number.isFinite(bodySubjectId) && bodySubjectId > 0 ? bodySubjectId : linked?.subjectId ?? null
+      const gradeComponentId =
+        Number.isFinite(parsedGradeComponentId) && parsedGradeComponentId > 0
+          ? parsedGradeComponentId
+          : null
+      if (subjectId && !gradeComponentId) {
+        res.status(400).json({
+          error: 'BAD_REQUEST',
+          message: 'Grade component is required for subject-linked work.',
+        })
+        return
+      }
+      if (subjectId && gradeComponentId) {
+        const check = await validateGradeComponentForWork(pool, subjectId, gradeComponentId, 'activity')
+        if (!check.ok) {
+          res.status(400).json({ error: 'BAD_REQUEST', message: check.message })
+          return
+        }
+      }
       const file = getActivityUploadFile(req)
       const fileErr = validateActivityUploadFile(file, { required: true })
       if (fileErr) {
@@ -252,10 +293,10 @@ export function mountTeacherActivitiesRoutes(router, {
       const { rows } = await pool.query(
         `
         INSERT INTO activities (
-          faculty_id, title, description, subject_id, subject_name, grade_level, quarter,
-          file_path, file_name, file_size, total_score, submission_deadline,
+          faculty_id, title, description, subject_id, subject_name, grade_level, semester,
+          file_path, file_name, file_size, grade_component_id, total_score, submission_deadline,
           uploaded_by, updated_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW())
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW())
         RETURNING id
         `,
         [
@@ -265,10 +306,11 @@ export function mountTeacherActivitiesRoutes(router, {
           subjectId,
           subjectName,
           gradeLevel,
-          quarter,
+          semester,
           saved.file_path,
           saved.file_name,
           saved.file_size,
+          gradeComponentId,
           totalScore,
           deadline.toISOString(),
           uploadedBy,
@@ -281,7 +323,18 @@ export function mountTeacherActivitiesRoutes(router, {
       }
       await seedSubmissionsForActivityGradeLevel(pool, inserted.id, gradeLevel)
       const full = await fetchActivityById(pool, inserted.id, facultyRow.id)
-      res.status(201).json({ ok: true, activity: mapActivityRow(full || inserted) })
+      const mapped = mapActivityRow(full || inserted)
+      await logTeacherAuditEvent(req, {
+        event_type: 'activity_created',
+        module: TEACHER_AUDIT_MODULES.ACTIVITIES,
+        action: TEACHER_AUDIT_ACTIONS.CREATE,
+        user,
+        facultyRow,
+        target_id: mapped?.id,
+        target_label: buildTargetLabel(mapped?.title, mapped?.subject_name),
+        new_values: activityAuditSnapshot(mapped),
+      })
+      res.status(201).json({ ok: true, activity: mapped })
     } catch (e) {
       sendSafeServerError(res, e, 'POST /api/teacher/activities')
     }
@@ -309,12 +362,18 @@ export function mountTeacherActivitiesRoutes(router, {
         res.status(404).json({ error: 'NOT_FOUND', message: 'Activity not found.' })
         return
       }
+      const oldActivitySnap = activityAuditSnapshot(mapActivityRow(existing))
       const b = req.body || {}
       const title = String(b.title ?? '').trim()
       const description = String(b.description ?? '').trim()
       const subjectName = String(b.subject_name ?? b.subjectName ?? '').trim()
       const gradeLevel = String(b.grade_level ?? b.gradeLevel ?? '').trim()
       const totalScore = Number(b.total_score ?? b.totalScore ?? existing.total_score ?? 100)
+      const bodySubjectId = Number(b.subject_id)
+      const parsedGradeComponentId =
+        b.grade_component_id == null || String(b.grade_component_id).trim() === ''
+          ? null
+          : Number(b.grade_component_id)
       const deadline = parseActivityDeadline(b.submission_deadline ?? b.submissionDeadline)
       if (!title) {
         res.status(400).json({ error: 'BAD_REQUEST', message: 'Activity title is required.' })
@@ -328,9 +387,9 @@ export function mountTeacherActivitiesRoutes(router, {
         res.status(400).json({ error: 'BAD_REQUEST', message: 'Please select a Grade Level.' })
         return
       }
-      const quarter = parseRequiredQuarter(b.quarter)
-      if (!quarter) {
-        res.status(400).json({ error: 'BAD_REQUEST', message: 'Please select a Quarter.' })
+      const semester = parseRequiredSemester(b.semester)
+      if (!semester) {
+        res.status(400).json({ error: 'BAD_REQUEST', message: 'Please select a Semester.' })
         return
       }
       if (!deadline) {
@@ -342,7 +401,31 @@ export function mountTeacherActivitiesRoutes(router, {
         return
       }
       const linked = await resolveSubjectIdForActivity(pool, facultyRow.id, subjectName, gradeLevel)
-      const subjectId = linked?.subjectId ?? null
+      const subjectId =
+        Number.isFinite(bodySubjectId) && bodySubjectId > 0 ? bodySubjectId : linked?.subjectId ?? null
+      const gradeComponentId =
+        Number.isFinite(parsedGradeComponentId) && parsedGradeComponentId > 0
+          ? parsedGradeComponentId
+          : null
+      if (subjectId && !gradeComponentId) {
+        res.status(400).json({
+          error: 'BAD_REQUEST',
+          message: 'Grade component is required for subject-linked work.',
+        })
+        return
+      }
+      if (subjectId && gradeComponentId) {
+        const existingComponentId =
+          existing.grade_component_id != null ? Number(existing.grade_component_id) : null
+        const componentChanged = existingComponentId !== gradeComponentId
+        if (componentChanged) {
+          const check = await validateGradeComponentForWork(pool, subjectId, gradeComponentId, 'activity')
+          if (!check.ok) {
+            res.status(400).json({ error: 'BAD_REQUEST', message: check.message })
+            return
+          }
+        }
+      }
       const file = getActivityUploadFile(req)
       const fileErr = validateActivityUploadFile(file, { required: false })
       if (fileErr) {
@@ -362,10 +445,10 @@ export function mountTeacherActivitiesRoutes(router, {
       await pool.query(
         `
         UPDATE activities
-        SET title = $1, description = $2, subject_id = $3, subject_name = $4, grade_level = $5, quarter = $6,
-            file_path = $7, file_name = $8, file_size = $9,
-            total_score = $10, submission_deadline = $11, updated_at = NOW()
-        WHERE id = $12 AND faculty_id::text = $13::text
+        SET title = $1, description = $2, subject_id = $3, subject_name = $4, grade_level = $5, semester = $6,
+            file_path = $7, file_name = $8, file_size = $9, grade_component_id = $10,
+            total_score = $11, submission_deadline = $12, updated_at = NOW()
+        WHERE id = $13 AND faculty_id::text = $14::text
         `,
         [
           title,
@@ -373,10 +456,11 @@ export function mountTeacherActivitiesRoutes(router, {
           subjectId,
           subjectName,
           gradeLevel,
-          quarter,
+          semester,
           file_path,
           file_name,
           file_size,
+          gradeComponentId,
           totalScore,
           deadline.toISOString(),
           id,
@@ -385,7 +469,19 @@ export function mountTeacherActivitiesRoutes(router, {
       )
       await seedSubmissionsForActivityGradeLevel(pool, id, gradeLevel)
       const full = await fetchActivityById(pool, id, facultyRow.id)
-      res.json({ ok: true, activity: mapActivityRow(full) })
+      const mapped = mapActivityRow(full)
+      const diff = diffRecords(oldActivitySnap, activityAuditSnapshot(mapped))
+      await logTeacherAuditEvent(req, {
+        event_type: 'activity_updated',
+        module: TEACHER_AUDIT_MODULES.ACTIVITIES,
+        action: TEACHER_AUDIT_ACTIONS.EDIT,
+        user,
+        facultyRow,
+        target_id: id,
+        target_label: buildTargetLabel(mapped?.title, mapped?.subject_name),
+        ...diff,
+      })
+      res.json({ ok: true, activity: mapped })
     } catch (e) {
       sendSafeServerError(res, e, 'PUT /api/teacher/activities/:id')
     }
@@ -418,13 +514,30 @@ export function mountTeacherActivitiesRoutes(router, {
         [id],
       )
       for (const sf of subFiles || []) {
-        if (sf?.file_path) deleteActivityFileByUrl(sf.file_path)
+        if (sf?.file_path) {
+          if (String(sf.file_path).startsWith('/uploads/submissions/')) {
+            deleteSubmissionFileByUrl(sf.file_path)
+          } else {
+            deleteActivityFileByUrl(sf.file_path)
+          }
+        }
       }
       deleteActivityFileByUrl(existing.file_path)
+      const deletedSnap = activityAuditSnapshot(mapActivityRow(existing))
       await pool.query(`DELETE FROM activities WHERE id = $1 AND faculty_id::text = $2::text`, [
         id,
         String(facultyRow.id),
       ])
+      await logTeacherAuditEvent(req, {
+        event_type: 'activity_deleted',
+        module: TEACHER_AUDIT_MODULES.ACTIVITIES,
+        action: TEACHER_AUDIT_ACTIONS.DELETE,
+        user,
+        facultyRow,
+        target_id: id,
+        target_label: buildTargetLabel(existing.title, existing.subject_name),
+        old_values: deletedSnap,
+      })
       res.json({ ok: true })
     } catch (e) {
       sendSafeServerError(res, e, 'DELETE /api/teacher/activities/:id')
@@ -454,8 +567,16 @@ export function mountTeacherActivitiesRoutes(router, {
         res.status(404).json({ error: 'NOT_FOUND', message: 'Activity not found.' })
         return
       }
+      if (isDeadlinePassed(activityRow.submission_deadline)) {
+        res.status(403).json({
+          error: 'SCORE_LOCKED',
+          message: 'Deadline has passed. Score is locked. Contact admin to request a grade correction.',
+        })
+        return
+      }
       const totalScore = Number(activityRow.total_score) || 100
       const score = Number(req.body?.score ?? req.body?.value)
+      const feedback = String(req.body?.feedback ?? '').trim()
       if (!Number.isFinite(score) || score < 0 || score > totalScore) {
         res.status(400).json({
           error: 'BAD_REQUEST',
@@ -463,20 +584,55 @@ export function mountTeacherActivitiesRoutes(router, {
         })
         return
       }
+      const { rows: priorRows } = await pool.query(
+        `SELECT score, feedback, student_id FROM activity_submissions WHERE id = $1 AND activity_id = $2 LIMIT 1`,
+        [submissionId, activityId],
+      )
+      const prior = priorRows?.[0]
       const { rows } = await pool.query(
         `
         UPDATE activity_submissions s
-        SET score = $1, status = 'submitted', updated_at = NOW()
+        SET score = $1, feedback = $2, status = 'graded', updated_at = NOW()
         FROM activities a
-        WHERE s.id = $2 AND s.activity_id = $3 AND a.id = s.activity_id
-          AND a.faculty_id::text = $4::text
+        WHERE s.id = $3 AND s.activity_id = $4 AND a.id = s.activity_id
+          AND a.faculty_id::text = $5::text
         RETURNING s.*
         `,
-        [Math.round(score), submissionId, activityId, String(facultyRow.id)],
+        [Math.round(score), feedback || null, submissionId, activityId, String(facultyRow.id)],
       )
       if (!rows?.length) {
         res.status(404).json({ error: 'NOT_FOUND', message: 'Submission not found.' })
         return
+      }
+      try {
+        await customActivityLogger.logActivityGraded(String(user.id), activityId, submissionId, {
+          userEmail: String(user.email || '').trim(),
+          userRole: 'teacher',
+        })
+        await logTeacherAuditEvent(req, {
+          event_type: 'grade_score_saved',
+          module: TEACHER_AUDIT_MODULES.GRADES,
+          action: TEACHER_AUDIT_ACTIONS.GRADE,
+          user,
+          facultyRow,
+          target_id: submissionId,
+          target_label: buildTargetLabel(activityRow.title, `Student ${prior?.student_id ?? ''}`),
+          old_values: {
+            score: prior?.score ?? null,
+            feedback: prior?.feedback ?? null,
+            student_id: prior?.student_id ?? null,
+            activity_id: activityId,
+          },
+          new_values: {
+            score: Math.round(score),
+            feedback: feedback || null,
+            student_id: prior?.student_id ?? null,
+            activity_id: activityId,
+          },
+          changed_fields: ['score', ...(String(prior?.feedback || '') !== String(feedback || '') ? ['feedback'] : [])],
+        })
+      } catch {
+        /* non-fatal */
       }
       res.json({ ok: true, submission: mapActivitySubmissionRow(rows[0], totalScore) })
     } catch (e) {

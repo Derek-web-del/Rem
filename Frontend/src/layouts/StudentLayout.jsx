@@ -1,0 +1,52 @@
+import { Suspense, useCallback, useState } from 'react'
+import { Outlet, useNavigate, useOutletContext } from 'react-router-dom'
+import { authClient } from '../lib/auth-client.js'
+import { clearTermsAcceptance } from '../lib/termsSession.js'
+import { useIdleSession } from '../hooks/useIdleSession.js'
+import StudentSidebar from '../pages/students/StudentSidebar.jsx'
+import OfflineBanner from '../components/OfflineBanner.jsx'
+
+const IDLE_MS = 30 * 60 * 1000
+
+function StudentOutletFallback() {
+  return (
+    <div className="flex flex-1 items-center justify-center bg-neutral-100 text-sm font-medium text-neutral-600">
+      Loading…
+    </div>
+  )
+}
+
+export default function StudentLayout() {
+  const navigate = useNavigate()
+  const parentContext = useOutletContext() || {}
+  const [sidebarNavLocked, setSidebarNavLocked] = useState(false)
+
+  const logoutToPortal = useCallback(async () => {
+    clearTermsAcceptance()
+    await authClient.signOut()
+    navigate('/login/student', { replace: true })
+  }, [navigate])
+
+  useIdleSession({
+    enabled: true,
+    timeoutMs: IDLE_MS,
+    onIdle: logoutToPortal,
+  })
+
+  return (
+    <div
+      className="flex h-svh min-h-0 overflow-hidden font-[Inter,system-ui,sans-serif]"
+      style={{ fontFamily: 'Inter, system-ui, sans-serif' }}
+    >
+      <StudentSidebar onLogout={logoutToPortal} navLocked={sidebarNavLocked} />
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-neutral-100">
+        <OfflineBanner />
+        <Suspense fallback={<StudentOutletFallback />}>
+          <Outlet
+            context={{ ...parentContext, logoutToPortal, setSidebarNavLocked }}
+          />
+        </Suspense>
+      </div>
+    </div>
+  )
+}

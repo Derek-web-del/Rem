@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useOutletContext } from 'react-router-dom'
+import { isOnline } from '../../lib/offlineSync.js'
+import OfflineCacheIndicator from '../../components/OfflineCacheIndicator.jsx'
 import {
   downloadAnnouncementImage,
   fetchTeacherAnnouncements,
@@ -43,6 +45,7 @@ export default function TeacherAnnouncementsPage() {
   const [loading, setLoading] = useState(true)
   const [query, setQuery] = useState('')
   const [sortOldestFirst, setSortOldestFirst] = useState(true)
+  const [fromCache, setFromCache] = useState(false)
 
   useEffect(() => {
     setSidebarNavLocked?.(false)
@@ -54,7 +57,10 @@ export default function TeacherAnnouncementsPage() {
       setLoading(true)
       try {
         const list = await fetchTeacherAnnouncements()
-        if (!cancelled) setAnnouncements(list)
+        if (!cancelled) {
+          setAnnouncements(list)
+          setFromCache(!isOnline())
+        }
       } catch (e) {
         if (!cancelled) {
           setAnnouncements([])
@@ -101,6 +107,7 @@ export default function TeacherAnnouncementsPage() {
       <TeacherMainHeader pageTitle="Announcements" onLogout={logoutToPortal} />
       <main className="min-h-0 flex-1 space-y-6 overflow-y-auto overflow-x-hidden p-4 md:p-8">
         <TeacherBackButton to="/teacher/dashboard" />
+        <OfflineCacheIndicator fromCache={fromCache} className="mb-2" />
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <p className="text-xs font-semibold uppercase tracking-wider text-neutral-500">VIEW</p>

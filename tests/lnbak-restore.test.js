@@ -1,0 +1,482 @@
+import test, { describe } from 'node:test'
+import assert from 'node:assert/strict'
+import pg from 'pg'
+import '../server/env-bootstrap.js'
+import {
+  LNBAK_TABLE_ORDER,
+  computeBackupHmac,
+  validateLnbakParsed,
+  exportBackupData,
+  getLatestMigrationFilename,
+  buildFacultyIdSet,
+  buildSectionIdSet,
+  sanitizeFacultyFkRows,
+  sanitizeFacultySectionRows,
+  sanitizeChildFkRows,
+  prepareRestoreRowsForInsert,
+  buildNumericIdSetFromRows,
+  idInNumericSet,
+  collectRestorePreflightWarnings,
+  countSectionsRows,
+} from '../server/lib/lnbakEngine.js'
+import { BETTER_AUTH_SECRET_FOR_TESTS } from './load-test-env.js'
+import {
+  facultyPgRowToAppStateMirror,
+  mergeFacultyMirrorsIntoAppStateJson,
+  curriculumPgRowToAppStateMirror,
+  mergeCurriculumMirrorsIntoAppStateJson,
+  sectionPgRowToAppStateMirror,
+  mergeSectionMirrorsIntoAppStateJson,
+} from '../server/api/state/shared.js'
+import { exportAppStateSnapshot, countCurriculumRows } from '../server/lib/lnbakEngine.js'
+
+const PG_TEST_URL = process.env.TEST_DATABASE_URL || process.env.DATABASE_URL
+const dbDescribe = PG_TEST_URL ? describe : describe.skip
+
+function buildValidParsed(overrides = {}) {
+  const latest = getLatestMigrationFilename()
+  const data = {
+    user: [],
+    account: [],
+    curriculum: [],
+    sections: [],
+    faculties: [],
+    subjects: [],
+    ...(overrides.data || {}),
+  }
+  const meta = {
+    app: 'lenlearn',
+    version: '1',
+    schema_version: latest,
+    ...(overrides.meta || {}),
+  }
+  const hmac = computeBackupHmac(meta, data)
+  return { meta: { ...meta, hmac }, data }
+}
+
+describe('lnbak validateLnbakParsed schema policy', () => {
+  test('allows backup from older migration than server', () => {
+    process.env.BETTER_AUTH_SECRET = BETTER_AUTH_SECRET_FOR_TESTS
+    const parsed = buildValidParsed({ meta: { schema_version: '001_sections_catalog_postgres.sql' } })
+    assert.doesNotThrow(() => validateLnbakParsed(parsed))
+  })
+
+  test('rejects backup from newer migration than server', () => {
+    process.env.BETTER_AUTH_SECRET = BETTER_AUTH_SECRET_FOR_TESTS
+    const parsed = buildValidParsed({ meta: { schema_version: 'zzz_future_migration.sql' } })
+    assert.throws(
+      () => validateLnbakParsed(parsed),
+      /newer LenLearn/,
+    )
+  })
+})
+
+describe('lnbak FK sanitization on restore', () => {
+  test('sanitizeFacultyFkRows clears orphan faculty_id when allowNull', () => {
+    const facultyIds = new Set(['f1'])
+    const { rows, nulled, skipped } = sanitizeFacultyFkRows(
+      [
+        { id: 1, faculty_id: 'f1', subject_code: 'A' },
+        { id: 2, faculty_id: 'missing', subject_code: 'B' },
+      ],
+      facultyIds,
+      { allowNull: true },
+    )
+    assert.equal(nulled, 1)
+    assert.equal(skipped, 0)
+    assert.equal(rows.length, 2)
+    assert.equal(rows[0].faculty_id, 'f1')
+    assert.equal(rows[1].faculty_id, null)
+  })
+
+  test('sanitizeFacultyFkRows skips rows when faculty_id required', () => {
+    const facultyIds = new Set(['f1'])
+    const { rows, skipped } = sanitizeFacultyFkRows(
+      [
+        { id: 1, faculty_id: 'f1', title: 'Ok' },
+        { id: 2, faculty_id: 'ghost', title: 'Bad' },
+      ],
+      facultyIds,
+      { allowNull: false },
+    )
+    assert.equal(skipped, 1)
+    assert.equal(rows.length, 1)
+    assert.equal(rows[0].faculty_id, 'f1')
+  })
+
+  test('sanitizeFacultySectionRows drops invalid faculty_id or section_id', () => {
+    const facultyIds = new Set(['f1'])
+    const sectionIds = new Set(['10'])
+    const { rows, skipped } = sanitizeFacultySectionRows(
+      [
+        { faculty_id: 'f1', section_id: 10 },
+        { faculty_id: 'f1', section_id: 99 },
+        { faculty_id: 'ghost', section_id: 10 },
+      ],
+      facultyIds,
+      sectionIds,
+    )
+    assert.equal(skipped, 2)
+    assert.equal(rows.length, 1)
+    assert.deepEqual(rows[0], { faculty_id: 'f1', section_id: 10 })
+  })
+
+  test('sanitizeChildFkRows skips orphan assignment_id', () => {
+    const assignmentIds = buildNumericIdSetFromRows([{ id: 10 }])
+    const { rows, skipped } = sanitizeChildFkRows(
+      [
+        { id: 1, assignment_id: 10, student_id: 5 },
+        { id: 2, assignment_id: 99, student_id: 5 },
+      ],
+      assignmentIds,
+      { parentColumn: 'assignment_id', optionalColumn: 'student_id', optionalIds: new Set(['5']) },
+    )
+    assert.equal(skipped, 1)
+    assert.equal(rows.length, 1)
+    assert.equal(rows[0].assignment_id, 10)
+    assert.ok(idInNumericSet(assignmentIds, 10))
+  })
+
+  test('prepareRestoreRowsForInsert skips assignment_submissions when assignment was dropped', () => {
+    const parsed = {
+      data: {
+        faculties: [{ id: 'f1', name: 'A', email: 'a@test.com' }],
+        assignments: [
+          { id: 1, faculty_id: 'f1', title: 'Ok' },
+          { id: 2, faculty_id: 'missing', title: 'Bad' },
+        ],
+        students: [{ id: 5 }],
+        assignment_submissions: [
+          { id: 100, assignment_id: 1, student_id: 5 },
+          { id: 101, assignment_id: 2, student_id: 5 },
+        ],
+      },
+    }
+    const out = prepareRestoreRowsForInsert(parsed, 'assignment_submissions', parsed.data.assignment_submissions)
+    assert.equal(out.length, 1)
+    assert.equal(out[0].assignment_id, 1)
+  })
+
+  test('prepareRestoreRowsForInsert clears subjects orphan faculty_id', () => {
+    const parsed = {
+      data: {
+        faculties: [{ id: 'f1' }],
+        sections: [{ id: 10 }],
+        subjects: [{ id: 1, faculty_id: 'orphan', subject_code: 'M1' }],
+      },
+    }
+    const out = prepareRestoreRowsForInsert(parsed, 'subjects', parsed.data.subjects)
+    assert.equal(out.length, 1)
+    assert.equal(out[0].faculty_id, null)
+    assert.ok(buildFacultyIdSet(parsed).has('f1'))
+    assert.ok(buildSectionIdSet(parsed).has('10'))
+  })
+})
+
+describe('lnbak app_state curriculum mirror', () => {
+  test('curriculumPgRowToAppStateMirror maps PostgreSQL row', () => {
+    const mirror = curriculumPgRowToAppStateMirror(
+      {
+        id: 5,
+        source_id: 'cur-uuid-1',
+        title: 'Math',
+        description: 'Algebra guide',
+        grade_level: '10',
+        file_name: 'math.pdf',
+      },
+      {
+        file_type: 'application/pdf',
+        file_data_url: 'data:application/pdf;base64,abc',
+        uploaded_at: '2026-01-01',
+        uploaded_by: 'Admin',
+      },
+    )
+    assert.equal(mirror.id, 'cur-uuid-1')
+    assert.equal(mirror.grade, '10')
+    assert.equal(mirror.subject, 'Math')
+    assert.equal(mirror.fileDataUrl, 'data:application/pdf;base64,abc')
+  })
+
+  test('mergeCurriculumMirrorsIntoAppStateJson upserts by id', () => {
+    const merged = mergeCurriculumMirrorsIntoAppStateJson(
+      { curriculums: [{ id: 'a', subject: 'Old' }] },
+      [{ id: 'a', subject: 'New', grade: '11' }, { id: 'b', subject: 'Science', grade: '9' }],
+    )
+    assert.equal(merged.curriculums.length, 2)
+    assert.equal(merged.curriculums.find((c) => c.id === 'a').subject, 'New')
+    assert.equal(merged.curriculums.find((c) => c.id === 'b').grade, '9')
+  })
+})
+
+describe('lnbak app_state faculty mirror', () => {
+  test('facultyPgRowToAppStateMirror maps PostgreSQL row', () => {
+    const mirror = facultyPgRowToAppStateMirror({
+      id: 'fac-1',
+      auth_user_id: 'auth-9',
+      name: 'Jane Doe',
+      first_name: 'Jane',
+      last_name: 'Doe',
+      email: 'jane@test.com',
+      faculty_code: 'JD01',
+      advisory_sections_json: JSON.stringify([{ id: 3, name: 'A', grade_level: '10' }]),
+    })
+    assert.equal(mirror.id, 'fac-1')
+    assert.equal(mirror.authUserId, 'auth-9')
+    assert.equal(mirror.email, 'jane@test.com')
+    assert.equal(mirror.facultyCode, 'JD01')
+    assert.equal(mirror.advisorySections.length, 1)
+  })
+
+  test('mergeFacultyMirrorsIntoAppStateJson upserts by id', () => {
+    const merged = mergeFacultyMirrorsIntoAppStateJson(
+      { faculties: [{ id: 'a', name: 'Old' }] },
+      [
+        { id: 'a', name: 'New', email: 'a@test.com' },
+        { id: 'b', name: 'Beta', email: 'b@test.com' },
+      ],
+    )
+    assert.equal(merged.faculties.length, 2)
+    assert.equal(merged.faculties.find((f) => f.id === 'a').name, 'New')
+    assert.equal(merged.faculties.find((f) => f.id === 'b').email, 'b@test.com')
+  })
+})
+
+describe('lnbak app_state section mirror', () => {
+  test('sectionPgRowToAppStateMirror maps PostgreSQL row', () => {
+    const mirror = sectionPgRowToAppStateMirror({
+      id: 12,
+      section_name: 'Rose',
+      grade_level: '10',
+    })
+    assert.equal(mirror.id, '12')
+    assert.equal(mirror.postgresSectionId, 12)
+    assert.equal(mirror.name, 'Rose')
+    assert.equal(mirror.grade, '10')
+  })
+
+  test('mergeSectionMirrorsIntoAppStateJson merges by postgres id', () => {
+    const merged = mergeSectionMirrorsIntoAppStateJson(
+      { sections: [{ id: '5', name: 'Old', grade: '9' }] },
+      [{ id: '5', postgresSectionId: 5, name: 'Updated', grade: '10' }],
+    )
+    assert.equal(merged.sections.length, 1)
+    assert.equal(merged.sections[0].name, 'Updated')
+    assert.equal(merged.sections[0].grade, '10')
+  })
+})
+
+describe('lnbak institute restore warnings', () => {
+  test('collectRestorePreflightWarnings flags empty faculties with subject refs', () => {
+    const warnings = collectRestorePreflightWarnings({
+      data: {
+        faculties: [],
+        subjects: [{ faculty_id: 'f1', subject_code: 'X' }],
+        user: [],
+      },
+    })
+    assert.ok(warnings.some((w) => w.includes('no faculty roster')))
+  })
+
+  test('collectRestorePreflightWarnings flags faculties without teacher users', () => {
+    const warnings = collectRestorePreflightWarnings({
+      data: {
+        faculties: [{ id: 'f1', email: 't@test.com' }],
+        user: [{ id: 'u1', role: 'admin', email: 'a@test.com' }],
+      },
+    })
+    assert.ok(warnings.some((w) => w.includes('no teacher auth')))
+  })
+
+  test('collectRestorePreflightWarnings flags empty curriculum in backup', () => {
+    const warnings = collectRestorePreflightWarnings({
+      data: {
+        faculties: [],
+        curriculum: [],
+        app_state: [{ id: 'default', json: { curriculums: [] } }],
+        user: [],
+      },
+    })
+    assert.ok(warnings.some((w) => w.includes('no curriculum')))
+  })
+
+  test('collectRestorePreflightWarnings flags empty student roster', () => {
+    const warnings = collectRestorePreflightWarnings({
+      data: { students: [], faculties: [{ id: 'f1' }], user: [] },
+    })
+    assert.ok(warnings.some((w) => w.includes('no student roster')))
+  })
+
+  test('collectRestorePreflightWarnings flags empty sections and app_state sections', () => {
+    const warnings = collectRestorePreflightWarnings({
+      data: {
+        sections: [],
+        app_state: [{ id: 'default', json: { sections: [] } }],
+        user: [],
+      },
+    })
+    assert.ok(warnings.some((w) => w.includes('no section rows')))
+  })
+
+  test('collectRestorePreflightWarnings flags empty subjects', () => {
+    const warnings = collectRestorePreflightWarnings({
+      data: { subjects: [], students: [{ id: 1 }], user: [] },
+    })
+    assert.ok(warnings.some((w) => w.includes('no subject rows')))
+  })
+})
+
+describe('lnbak table order', () => {
+  test('quiz definitions come before quiz_submissions', () => {
+    const qi = LNBAK_TABLE_ORDER.indexOf('quizzes')
+    const qsi = LNBAK_TABLE_ORDER.indexOf('quiz_submissions')
+    assert.ok(qi >= 0 && qsi >= 0)
+    assert.ok(qi < qsi)
+  })
+
+  test('user comes before account', () => {
+    assert.ok(LNBAK_TABLE_ORDER.indexOf('user') < LNBAK_TABLE_ORDER.indexOf('account'))
+  })
+
+  test('curriculum_guides comes after curriculum', () => {
+    assert.ok(LNBAK_TABLE_ORDER.indexOf('curriculum_guides') > LNBAK_TABLE_ORDER.indexOf('curriculum'))
+  })
+
+  test('quiz_password_access comes after quizzes', () => {
+    assert.ok(LNBAK_TABLE_ORDER.indexOf('quiz_password_access') > LNBAK_TABLE_ORDER.indexOf('quizzes'))
+  })
+
+  test('lms_activity_logs comes after audit_logs', () => {
+    assert.ok(LNBAK_TABLE_ORDER.indexOf('lms_activity_logs') > LNBAK_TABLE_ORDER.indexOf('audit_logs'))
+  })
+})
+
+dbDescribe('lnbak export (PostgreSQL)', () => {
+  test('exportBackupData includes auth user columns when users exist', async () => {
+    process.env.BETTER_AUTH_SECRET = BETTER_AUTH_SECRET_FOR_TESTS
+    const pool = new pg.Pool({ connectionString: PG_TEST_URL })
+    try {
+      const { rows: countRows } = await pool.query('SELECT COUNT(*)::int AS c FROM "user"')
+      if (Number(countRows[0]?.c || 0) === 0) return
+
+      const { data } = await exportBackupData(pool)
+      assert.ok(Array.isArray(data.user) && data.user.length > 0)
+      const first = data.user[0]
+      assert.ok('email' in first)
+      assert.ok('createdAt' in first || 'username' in first)
+      assert.ok(!('created_at' in first && !('createdAt' in first)))
+    } finally {
+      await pool.end()
+    }
+  })
+
+  test('exportBackupData includes quizzes table key', async () => {
+    process.env.BETTER_AUTH_SECRET = BETTER_AUTH_SECRET_FOR_TESTS
+    const pool = new pg.Pool({ connectionString: PG_TEST_URL })
+    try {
+      const { data } = await exportBackupData(pool)
+      assert.ok(Object.prototype.hasOwnProperty.call(data, 'quizzes'))
+      assert.ok(Object.prototype.hasOwnProperty.call(data, 'account'))
+    } finally {
+      await pool.end()
+    }
+  })
+
+  test('exportBackupData includes app_state snapshot key', async () => {
+    process.env.BETTER_AUTH_SECRET = BETTER_AUTH_SECRET_FOR_TESTS
+    const pool = new pg.Pool({ connectionString: PG_TEST_URL })
+    try {
+      const { data } = await exportBackupData(pool)
+      assert.ok(Object.prototype.hasOwnProperty.call(data, 'app_state'))
+      assert.ok(Array.isArray(data.app_state))
+    } finally {
+      await pool.end()
+    }
+  })
+
+  test('exportBackupData app_state includes every active PostgreSQL faculty', async () => {
+    process.env.BETTER_AUTH_SECRET = BETTER_AUTH_SECRET_FOR_TESTS
+    const pool = new pg.Pool({ connectionString: PG_TEST_URL })
+    try {
+      const { data } = await exportBackupData(pool)
+      const active = (data.faculties || []).filter((f) => !f.archived_at)
+      if (!active.length) return
+
+      assert.ok(data.app_state.length > 0)
+      let stateJson = data.app_state[0].json
+      if (typeof stateJson === 'string') stateJson = JSON.parse(stateJson)
+      const snapIds = new Set((stateJson.faculties || []).map((f) => String(f.id)))
+      for (const f of active) {
+        assert.ok(snapIds.has(String(f.id)), `app_state snapshot missing faculty ${f.id}`)
+      }
+    } finally {
+      await pool.end()
+    }
+  })
+
+  test('exportAppStateSnapshot returns PG faculty mirrors when app_state row missing', async () => {
+    process.env.BETTER_AUTH_SECRET = BETTER_AUTH_SECRET_FOR_TESTS
+    const pool = new pg.Pool({ connectionString: PG_TEST_URL })
+    try {
+      const { rows } = await pool.query(
+        `SELECT COUNT(*)::int AS c FROM public.faculties WHERE archived_at IS NULL`,
+      )
+      if (Number(rows[0]?.c || 0) === 0) return
+
+      const snapshot = await exportAppStateSnapshot(pool)
+      assert.ok(snapshot.length > 0)
+      let stateJson = snapshot[0].json
+      if (typeof stateJson === 'string') stateJson = JSON.parse(stateJson)
+      assert.ok(Array.isArray(stateJson.faculties) && stateJson.faculties.length > 0)
+    } finally {
+      await pool.end()
+    }
+  })
+
+  test('exportBackupData app_state includes sections when public.sections has rows', async () => {
+    process.env.BETTER_AUTH_SECRET = BETTER_AUTH_SECRET_FOR_TESTS
+    const pool = new pg.Pool({ connectionString: PG_TEST_URL })
+    try {
+      const pgCount = await countSectionsRows(pool)
+      if (pgCount === 0) return
+
+      const { data } = await exportBackupData(pool)
+      assert.ok(data.app_state.length > 0)
+      let stateJson = data.app_state[0].json
+      if (typeof stateJson === 'string') stateJson = JSON.parse(stateJson)
+      const snapPgIds = new Set(
+        (stateJson.sections || [])
+          .map((s) => Number(s.postgresSectionId ?? s.id))
+          .filter((n) => Number.isFinite(n) && n > 0),
+      )
+      for (const row of data.sections || []) {
+        const id = Number(row.id)
+        if (Number.isFinite(id) && id > 0) {
+          assert.ok(snapPgIds.has(id), `app_state missing section ${id}`)
+        }
+      }
+    } finally {
+      await pool.end()
+    }
+  })
+
+  test('exportBackupData app_state includes curriculum when public.curriculum has rows', async () => {
+    process.env.BETTER_AUTH_SECRET = BETTER_AUTH_SECRET_FOR_TESTS
+    const pool = new pg.Pool({ connectionString: PG_TEST_URL })
+    try {
+      const pgCount = await countCurriculumRows(pool)
+      if (pgCount === 0) return
+
+      const { data } = await exportBackupData(pool)
+      assert.ok(data.app_state.length > 0)
+      let stateJson = data.app_state[0].json
+      if (typeof stateJson === 'string') stateJson = JSON.parse(stateJson)
+      const snapIds = new Set((stateJson.curriculums || []).map((c) => String(c.id)))
+      for (const row of data.curriculum || []) {
+        const sid = String(row.source_id || row.id || '').trim()
+        if (sid) assert.ok(snapIds.has(sid), `app_state missing curriculum ${sid}`)
+      }
+    } finally {
+      await pool.end()
+    }
+  })
+})

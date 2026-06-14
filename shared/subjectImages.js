@@ -14,6 +14,13 @@ export const SUBJECT_IMAGE_MAP = {
   English: `${SUBJECT_UPLOAD_REL}/English_Logo.png`,
   Math: `${SUBJECT_UPLOAD_REL}/Math_Logo.png`,
   Science: `${SUBJECT_UPLOAD_REL}/Science_Logo.png`,
+  TLE: `${SUBJECT_UPLOAD_REL}/TLE_Logo.png`,
+  MAPEH: `${SUBJECT_UPLOAD_REL}/MAPEH_Logo.png`,
+  Research: `${SUBJECT_UPLOAD_REL}/Research_Logo.png`,
+  Robotics: `${SUBJECT_UPLOAD_REL}/Robotics_Logo.png`,
+  'Araling Panlipunan': `${SUBJECT_UPLOAD_REL}/Araling_Panlipunan_Logo.png`,
+  Journalism: `${SUBJECT_UPLOAD_REL}/Journalism_Logo.png`,
+  Bible: `${SUBJECT_UPLOAD_REL}/Bible_Logo.png`,
 }
 
 /** Ordered list for the Admin subject name dropdown. */

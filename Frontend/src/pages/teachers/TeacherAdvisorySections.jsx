@@ -22,7 +22,7 @@ export default function TeacherAdvisorySections({ sections, loading, error }) {
         className="mt-6 rounded-lg border border-dashed border-neutral-200 bg-neutral-50/90 px-4 py-6 text-center text-[13px] text-neutral-600"
         role="status"
       >
-        No advisory sections found.
+        No advisory sections currently assigned.
       </div>
     )
   }
@@ -33,7 +33,7 @@ export default function TeacherAdvisorySections({ sections, loading, error }) {
         className="mt-6 rounded-lg border border-dashed border-neutral-200 bg-neutral-50/90 px-4 py-6 text-center text-[13px] text-neutral-600"
         role="status"
       >
-        No advisory sections found.
+        No advisory sections currently assigned.
       </div>
     )
   }

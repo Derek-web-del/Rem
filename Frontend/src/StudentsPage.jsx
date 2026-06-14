@@ -3,6 +3,9 @@ import BackButton from './components/BackButton.jsx'
 import StudentDetails from './StudentDetails.jsx'
 import StudentProfile from './StudentProfile.jsx'
 import { useNotify } from './components/notifications.jsx'
+import { facultyPhotoDisplaySrc } from './lib/facultyPhoto.js'
+import { PROFILE_PHOTO_MAX_BYTES, PROFILE_PHOTO_MAX_MSG, PHOTO_UPLOAD_LABEL } from './lib/uploadLimits.js'
+import { TruncatedTableCell } from './lib/tableCellDisplay.jsx'
 
 function FilterIcon({ className }) {
   return (
@@ -144,8 +147,8 @@ function StudentDetailsLegacy({
       setError('Only PNG/JPG images are allowed.')
       return
     }
-    if (file.size > 2 * 1024 * 1024) {
-      setError('Image must be less than 2MB.')
+    if (file.size > PROFILE_PHOTO_MAX_BYTES) {
+      setError(PROFILE_PHOTO_MAX_MSG)
       return
     }
     const dataUrl = await readFileAsDataUrl(file)
@@ -231,7 +234,7 @@ function StudentDetailsLegacy({
             </div>
             <div>
               <div className="text-sm font-semibold text-neutral-900">Student Photo</div>
-              <div className="text-xs text-neutral-500">Only allowed PNG or JPG less than 2MB</div>
+              <div className="text-xs text-neutral-500">{PHOTO_UPLOAD_LABEL}</div>
             </div>
           </div>
 
@@ -472,6 +475,7 @@ export default function StudentsPage({
   onUpdateStudent,
   onArchiveStudent,
   onImmediatePurgeStudent,
+  onSendPasswordResetEmail,
   onBack,
   initialGrade = '',
   initialSectionId = '',
@@ -488,12 +492,9 @@ export default function StudentsPage({
   const [activeId, setActiveId] = useState('')
   const [archiveTarget, setArchiveTarget] = useState(null)
   const [purgeTarget, setPurgeTarget] = useState(null)
-  const [purgePhrase, setPurgePhrase] = useState('')
   const [purgeSubmitting, setPurgeSubmitting] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
-
-  const IMMEDIATE_PURGE_PHRASE = 'CONFIRM PERMANENT PURGE'
-  const purgeUnlocked = purgePhrase.trim() === IMMEDIATE_PURGE_PHRASE
+  const [resetBusyId, setResetBusyId] = useState('')
 
   const activeStudent = useMemo(() => students.find((s) => s.id === activeId) || null, [students, activeId])
 
@@ -628,8 +629,34 @@ export default function StudentsPage({
     )
   }
 
+  async function handleSendResetEmail(student) {
+    if (!onSendPasswordResetEmail) return
+    const email = String(student?.email || '').trim()
+    if (!email) {
+      toast.error('No email on record for this student.', { title: 'Reset email' })
+      return
+    }
+    setResetBusyId(String(student.id || ''))
+    try {
+      const result = await onSendPasswordResetEmail(email)
+      if (result?.error) {
+        toast.error(result.error, { title: 'Reset email' })
+        return
+      }
+      toast.success(`Reset link sent to ${result?.maskedEmail || email}`, { title: 'Reset email' })
+    } finally {
+      setResetBusyId('')
+    }
+  }
+
   if (profileOpen && activeStudent) {
-    return <StudentProfile student={activeStudent} onBack={() => setProfileOpen(false)} />
+    return (
+      <StudentProfile
+        student={activeStudent}
+        onBack={() => setProfileOpen(false)}
+        onSendPasswordResetEmail={onSendPasswordResetEmail}
+      />
+    )
   }
 
   return (
@@ -727,16 +754,16 @@ export default function StudentsPage({
 
         <div className="mt-4 overflow-hidden rounded-xl border border-neutral-200 bg-white">
           <div className="max-h-130 overflow-auto">
-            <table className="min-w-full border-collapse">
+            <table className="min-w-full table-fixed border-collapse">
               <thead className="sticky top-0 bg-neutral-50">
                 <tr className="text-xs font-semibold text-neutral-500">
-                  <th className="px-4 py-3 text-left">NAME</th>
-                  <th className="px-4 py-3 text-left">ENROLLMENT NO.</th>
-                  <th className="px-4 py-3 text-left">PHONE</th>
-                  <th className="px-4 py-3 text-left">GRADE LEVEL</th>
-                  <th className="px-4 py-3 text-left">SECTION</th>
-                  <th className="px-4 py-3 text-left">ROLL NO.</th>
-                  <th className="px-4 py-3 text-right">ACTION</th>
+                  <th className="w-[24%] px-4 py-3 text-left">NAME</th>
+                  <th className="w-[12%] px-4 py-3 text-left">ENROLLMENT NO.</th>
+                  <th className="w-[11%] px-4 py-3 text-left">PHONE</th>
+                  <th className="w-[11%] px-4 py-3 text-left">GRADE LEVEL</th>
+                  <th className="w-[12%] px-4 py-3 text-left">SECTION</th>
+                  <th className="w-[10%] px-4 py-3 text-left">ROLL NO.</th>
+                  <th className="w-[240px] px-4 py-3 text-right">ACTION</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-100">
@@ -748,7 +775,7 @@ export default function StudentsPage({
                   </tr>
                 ) : (
                   filteredStudents.map((s) => {
-                    const photoSrc = String(s.photoDataUrl || s.photo_url || '').trim()
+                    const photoSrc = facultyPhotoDisplaySrc(s.photoDataUrl || s.photo_url || '')
                     return (
                     <tr key={s.id} className="text-sm text-neutral-800">
                       <td className="px-4 py-3">
@@ -765,17 +792,27 @@ export default function StudentsPage({
                             </div>
                           )}
                           <div className="min-w-0">
-                            <div className="truncate font-semibold text-neutral-900">{s.name}</div>
+                            <div className="font-semibold text-neutral-900">{s.name}</div>
                           </div>
                         </div>
                       </td>
-                      <td className="px-4 py-3 font-medium text-neutral-700">{s.enrollmentNo}</td>
-                      <td className="px-4 py-3 font-medium text-neutral-700">{s.phone}</td>
-                      <td className="px-4 py-3 font-medium text-neutral-700">{s.grade}</td>
-                      <td className="px-4 py-3 font-medium text-neutral-700">{s.sectionName}</td>
-                      <td className="px-4 py-3 font-semibold text-neutral-700">{s.rollNo}</td>
-                      <td className="px-4 py-3 text-right">
-                        <div className="inline-flex flex-wrap items-center justify-end gap-2">
+                      <td className="px-4 py-3 font-medium text-neutral-700">
+                        <TruncatedTableCell value={s.enrollmentNo} />
+                      </td>
+                      <td className="px-4 py-3 font-medium text-neutral-700">
+                        <TruncatedTableCell value={s.phone} />
+                      </td>
+                      <td className="px-4 py-3 font-medium text-neutral-700">
+                        <TruncatedTableCell value={s.grade} />
+                      </td>
+                      <td className="px-4 py-3 font-medium text-neutral-700">
+                        <TruncatedTableCell value={s.sectionName} />
+                      </td>
+                      <td className="px-4 py-3 font-semibold text-neutral-700">
+                        <TruncatedTableCell value={s.rollNo} />
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-3 text-right">
+                        <div className="inline-flex shrink-0 flex-nowrap items-center justify-end gap-2">
                           <button
                             type="button"
                             className="rounded bg-slate-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-600"
@@ -800,13 +837,20 @@ export default function StudentsPage({
                           >
                             View
                           </button>
+                          {onSendPasswordResetEmail ? (
+                            <button
+                              type="button"
+                              className="rounded bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
+                              disabled={resetBusyId === String(s.id)}
+                              onClick={() => handleSendResetEmail(s)}
+                            >
+                              {resetBusyId === String(s.id) ? 'Sending…' : 'Send Reset Email'}
+                            </button>
+                          ) : null}
                           <button
                             type="button"
                             className="rounded bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700"
-                            onClick={() => {
-                              setPurgePhrase('')
-                              setPurgeTarget(s)
-                            }}
+                            onClick={() => setPurgeTarget(s)}
                           >
                             Delete
                           </button>
@@ -825,45 +869,35 @@ export default function StudentsPage({
       {purgeTarget ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4">
           <div
-            className="w-full max-w-lg rounded-xl border-2 border-red-600 bg-white p-6 shadow-2xl"
+            className="w-full max-w-lg rounded-xl border border-neutral-200 bg-white p-6 shadow-2xl"
             role="alertdialog"
+            aria-labelledby="purge-student-title"
           >
-            <h3 className="text-lg font-bold text-red-700">Critical: Permanent purge</h3>
-            <p className="mt-3 text-sm leading-relaxed text-neutral-800">
-              WARNING: You are bypassing the Archive Vault. This option will permanently purge this active account,
-              their grades, schedules, and profile mappings from lenlearn_db immediately. This action cannot be undone.
-            </p>
-            <p className="mt-2 text-sm font-medium text-neutral-800">
-              Target: <span className="font-semibold">{purgeTarget.name}</span>
-            </p>
-            <p className="mt-4 text-sm font-medium text-neutral-800">
-              Type <span className="font-mono text-red-700">{IMMEDIATE_PURGE_PHRASE}</span> to confirm:
-            </p>
-            <input
-              type="text"
-              className="mt-2 w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm font-mono uppercase focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-200"
-              value={purgePhrase}
-              onChange={(e) => setPurgePhrase(e.target.value)}
-              autoComplete="off"
-              spellCheck={false}
-              aria-label="Permanent purge verification"
-            />
-            <div className="mt-5 flex justify-end gap-2">
+            <div className="flex items-start gap-4">
+              <i className="ti ti-alert-triangle shrink-0 text-3xl text-red-500" aria-hidden="true" />
+              <div className="min-w-0">
+                <h3 id="purge-student-title" className="text-lg font-bold text-neutral-900">
+                  Permanently Delete {purgeTarget.name}?
+                </h3>
+                <p className="mt-2 text-sm leading-relaxed text-neutral-700">
+                  This will immediately remove {purgeTarget.name} and all associated data. This action
+                  cannot be undone.
+                </p>
+              </div>
+            </div>
+            <div className="mt-6 flex justify-end gap-2">
               <button
                 type="button"
-                className="rounded bg-neutral-200 px-4 py-2 text-sm font-semibold text-neutral-800"
-                onClick={() => {
-                  setPurgeTarget(null)
-                  setPurgePhrase('')
-                }}
+                className="rounded bg-neutral-200 px-4 py-2 text-sm font-semibold text-neutral-800 hover:bg-neutral-300"
+                onClick={() => setPurgeTarget(null)}
                 disabled={purgeSubmitting}
               >
                 Cancel
               </button>
               <button
                 type="button"
-                disabled={!purgeUnlocked || purgeSubmitting || !onImmediatePurgeStudent}
-                className="rounded bg-red-700 px-4 py-2 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={purgeSubmitting || !onImmediatePurgeStudent}
+                className="rounded bg-red-600 px-4 py-2 text-sm font-bold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
                 onClick={async () => {
                   if (!purgeTarget || !onImmediatePurgeStudent) return
                   setPurgeSubmitting(true)
@@ -872,21 +906,18 @@ export default function StudentsPage({
                     if (res?.error) {
                       toast.error(String(res.error), { title: 'Permanent purge failed' })
                     } else {
-                      toast.deleted('Account permanently purged from lenlearn_db.', {
-                        title: 'Permanent purge complete',
-                        durationMs: 6000,
-                      })
+                      const name = String(purgeTarget.name || 'Student').trim()
+                      toast.deleted(`Student ${name} account deleted.`, { durationMs: 6000 })
                     }
                   } catch (e) {
                     toast.error(String(e?.message || e), { title: 'Permanent purge failed' })
                   } finally {
                     setPurgeSubmitting(false)
                     setPurgeTarget(null)
-                    setPurgePhrase('')
                   }
                 }}
               >
-                {purgeSubmitting ? 'Purging…' : 'Permanently purge now'}
+                {purgeSubmitting ? 'Deleting…' : 'Delete Permanently'}
               </button>
             </div>
           </div>

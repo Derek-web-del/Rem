@@ -13,3 +13,15 @@ test('normalizeBackupTableKeys falls back to defaults when empty', () => {
   const out = normalizeBackupTableKeys([])
   assert.deepEqual(out, DEFAULT_BACKUP_TABLE_KEYS)
 })
+
+test('DEFAULT_BACKUP_TABLE_KEYS includes auth and quiz tables', () => {
+  assert.ok(DEFAULT_BACKUP_TABLE_KEYS.includes('account'))
+  assert.ok(DEFAULT_BACKUP_TABLE_KEYS.includes('quizzes'))
+  assert.ok(DEFAULT_BACKUP_TABLE_KEYS.includes('quiz_submissions'))
+})
+
+test('DEFAULT_BACKUP_TABLE_KEYS includes expanded recovery tables', () => {
+  assert.ok(DEFAULT_BACKUP_TABLE_KEYS.includes('lms_activity_logs'))
+  assert.ok(DEFAULT_BACKUP_TABLE_KEYS.includes('curriculum_guides'))
+  assert.ok(DEFAULT_BACKUP_TABLE_KEYS.includes('quiz_password_access'))
+})

@@ -4,18 +4,27 @@ import { BrowserRouter, Navigate, Route, Routes, useParams } from 'react-router-
 import '@tabler/icons-webfont/dist/tabler-icons.min.css'
 import './index.css'
 import App from './App.jsx'
+const ResetPassword = lazy(() => import('./pages/ResetPassword.jsx'))
 import { NotificationsProvider } from './components/notifications.jsx'
 import AdminDashboardRoute from './routes/AdminDashboardRoute.jsx'
 import TeacherProtectedRoute from './routes/TeacherProtectedRoute.jsx'
 import StudentProtectedRoute from './routes/StudentProtectedRoute.jsx'
 import TeacherLayout from './layouts/TeacherLayout.jsx'
+import StudentLayout from './layouts/StudentLayout.jsx'
+import TermsGuard from './routes/TermsGuard.jsx'
+import ErrorBoundary from './components/ErrorBoundary.jsx'
 
 const TeacherDashboard = lazy(() => import('./pages/teachers/TeacherDashboard.jsx'))
 const TeacherCurriculumPage = lazy(() => import('./pages/teachers/TeacherCurriculumPage.jsx'))
 const TeacherSectionsPage = lazy(() => import('./pages/teachers/TeacherSectionsPage.jsx'))
 const TeacherStudentDetails = lazy(() => import('./pages/teachers/StudentDetails.jsx'))
 const TeacherSubjectsPage = lazy(() => import('./pages/teachers/TeacherSubjectsPage.jsx'))
-const TeacherSubjectProfile = lazy(() => import('./pages/teachers/TeacherSubjectProfile.jsx'))
+const TeacherSubjectDetail = lazy(() => import('./pages/teachers/TeacherSubjectDetail.jsx'))
+const TeacherSubjectGradebookPage = lazy(
+  () => import('./pages/teachers/subject-detail/gradebook/TeacherSubjectGradebookPage.jsx'),
+)
+const TeacherGradeCriteriaPage = lazy(() => import('./pages/teachers/TeacherGradeCriteriaPage.jsx'))
+const TeacherLessonFormPage = lazy(() => import('./pages/teachers/TeacherLessonFormPage.jsx'))
 const TeacherAddMaterial = lazy(() => import('./pages/teachers/TeacherAddMaterial.jsx'))
 const TeacherEditMaterial = lazy(() => import('./pages/teachers/TeacherEditMaterial.jsx'))
 const TeacherTermsPage = lazy(() => import('./pages/teachers/TeacherTermsPage.jsx'))
@@ -33,8 +42,24 @@ const TeacherFacultyStudyMaterialForm = lazy(() => import('./pages/teachers/Teac
 const TeacherQuizzesPage = lazy(() => import('./pages/teachers/TeacherQuizzesPage.jsx'))
 const TeacherQuizForm = lazy(() => import('./pages/teachers/TeacherQuizForm.jsx'))
 const TeacherQuizView = lazy(() => import('./pages/teachers/TeacherQuizView.jsx'))
+const TeacherOriginalityCheckerPage = lazy(() => import('./pages/teachers/TeacherOriginalityCheckerPage.jsx'))
+const TeacherOriginalityReportView = lazy(() => import('./pages/teachers/TeacherOriginalityReportView.jsx'))
+const GradesOverview = lazy(() => import('./pages/teachers/GradesOverview.jsx'))
 const StudentQuizzesPage = lazy(() => import('./pages/students/StudentQuizzesPage.jsx'))
-const StudentQuizPage = lazy(() => import('./pages/students/StudentQuizPage.jsx'))
+const StudentQuizViewPage = lazy(() => import('./pages/students/StudentQuizViewPage.jsx'))
+const StudentQuizTakePage = lazy(() => import('./pages/students/StudentQuizTakePage.jsx'))
+const StudentQuizResultsPage = lazy(() => import('./pages/students/StudentQuizResultsPage.jsx'))
+const StudentDashboard = lazy(() => import('./pages/students/StudentDashboard.jsx'))
+const StudentSubjectsPage = lazy(() => import('./pages/students/StudentSubjectsPage.jsx'))
+const StudentSubjectProfile = lazy(() => import('./pages/students/StudentSubjectProfile.jsx'))
+const StudentAssignmentsPage = lazy(() => import('./pages/students/StudentAssignmentsPage.jsx'))
+const StudentAssignmentView = lazy(() => import('./pages/students/StudentAssignmentView.jsx'))
+const StudentActivitiesPage = lazy(() => import('./pages/students/StudentActivitiesPage.jsx'))
+const StudentActivityView = lazy(() => import('./pages/students/StudentActivityView.jsx'))
+const StudentAnnouncementsPage = lazy(() => import('./pages/students/StudentAnnouncementsPage.jsx'))
+const StudentAnnouncementView = lazy(() => import('./pages/students/StudentAnnouncementView.jsx'))
+const StudentStudyMaterialsPage = lazy(() => import('./pages/students/StudentStudyMaterialsPage.jsx'))
+const StudentTermsPage = lazy(() => import('./pages/students/StudentTermsPage.jsx'))
 const StudentDetailsPage = lazy(() => import('./pages/StudentDetails.jsx'))
 
 function TeacherRouteFallback() {
@@ -52,32 +77,167 @@ function LegacyStudyQueriesEditRedirect() {
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
+    <ErrorBoundary>
     <BrowserRouter>
       <NotificationsProvider>
         <Routes>
           <Route path="/" element={<Navigate to="/login" replace />} />
+          <Route path="/student" element={<Navigate to="/student/dashboard" replace />} />
           <Route path="/login/*" element={<App />} />
+          <Route
+            path="/reset-password"
+            element={
+              <Suspense fallback={<TeacherRouteFallback />}>
+                <ResetPassword />
+              </Suspense>
+            }
+          />
           <Route path="/admin/*" element={<AdminDashboardRoute />} />
           <Route element={<StudentProtectedRoute />}>
-            <Route
-              path="/student/quizzes/:id"
-              element={
-                <Suspense fallback={<TeacherRouteFallback />}>
-                  <StudentQuizPage />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/student/quizzes"
-              element={
-                <Suspense fallback={<TeacherRouteFallback />}>
-                  <StudentQuizzesPage />
-                </Suspense>
-              }
-            />
+            <Route element={<StudentLayout />}>
+              <Route
+                path="/student/terms"
+                element={
+                  <Suspense fallback={<TeacherRouteFallback />}>
+                    <StudentTermsPage />
+                  </Suspense>
+                }
+              />
+              <Route element={<TermsGuard termsPath="/student/terms" portal="student" />}>
+              <Route
+                path="/student/dashboard"
+                element={
+                  <Suspense fallback={<TeacherRouteFallback />}>
+                    <StudentDashboard />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/student/subjects"
+                element={
+                  <Suspense fallback={<TeacherRouteFallback />}>
+                    <StudentSubjectsPage />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/student/subjects/:subjectId"
+                element={
+                  <Suspense fallback={<TeacherRouteFallback />}>
+                    <StudentSubjectProfile />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/student/assignments/:id"
+                element={
+                  <Suspense fallback={<TeacherRouteFallback />}>
+                    <StudentAssignmentView />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/student/assignments"
+                element={
+                  <Suspense fallback={<TeacherRouteFallback />}>
+                    <StudentAssignmentsPage />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/student/activities/:id"
+                element={
+                  <Suspense fallback={<TeacherRouteFallback />}>
+                    <StudentActivityView />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/student/activities"
+                element={
+                  <Suspense fallback={<TeacherRouteFallback />}>
+                    <StudentActivitiesPage />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/student/announcements/:id"
+                element={
+                  <Suspense fallback={<TeacherRouteFallback />}>
+                    <StudentAnnouncementView />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/student/announcements"
+                element={
+                  <Suspense fallback={<TeacherRouteFallback />}>
+                    <StudentAnnouncementsPage />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/student/study-materials"
+                element={
+                  <Suspense fallback={<TeacherRouteFallback />}>
+                    <StudentStudyMaterialsPage />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/student/quizzes/:id/view"
+                element={
+                  <Suspense fallback={<TeacherRouteFallback />}>
+                    <StudentQuizViewPage />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/student/quizzes/:id/take"
+                element={
+                  <Suspense fallback={<TeacherRouteFallback />}>
+                    <StudentQuizTakePage />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/student/quizzes/:id/results"
+                element={
+                  <Suspense fallback={<TeacherRouteFallback />}>
+                    <StudentQuizResultsPage />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/student/quizzes/:id"
+                element={
+                  <Suspense fallback={<TeacherRouteFallback />}>
+                    <StudentQuizViewPage />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/student/quizzes"
+                element={
+                  <Suspense fallback={<TeacherRouteFallback />}>
+                    <StudentQuizzesPage />
+                  </Suspense>
+                }
+              />
+              </Route>
+            </Route>
           </Route>
           <Route element={<TeacherProtectedRoute />}>
             <Route element={<TeacherLayout />}>
+              <Route
+                path="/teacher/terms"
+                element={
+                  <Suspense fallback={<TeacherRouteFallback />}>
+                    <TeacherTermsPage />
+                  </Suspense>
+                }
+              />
+              <Route element={<TermsGuard termsPath="/teacher/terms" portal="faculty" />}>
               <Route
                 path="/teacher/dashboard"
                 element={
@@ -91,14 +251,6 @@ createRoot(document.getElementById('root')).render(
                 element={
                   <Suspense fallback={<TeacherRouteFallback />}>
                     <TeacherCurriculumPage />
-                  </Suspense>
-                }
-              />
-              <Route
-                path="/teacher/terms"
-                element={
-                  <Suspense fallback={<TeacherRouteFallback />}>
-                    <TeacherTermsPage />
                   </Suspense>
                 }
               />
@@ -143,10 +295,42 @@ createRoot(document.getElementById('root')).render(
                 }
               />
               <Route
+                path="/teacher/subjects/:subjectId/gradebook"
+                element={
+                  <Suspense fallback={<TeacherRouteFallback />}>
+                    <TeacherSubjectGradebookPage />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/teacher/subjects/:subjectId/grade-criteria"
+                element={
+                  <Suspense fallback={<TeacherRouteFallback />}>
+                    <TeacherGradeCriteriaPage />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/teacher/subjects/:subjectId/lessons/new"
+                element={
+                  <Suspense fallback={<TeacherRouteFallback />}>
+                    <TeacherLessonFormPage mode="add" />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/teacher/subjects/:subjectId/lessons/:lessonId/edit"
+                element={
+                  <Suspense fallback={<TeacherRouteFallback />}>
+                    <TeacherLessonFormPage mode="edit" />
+                  </Suspense>
+                }
+              />
+              <Route
                 path="/teacher/subjects/:subjectId"
                 element={
                   <Suspense fallback={<TeacherRouteFallback />}>
-                    <TeacherSubjectProfile />
+                    <TeacherSubjectDetail />
                   </Suspense>
                 }
               />
@@ -288,6 +472,30 @@ createRoot(document.getElementById('root')).render(
               />
               <Route path="/teacher/quiz-maker" element={<Navigate to="/teacher/quizzes" replace />} />
               <Route
+                path="/teacher/grades"
+                element={
+                  <Suspense fallback={<TeacherRouteFallback />}>
+                    <GradesOverview />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/teacher/originality-checker/reports/:id"
+                element={
+                  <Suspense fallback={<TeacherRouteFallback />}>
+                    <TeacherOriginalityReportView />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/teacher/originality-checker"
+                element={
+                  <Suspense fallback={<TeacherRouteFallback />}>
+                    <TeacherOriginalityCheckerPage />
+                  </Suspense>
+                }
+              />
+              <Route
                 path="/teacher/study-materials/new"
                 element={
                   <Suspense fallback={<TeacherRouteFallback />}>
@@ -314,6 +522,7 @@ createRoot(document.getElementById('root')).render(
               <Route path="/teacher/study-queries/new" element={<Navigate to="/teacher/study-materials/new" replace />} />
               <Route path="/teacher/study-queries/:id/edit" element={<LegacyStudyQueriesEditRedirect />} />
               <Route path="/teacher/study-queries" element={<Navigate to="/teacher/study-materials" replace />} />
+              </Route>
             </Route>
           </Route>
           <Route
@@ -328,5 +537,15 @@ createRoot(document.getElementById('root')).render(
         </Routes>
       </NotificationsProvider>
     </BrowserRouter>
+    </ErrorBoundary>
   </StrictMode>,
 )
+
+if ('serviceWorker' in navigator && (import.meta.env.PROD || import.meta.env.VITE_ENABLE_SW === 'true')) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker
+      .register('/sw.js')
+      .then((reg) => console.log('[sw] registered:', reg.scope))
+      .catch((err) => console.warn('[sw] registration failed:', err))
+  })
+}

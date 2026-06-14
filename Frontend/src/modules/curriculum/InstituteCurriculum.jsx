@@ -1,6 +1,7 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useState } from 'react'
 import BackButton from '../../components/BackButton.jsx'
 import { useNotify } from '../../components/notifications.jsx'
+import { authClient } from '../../lib/auth-client.js'
 import { apiUrl } from '../../lib/lmsStateStorage.js'
 
 export const CURRICULUM_STORAGE_KEY = 'lenlearn.curriculums'
@@ -60,11 +61,27 @@ function readFileAsDataUrl(file) {
   })
 }
 
+async function resolveCurriculumPostgresId(item) {
+  const pg = Number(item?.postgresCurriculumId)
+  if (Number.isFinite(pg) && pg > 0) return pg
+  const rawId = String(item?.id ?? '').trim()
+  if (/^\d+$/.test(rawId)) return Number(rawId)
+  if (!rawId) return null
+  const res = await fetch(apiUrl('/api/v1/curriculum'), { credentials: 'include' })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) return null
+  const list = Array.isArray(data?.curriculum) ? data.curriculum : []
+  const match = list.find((row) => String(row?.source_id ?? '') === rawId)
+  return match?.id != null ? Number(match.id) : null
+}
+
 const InstituteCurriculum = forwardRef(function InstituteCurriculum(
   { curriculums, setCurriculums, persistenceMode, setActiveNav },
   ref,
 ) {
   const toast = useNotify()
+  const { data: session } = authClient.useSession()
+  const sessionUser = session?.user
   const [curriculumPage, setCurriculumPage] = useState('manage')
   const [formError, setFormError] = useState('')
   const [isUploading, setIsUploading] = useState(false)
@@ -177,9 +194,31 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
     try {
       const dataUrl = await readFileAsDataUrl(uploadForm.file)
       const newId = crypto.randomUUID()
+      let postgresCurriculumId = null
+
+      if (persistenceMode === 'server') {
+        const res = await fetch(apiUrl('/api/v1/curriculum'), {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: uploadForm.subject,
+            description: uploadForm.description.trim(),
+            grade_level: uploadForm.grade,
+            file_name: uploadForm.file.name,
+            source_id: newId,
+          }),
+        })
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok) {
+          throw new Error(String(data?.message || data?.error || `Create failed (${res.status}).`))
+        }
+        postgresCurriculumId = data?.id != null ? Number(data.id) : null
+      }
 
       const newItem = {
         id: newId,
+        postgresCurriculumId,
         grade: uploadForm.grade,
         subject: uploadForm.subject,
         description: uploadForm.description.trim(),
@@ -187,7 +226,8 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
         fileType: uploadForm.file.type,
         fileDataUrl: dataUrl,
         uploadedAt: nowDateStamp(),
-        uploadedBy: 'Derek John Bantad',
+        uploadedBy:
+          String(sessionUser?.name || sessionUser?.email || sessionUser?.id || '').trim() || 'Administrator',
       }
       setCurriculums((prev) => [newItem, ...prev])
       setUploadForm({ grade: '', subject: '', description: '', file: null })
@@ -242,6 +282,38 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
         return
       }
     }
+
+    let resolvedPgId = target.postgresCurriculumId ?? null
+    if (persistenceMode === 'server') {
+      resolvedPgId = await resolveCurriculumPostgresId(target)
+      if (!resolvedPgId) {
+        setEditingError('Could not resolve curriculum record on the server.')
+        return
+      }
+      try {
+        const res = await fetch(apiUrl(`/api/v1/curriculum/${encodeURIComponent(String(resolvedPgId))}`), {
+          method: 'PUT',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: editForm.subject,
+            description: editForm.description.trim(),
+            grade_level: editForm.grade,
+            file_name: nextFileName,
+            source_id: String(target.id),
+          }),
+        })
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok) {
+          setEditingError(String(data?.message || data?.error || `Update failed (${res.status}).`))
+          return
+        }
+      } catch (e) {
+        setEditingError(String(e?.message || e || 'Network error updating curriculum.'))
+        return
+      }
+    }
+
     setCurriculums((prev) =>
       prev.map((item) =>
         item.id === editId
@@ -253,6 +325,7 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
               fileDataUrl: nextFileDataUrl,
               fileName: nextFileName,
               fileType: nextFileType,
+              postgresCurriculumId: resolvedPgId ?? item.postgresCurriculumId ?? null,
             }
           : item,
       ),

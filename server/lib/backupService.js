@@ -1,6 +1,5 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { randomUUID } from 'node:crypto'
 import { getPgPool } from '../pgPool.js'
 import { ensureBackupSchema } from './backupSchema.js'
@@ -8,11 +7,18 @@ import {
   BACKUP_TABLE_REGISTRY,
   DEFAULT_BACKUP_TABLE_KEYS,
   normalizeBackupTableKeys,
+  LNBAK_TABLE_KEYS,
 } from './backupTables.js'
 import { customActivityLogger } from '../services/CustomActivityLogger.js'
+import {
+  BACKUPS_DIR,
+  buildLnbakFilename,
+  ensureBackupsDirectory,
+  exportBackupData,
+  writeLnbakArchiveToPath,
+} from './lnbakEngine.js'
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url))
-export const BACKUPS_DIR = path.join(__dirname, '..', 'backups')
+export { BACKUPS_DIR }
 
 function quoteIdent(name) {
   return `"${String(name).replace(/"/g, '""')}"`
@@ -50,6 +56,7 @@ async function tableExists(pool, reg) {
 
 export function mapBackupRow(row) {
   if (!row) return null
+  const filePath = row.file_path ? String(row.file_path) : null
   return {
     id: String(row.id),
     name: String(row.name || ''),
@@ -62,6 +69,12 @@ export function mapBackupRow(row) {
     completed_at: row.completed_at,
     created_by: row.created_by ? String(row.created_by) : null,
     error_message: row.error_message ? String(row.error_message) : null,
+    file_path: filePath,
+    filename: filePath ? path.basename(filePath) : null,
+    table_count: Array.isArray(row.tables_included) ? row.tables_included.length : LNBAK_TABLE_KEYS.length,
+    gdrive_file_id: row.gdrive_file_id ? String(row.gdrive_file_id) : null,
+    gdrive_link: row.gdrive_link ? String(row.gdrive_link) : null,
+    gdrive_uploaded_at: row.gdrive_uploaded_at || null,
   }
 }
 
@@ -69,7 +82,8 @@ export async function listBackups() {
   const pool = getPgPool()
   await ensureBackupSchema(pool)
   const { rows } = await pool.query(
-    `SELECT id, name, type, status, size_mb, notes, tables_included, created_by, created_at, completed_at, error_message
+    `SELECT id, name, type, status, size_mb, notes, tables_included, file_path, created_by, created_at, completed_at, error_message,
+            gdrive_file_id, gdrive_link, gdrive_uploaded_at
      FROM public.backups ORDER BY created_at DESC`,
   )
   return rows.map(mapBackupRow)
@@ -108,44 +122,6 @@ export async function getBackupStats() {
   }
 }
 
-export async function createBackupSnapshot(tableKeys, backupId) {
-  const pool = getPgPool()
-  const keys = normalizeBackupTableKeys(tableKeys)
-  const snapshot = {
-    version: 1,
-    backupId,
-    createdAt: new Date().toISOString(),
-    tables: {},
-  }
-
-  for (const key of keys) {
-    const reg = BACKUP_TABLE_REGISTRY[key]
-    if (!reg) continue
-    if (!(await tableExists(pool, reg))) {
-      snapshot.tables[key] = { skipped: true, reason: 'table_not_found', rows: [] }
-      continue
-    }
-    try {
-      const orderBy = reg.orderBy || '1'
-      const { rows } = await pool.query(`SELECT * FROM ${reg.fromSql} ORDER BY ${orderBy} ASC`)
-      snapshot.tables[key] = {
-        rowCount: rows.length,
-        rows: rows.map(rowToJson),
-      }
-    } catch (e) {
-      snapshot.tables[key] = { skipped: true, reason: String(e?.message || e), rows: [] }
-    }
-  }
-
-  await fs.mkdir(BACKUPS_DIR, { recursive: true })
-  const fileName = `${backupId}_${Date.now()}.json`
-  const filePath = path.join(BACKUPS_DIR, fileName)
-  await fs.writeFile(filePath, JSON.stringify(snapshot, null, 2), 'utf8')
-  const stats = await fs.stat(filePath)
-  const sizeMb = Number((stats.size / (1024 * 1024)).toFixed(2))
-  return { filePath, fileName, sizeMb }
-}
-
 async function insertRow(client, reg, row) {
   const keys = Object.keys(row)
   if (!keys.length) return
@@ -157,8 +133,25 @@ async function insertRow(client, reg, row) {
 
 export async function restoreFromBackupFile(filePath, tableKeys = null) {
   const pool = getPgPool()
-  const raw = await fs.readFile(filePath, 'utf8')
-  const snapshot = JSON.parse(raw)
+  const header = Buffer.alloc(2)
+  const fd = await fs.open(filePath, 'r')
+  try {
+    await fd.read(header, 0, 2, 0)
+  } finally {
+    await fd.close()
+  }
+  const isZip = header[0] === 0x50 && header[1] === 0x4b
+  if (isZip) {
+    const { readLnbakFromPath, validateLnbakParsed, restoreDatabaseFromParsed, completeRestoreAfterDatabase } =
+      await import('./lnbakEngine.js')
+    const { parsed, uploadsBuffer, uploadsPath } = await readLnbakFromPath(filePath)
+    validateLnbakParsed(parsed)
+    await restoreDatabaseFromParsed(parsed)
+    return completeRestoreAfterDatabase(parsed, uploadsPath || uploadsBuffer)
+  }
+
+  const raw = await fs.readFile(filePath)
+  const snapshot = JSON.parse(raw.toString('utf8'))
   const keys =
     tableKeys && tableKeys.length
       ? normalizeBackupTableKeys(tableKeys)
@@ -196,22 +189,23 @@ export async function restoreFromBackupFile(filePath, tableKeys = null) {
   } finally {
     client.release()
   }
+  return {}
 }
 
 export async function runBackupJob({
   name,
   type = 'manual',
   notes = '',
-  tables = DEFAULT_BACKUP_TABLE_KEYS,
+  tables = LNBAK_TABLE_KEYS,
   createdBy = null,
   backupId = randomUUID(),
 }) {
   const pool = getPgPool()
   await ensureBackupSchema(pool)
-  const tableList = normalizeBackupTableKeys(tables)
+  ensureBackupsDirectory()
+  const tableList = normalizeBackupTableKeys(tables.length ? tables : LNBAK_TABLE_KEYS)
   const displayName =
-    String(name || '').trim() ||
-    `backup_${type}_${new Date().toISOString().slice(0, 10)}`
+    String(name || '').trim() || buildLnbakFilename(type).replace('.lnbak', '')
 
   await pool.query(
     `INSERT INTO public.backups (id, name, type, status, notes, tables_included, created_by)
@@ -220,14 +214,50 @@ export async function runBackupJob({
   )
 
   try {
-    const { filePath, sizeMb } = await createBackupSnapshot(tableList, backupId)
+    const { meta, data } = await exportBackupData(pool, { createdBy })
+    const filename = buildLnbakFilename(type)
+    const filePath = path.join(BACKUPS_DIR, filename)
+    const { sizeMb } = await writeLnbakArchiveToPath({ meta, data, diskPath: filePath })
     await pool.query(
       `UPDATE public.backups
        SET status = 'completed', size_mb = $2, file_path = $3, completed_at = NOW(), error_message = NULL
        WHERE id = $1`,
       [backupId, sizeMb, filePath],
     )
-    return { id: backupId, name: displayName, status: 'completed', size_mb: sizeMb, file_path: filePath }
+
+    let gdrive = { uploaded: false, skipped: true, failed: false }
+    let driveActor = createdBy
+      ? { id: createdBy, name: 'Administrator', email: '' }
+      : null
+    if (!driveActor) {
+      const { findConnectedDriveAdminActor } = await import('./googleDriveUpload.js')
+      const connectedAdmin = await findConnectedDriveAdminActor()
+      if (connectedAdmin?.id) {
+        driveActor = {
+          id: connectedAdmin.id,
+          name: 'Administrator',
+          email: connectedAdmin.email || '',
+        }
+      }
+    }
+    if (driveActor?.id) {
+      gdrive = await maybeUploadBackupToDrive({
+        backupId,
+        filePath,
+        filename: path.basename(filePath),
+        actor: driveActor,
+      })
+    }
+
+    return {
+      id: backupId,
+      name: displayName,
+      status: 'completed',
+      size_mb: sizeMb,
+      file_path: filePath,
+      filename: path.basename(filePath),
+      gdrive,
+    }
   } catch (e) {
     await pool.query(
       `UPDATE public.backups SET status = 'failed', error_message = $2, completed_at = NOW() WHERE id = $1`,
@@ -296,4 +326,78 @@ export async function logBackupAudit(actor, activityType, payload) {
     actorRole: 'admin',
     ...payload,
   })
+}
+
+/**
+ * Upload backup to Google Drive when the user has connected tokens.
+ * @returns {Promise<{ uploaded: boolean, skipped: boolean, failed: boolean, fileId?: string, link?: string, error?: string }>}
+ */
+export async function maybeUploadBackupToDrive({ backupId, filePath, filename, actor }) {
+  const userId = String(actor?.id || '').trim()
+  if (!userId || !backupId || !filePath) {
+    return { uploaded: false, skipped: true, failed: false }
+  }
+
+  try {
+    const { getTokenStatusForUser, uploadBackupToDrive, isGoogleDriveConfigured } = await import(
+      './googleDriveUpload.js'
+    )
+    if (!isGoogleDriveConfigured()) {
+      return { uploaded: false, skipped: true, failed: false }
+    }
+    const tokenStatus = await getTokenStatusForUser(userId)
+    if (!tokenStatus.connected) {
+      return { uploaded: false, skipped: true, failed: false }
+    }
+    if (tokenStatus.needsReconnect) {
+      return {
+        uploaded: false,
+        skipped: false,
+        failed: true,
+        needsReconnect: true,
+        error:
+          'Google Drive permissions are outdated. Disconnect and reconnect Google Drive, then retry upload.',
+      }
+    }
+
+    const result = await uploadBackupToDrive({
+      userId,
+      filePath,
+      filename: filename || path.basename(filePath),
+    })
+    if (!result?.fileId) {
+      return { uploaded: false, skipped: false, failed: true, error: 'Upload returned no file id' }
+    }
+
+    const pool = getPgPool()
+    await pool.query(
+      `UPDATE public.backups
+       SET gdrive_file_id = $2, gdrive_link = $3, gdrive_uploaded_at = NOW()
+       WHERE id = $1`,
+      [backupId, result.fileId, result.link],
+    )
+
+    await logBackupAudit(actor, 'backup_uploaded_to_gdrive', {
+      backupId,
+      description: `Backup uploaded to Google Drive`,
+      details: { fileId: result.fileId, link: result.link },
+    })
+
+    return { uploaded: true, skipped: false, failed: false, fileId: result.fileId, link: result.link }
+  } catch (e) {
+    console.warn('[backup] Google Drive upload failed:', e?.message || e)
+    const { isInsufficientScopeError } = await import('./googleDriveUpload.js')
+    const msg = String(e?.message || e)
+    const needsReconnect =
+      msg.includes('GOOGLE_DRIVE_NEEDS_RECONNECT') || isInsufficientScopeError(e)
+    return {
+      uploaded: false,
+      skipped: false,
+      failed: true,
+      needsReconnect,
+      error: needsReconnect
+        ? 'Google Drive permissions are outdated. Disconnect and reconnect Google Drive, then retry upload.'
+        : msg,
+    }
+  }
 }

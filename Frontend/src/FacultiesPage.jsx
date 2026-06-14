@@ -4,8 +4,8 @@ import FacultyDetails from './FacultyDetails.jsx'
 import FacultyProfile from './FacultyProfile.jsx'
 import { useNotify } from './components/notifications.jsx'
 import { facultyPhotoDisplaySrc } from './lib/facultyPhoto.js'
-import { apiUrl } from './lib/lmsStateStorage.js'
 import { dedupeById } from './lib/dedupeById.js'
+import { TruncatedTableCell } from './lib/tableCellDisplay.jsx'
 
 function SearchIcon({ className }) {
   return (
@@ -35,7 +35,7 @@ function initials(name) {
 }
 
 function facultyPhotoSrc(faculty) {
-  const url = facultyPhotoDisplaySrc(faculty?.photo_url || faculty?.photoDataUrl || '', { apiUrlFn: apiUrl })
+  const url = facultyPhotoDisplaySrc(faculty?.photo_url || faculty?.photoDataUrl || '')
   return url || null
 }
 
@@ -91,9 +91,11 @@ export default function FacultiesPage({
   onUpdateFaculty,
   onArchiveFaculty,
   onImmediatePurgeFaculty,
+  onSendPasswordResetEmail,
   onBack,
 }) {
   const toast = useNotify()
+  const [resetBusyId, setResetBusyId] = useState('')
   const [filterGrade, setFilterGrade] = useState('')
   const [appliedGrade, setAppliedGrade] = useState('')
   const [query, setQuery] = useState('')
@@ -104,11 +106,7 @@ export default function FacultiesPage({
   const [archiveTarget, setArchiveTarget] = useState(null)
   const [archiveSubmitting, setArchiveSubmitting] = useState(false)
   const [purgeTarget, setPurgeTarget] = useState(null)
-  const [purgePhrase, setPurgePhrase] = useState('')
   const [purgeSubmitting, setPurgeSubmitting] = useState(false)
-
-  const IMMEDIATE_PURGE_PHRASE = 'CONFIRM PERMANENT PURGE'
-  const purgeUnlocked = purgePhrase.trim() === IMMEDIATE_PURGE_PHRASE
 
   const activeFaculty = useMemo(() => faculties.find((f) => f.id === activeId) || null, [faculties, activeId])
 
@@ -152,6 +150,26 @@ export default function FacultiesPage({
     setScreen('profile')
   }
 
+  async function handleSendResetEmail(faculty) {
+    if (!onSendPasswordResetEmail) return
+    const email = String(faculty?.email || '').trim()
+    if (!email) {
+      toast.error('No email on record for this faculty member.', { title: 'Reset email' })
+      return
+    }
+    setResetBusyId(String(faculty.id || ''))
+    try {
+      const result = await onSendPasswordResetEmail(email)
+      if (result?.error) {
+        toast.error(result.error, { title: 'Reset email' })
+        return
+      }
+      toast.success(`Reset link sent to ${result?.maskedEmail || email}`, { title: 'Reset email' })
+    } finally {
+      setResetBusyId('')
+    }
+  }
+
   if (screen === 'details') {
     const initial =
       mode === 'edit' && activeFaculty
@@ -188,7 +206,13 @@ export default function FacultiesPage({
   }
 
   if (screen === 'profile') {
-    return <FacultyProfile faculty={activeFaculty} onBack={() => setScreen('list')} />
+    return (
+      <FacultyProfile
+        faculty={activeFaculty}
+        onBack={() => setScreen('list')}
+        onSendPasswordResetEmail={onSendPasswordResetEmail}
+      />
+    )
   }
 
   return (
@@ -250,15 +274,15 @@ export default function FacultiesPage({
 
         <div className="mt-4 overflow-hidden rounded-xl border border-neutral-200 bg-white">
           <div className="max-h-[520px] overflow-auto">
-            <table className="min-w-full border-collapse">
+            <table className="min-w-full table-fixed border-collapse">
               <thead className="sticky top-0 bg-neutral-50">
                 <tr className="text-xs font-semibold text-neutral-500">
-                  <th className="px-4 py-3 text-left">NAME</th>
-                  <th className="px-4 py-3 text-left">EMAIL</th>
-                  <th className="px-4 py-3 text-left">PHONE</th>
-                  <th className="px-4 py-3 text-left">GRADE LEVEL</th>
-                  <th className="px-4 py-3 text-left">SECTIONS</th>
-                  <th className="px-4 py-3 text-right">ACTION</th>
+                  <th className="w-[28%] px-4 py-3 text-left">NAME</th>
+                  <th className="w-[14%] px-4 py-3 text-left">EMAIL</th>
+                  <th className="w-[12%] px-4 py-3 text-left">PHONE</th>
+                  <th className="w-[12%] px-4 py-3 text-left">GRADE LEVEL</th>
+                  <th className="w-[14%] px-4 py-3 text-left">SECTIONS</th>
+                  <th className="w-[240px] px-4 py-3 text-right">ACTION</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-100">
@@ -275,18 +299,26 @@ export default function FacultiesPage({
                         <div className="flex items-center gap-3">
                           <FacultyAvatar faculty={f} />
                           <div className="min-w-0">
-                            <div className="truncate font-semibold text-neutral-900">{f.name}</div>
+                            <div className="font-semibold text-neutral-900">{f.name}</div>
                           </div>
                         </div>
                       </td>
-                      <td className="px-4 py-3 font-medium text-neutral-700">{f.email}</td>
-                      <td className="px-4 py-3 font-medium text-neutral-700">{f.contactNumber}</td>
-                      <td className="px-4 py-3 font-medium text-neutral-700">{formatFacultyGradeLevels(f)}</td>
                       <td className="px-4 py-3 font-medium text-neutral-700">
-                        {(f.advisorySections || []).map((s) => s.name).join(', ') || '—'}
+                        <TruncatedTableCell value={f.email} />
                       </td>
-                      <td className="px-4 py-3 text-right">
-                        <div className="inline-flex flex-wrap items-center justify-end gap-2">
+                      <td className="px-4 py-3 font-medium text-neutral-700">
+                        <TruncatedTableCell value={f.contactNumber} />
+                      </td>
+                      <td className="px-4 py-3 font-medium text-neutral-700">
+                        <TruncatedTableCell value={formatFacultyGradeLevels(f)} />
+                      </td>
+                      <td className="px-4 py-3 font-medium text-neutral-700">
+                        <TruncatedTableCell
+                          value={(f.advisorySections || []).map((s) => s.name).join(', ')}
+                        />
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-3 text-right">
+                        <div className="inline-flex shrink-0 flex-nowrap items-center justify-end gap-2">
                           <button
                             type="button"
                             className="rounded bg-slate-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-600"
@@ -308,13 +340,20 @@ export default function FacultiesPage({
                           >
                             View
                           </button>
+                          {onSendPasswordResetEmail ? (
+                            <button
+                              type="button"
+                              className="rounded bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
+                              disabled={resetBusyId === String(f.id)}
+                              onClick={() => handleSendResetEmail(f)}
+                            >
+                              {resetBusyId === String(f.id) ? 'Sending…' : 'Send Reset Email'}
+                            </button>
+                          ) : null}
                           <button
                             type="button"
                             className="rounded bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700"
-                            onClick={() => {
-                              setPurgePhrase('')
-                              setPurgeTarget(f)
-                            }}
+                            onClick={() => setPurgeTarget(f)}
                           >
                             Delete
                           </button>
@@ -332,45 +371,35 @@ export default function FacultiesPage({
       {purgeTarget ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4">
           <div
-            className="w-full max-w-lg rounded-xl border-2 border-red-600 bg-white p-6 shadow-2xl"
+            className="w-full max-w-lg rounded-xl border border-neutral-200 bg-white p-6 shadow-2xl"
             role="alertdialog"
+            aria-labelledby="purge-faculty-title"
           >
-            <h3 className="text-lg font-bold text-red-700">Critical: Permanent purge</h3>
-            <p className="mt-3 text-sm leading-relaxed text-neutral-800">
-              WARNING: You are bypassing the Archive Vault. This option will permanently purge this active account,
-              their grades, schedules, and profile mappings from lenlearn_db immediately. This action cannot be undone.
-            </p>
-            <p className="mt-2 text-sm font-medium text-neutral-800">
-              Target: <span className="font-semibold">{purgeTarget.name}</span>
-            </p>
-            <p className="mt-4 text-sm font-medium text-neutral-800">
-              Type <span className="font-mono text-red-700">{IMMEDIATE_PURGE_PHRASE}</span> to confirm:
-            </p>
-            <input
-              type="text"
-              className="mt-2 w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm font-mono uppercase focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-200"
-              value={purgePhrase}
-              onChange={(e) => setPurgePhrase(e.target.value)}
-              autoComplete="off"
-              spellCheck={false}
-              aria-label="Permanent purge verification"
-            />
-            <div className="mt-5 flex justify-end gap-2">
+            <div className="flex items-start gap-4">
+              <i className="ti ti-alert-triangle shrink-0 text-3xl text-red-500" aria-hidden="true" />
+              <div className="min-w-0">
+                <h3 id="purge-faculty-title" className="text-lg font-bold text-neutral-900">
+                  Permanently Delete {purgeTarget.name}?
+                </h3>
+                <p className="mt-2 text-sm leading-relaxed text-neutral-700">
+                  This will immediately remove {purgeTarget.name} and all associated data. This action
+                  cannot be undone.
+                </p>
+              </div>
+            </div>
+            <div className="mt-6 flex justify-end gap-2">
               <button
                 type="button"
-                className="rounded bg-neutral-200 px-4 py-2 text-sm font-semibold text-neutral-800"
-                onClick={() => {
-                  setPurgeTarget(null)
-                  setPurgePhrase('')
-                }}
+                className="rounded bg-neutral-200 px-4 py-2 text-sm font-semibold text-neutral-800 hover:bg-neutral-300"
+                onClick={() => setPurgeTarget(null)}
                 disabled={purgeSubmitting}
               >
                 Cancel
               </button>
               <button
                 type="button"
-                disabled={!purgeUnlocked || purgeSubmitting || !onImmediatePurgeFaculty}
-                className="rounded bg-red-700 px-4 py-2 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={purgeSubmitting || !onImmediatePurgeFaculty}
+                className="rounded bg-red-600 px-4 py-2 text-sm font-bold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
                 onClick={async () => {
                   if (!purgeTarget || !onImmediatePurgeFaculty) return
                   setPurgeSubmitting(true)
@@ -379,19 +408,16 @@ export default function FacultiesPage({
                     if (result?.error) {
                       toast.error(result.error, { title: 'Permanent purge failed' })
                     } else {
-                      toast.deleted('Account permanently purged from lenlearn_db.', {
-                        title: 'Permanent purge complete',
-                        durationMs: 6000,
-                      })
+                      const name = String(purgeTarget.name || 'Faculty').trim()
+                      toast.deleted(`Faculty ${name} account deleted.`, { durationMs: 6000 })
                     }
                   } finally {
                     setPurgeSubmitting(false)
                     setPurgeTarget(null)
-                    setPurgePhrase('')
                   }
                 }}
               >
-                {purgeSubmitting ? 'Purging…' : 'Permanently purge now'}
+                {purgeSubmitting ? 'Deleting…' : 'Delete Permanently'}
               </button>
             </div>
           </div>

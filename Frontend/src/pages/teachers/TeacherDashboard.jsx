@@ -2,11 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Navigate, useNavigate, useOutletContext } from 'react-router-dom'
 import { authClient } from '../../lib/auth-client.js'
 import { FACULTY_MSG, FACULTY_TOAST_ID, useFacultyNotify } from '../../lib/facultyNotify.js'
-import TermsAndConditions, {
-  TEACHER_TERMS_ACCEPTED_KEY,
-  clearTeacherTermsAcceptance,
-  isTeacherTermsAccepted,
-} from '../../TermsAndConditions.jsx'
+import { clearTermsAcceptance } from '../../lib/termsSession.js'
 import TeacherMainHeader from './TeacherMainHeader.jsx'
 import TeacherProfileCard from './TeacherProfileCard.jsx'
 import TeacherStatCards from './TeacherStatCards.jsx'
@@ -20,9 +16,8 @@ import {
 import { canAccessTeacherDashboard } from './teacherDashboardAccess.js'
 import { fetchInstituteAppState, apiUrl, normalizeFacultyShape } from '../../lib/lmsStateStorage.js'
 import { facultyPhotoDisplaySrc } from '../../lib/facultyPhoto.js'
-import { ACTION_BLUE } from './instituteChrome.js'
-
-const SCHOOL_NAME = import.meta.env.VITE_SCHOOL_DISPLAY_NAME || 'Glendale School, Inc.'
+import { isOnline } from '../../lib/offlineSync.js'
+import { warmFacultyOfflineCache } from '../../lib/teacherPortalOffline.js'
 
 function facultyDisplayName(faculty) {
   if (!faculty) return ''
@@ -81,7 +76,7 @@ function bannerSubtitleFromAdvisory(apiProfile, effectiveFaculty) {
 
   if (Array.isArray(sections)) {
     if (sections.length === 0) {
-      return fallbackGrade()
+      return 'No advisory section assigned'
     }
 
     if (sections.length === 1) {
@@ -136,8 +131,6 @@ export default function TeacherDashboard() {
     message: '',
     detail: '',
   })
-  const [termsGateRequired, setTermsGateRequired] = useState(() => !isTeacherTermsAccepted())
-
   /** GET /api/teacher/profile — `undefined`: not fetched yet; `null`: error / unlinked */
   const [apiProfile, setApiProfile] = useState(undefined)
   const [dashboardStats, setDashboardStats] = useState({
@@ -157,12 +150,8 @@ export default function TeacherDashboard() {
   const sessionUserId = sessionUser?.id ?? sessionUser?.email ?? ''
   const sessionId = session?.id ?? ''
 
-  useEffect(() => {
-    setSidebarNavLocked?.(termsGateRequired)
-  }, [termsGateRequired, setSidebarNavLocked])
-
   const logoutToPortal = useCallback(async () => {
-    clearTeacherTermsAcceptance()
+    clearTermsAcceptance()
     await authClient.signOut()
     navigate('/login', { replace: true })
   }, [navigate])
@@ -170,7 +159,7 @@ export default function TeacherDashboard() {
   const logout = logoutFromLayout || logoutToPortal
 
   useEffect(() => {
-    if (!sessionId || termsGateRequired) {
+    if (!sessionId) {
       setStateLoading(false)
       return
     }
@@ -209,10 +198,10 @@ export default function TeacherDashboard() {
       cancelled = true
       clearTimeout(timeoutId)
     }
-  }, [sessionId, termsGateRequired])
+  }, [sessionId])
 
   useEffect(() => {
-    if (!sessionUserId || termsGateRequired) {
+    if (!sessionUserId) {
       setAdvisoryLoading(false)
       return
     }
@@ -309,6 +298,8 @@ export default function TeacherDashboard() {
           toastRef.current.error(FACULTY_MSG.dashboard.loadFailed, {
             toastId: FACULTY_TOAST_ID.dashboardFetchError,
           })
+        } else if (isOnline()) {
+          void warmFacultyOfflineCache()
         }
       } catch (e) {
         if (!cancelled && !timedOut) {
@@ -332,7 +323,43 @@ export default function TeacherDashboard() {
       clearTimeout(timeoutId)
       setAdvisoryLoading(false)
     }
-  }, [sessionUserId, termsGateRequired])
+  }, [sessionUserId])
+
+  useEffect(() => {
+    if (!sessionUserId) return
+
+    const refetchAdvisory = async () => {
+      if (document.visibilityState !== 'visible' || !isOnline()) return
+      try {
+        const [resProf, resAdv] = await Promise.all([
+          fetch(apiUrl('/api/teacher/profile'), { credentials: 'include' }),
+          fetch(apiUrl('/api/teacher/advisory-sections'), { credentials: 'include' }),
+        ])
+        const dataProf = await resProf.json().catch(() => ({}))
+        const dataAdvRaw = await resAdv.json().catch(() => null)
+        if (
+          resProf.ok &&
+          dataProf &&
+          !dataProf.error &&
+          String(dataProf.faculty_row_id || dataProf.id || '').trim() !== ''
+        ) {
+          setApiProfile(dataProf)
+        }
+        if (resAdv.ok && Array.isArray(dataAdvRaw)) {
+          setAdvisorySections(dataAdvRaw)
+          setAdvisoryError(null)
+        }
+      } catch {
+        /* keep existing dashboard data on background refresh failure */
+      }
+    }
+
+    const onVisible = () => {
+      void refetchAdvisory()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [sessionUserId])
 
   const faculties = useMemo(() => (Array.isArray(state?.faculties) ? state.faculties : []), [state])
 
@@ -437,6 +464,14 @@ export default function TeacherDashboard() {
     return ''
   }, [sessionUser])
 
+  if (sessionState.isPending) {
+    return (
+      <div className="flex h-full min-h-[12rem] items-center justify-center text-sm font-medium text-neutral-600">
+        Loading…
+      </div>
+    )
+  }
+
   if (!session) {
     return <Navigate to="/login" replace />
   }
@@ -458,41 +493,6 @@ export default function TeacherDashboard() {
           Back to sign-in
         </button>
       </div>
-    )
-  }
-
-  if (termsGateRequired) {
-    return (
-      <>
-        <header className="flex shrink-0 flex-wrap items-center justify-between gap-4 border-b border-neutral-200/80 bg-neutral-50/80 px-4 py-3 backdrop-blur-sm md:px-8">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-neutral-500">FACULTY</p>
-            <h1 className="mt-0.5 text-lg font-bold tracking-tight text-neutral-900 md:text-xl">
-              Terms and Policy
-            </h1>
-          </div>
-          <button
-            type="button"
-            onClick={logout}
-            className="rounded-lg px-5 py-2 text-sm font-semibold text-white shadow-md transition hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
-            style={{ backgroundColor: ACTION_BLUE }}
-          >
-            Logout
-          </button>
-        </header>
-        <main className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-8">
-          <div className="mx-auto w-full max-w-4xl pb-8">
-            <TermsAndConditions
-              schoolName={SCHOOL_NAME}
-              gateMode
-              acceptanceStorageKey={TEACHER_TERMS_ACCEPTED_KEY}
-              onAccepted={() => {
-                setTermsGateRequired(false)
-              }}
-            />
-          </div>
-        </main>
-      </>
     )
   }
 

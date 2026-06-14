@@ -2,17 +2,21 @@ import fs from 'node:fs'
 import path from 'node:path'
 import multer from 'multer'
 import { randomUUID } from 'node:crypto'
+import {
+  DEFAULT_UPLOAD_MAX_BYTES,
+  DEFAULT_UPLOAD_MAX_MSG,
+  FACULTY_STUDY_MATERIAL_MAX_BYTES,
+  STUDY_MATERIAL_MAX_MSG,
+} from './uploadLimitsConfig.js'
 
 export const MATERIAL_UPLOAD_REL = '/uploads/materials'
-export const MATERIAL_VIDEO_MAX_BYTES = 1024 * 1024 * 1024
-export const MATERIAL_OTHER_MAX_BYTES = 50 * 1024 * 1024
-export const DOCUMENT_EDIT_MAX_BYTES = 25 * 1024 * 1024
-export const FILE_SIZE_MAX_MSG = 'File size must not exceed 25MB'
+export const MATERIAL_VIDEO_MAX_BYTES = FACULTY_STUDY_MATERIAL_MAX_BYTES
+export const MATERIAL_OTHER_MAX_BYTES = FACULTY_STUDY_MATERIAL_MAX_BYTES
+export const DOCUMENT_EDIT_MAX_BYTES = DEFAULT_UPLOAD_MAX_BYTES
+export const FILE_SIZE_MAX_MSG = DEFAULT_UPLOAD_MAX_MSG
 export const FILE_TYPE_MSG = 'Only PDF, DOC, and DOCX files are allowed'
 
-/** PDF, DOC, DOCX only — used for teacher POST /api/teacher/materials */
 export const DOCUMENT_ALLOWED_EXT = new Set(['.pdf', '.doc', '.docx'])
-
 export const DOCUMENT_ALLOWED_MIMES = new Set([
   'application/pdf',
   'application/msword',
@@ -95,16 +99,14 @@ export function deleteStudyMaterialFileByUrl(fileUrl) {
   }
 }
 
-function validateDocumentMaterialFile(file) {
+function validateDocumentMaterialFile(file, maxBytes, maxMsg) {
   if (!file) return 'Study material file is required.'
   const ext = path.extname(String(file.originalname || '')).toLowerCase()
   const mime = String(file.mimetype || '').toLowerCase()
   if (!DOCUMENT_ALLOWED_EXT.has(ext) && !DOCUMENT_ALLOWED_MIMES.has(mime)) {
-    return 'Only PDF, DOC, and DOCX files are allowed.'
+    return FILE_TYPE_MSG
   }
-  if (file.size > MATERIAL_OTHER_MAX_BYTES) {
-    return 'File must be under 50 MB.'
-  }
+  if (file.size > maxBytes) return maxMsg
   return ''
 }
 
@@ -114,16 +116,14 @@ function validateMaterialFile(file) {
   if (!ALLOWED_EXT.has(ext)) {
     return 'Allowed: PDF, PPT, PPTX, DOC, DOCX, JPG, JPEG, PNG, GIF, MP4, AVI, MOV, WMV, MKV, MP3.'
   }
-  const max = VIDEO_EXT.has(ext) ? MATERIAL_VIDEO_MAX_BYTES : MATERIAL_OTHER_MAX_BYTES
-  if (file.size > max) {
-    return VIDEO_EXT.has(ext) ? 'Video files must be under 1 GB.' : 'File must be under 50 MB.'
-  }
+  const max = VIDEO_EXT.has(ext) ? FACULTY_STUDY_MATERIAL_MAX_BYTES : FACULTY_STUDY_MATERIAL_MAX_BYTES
+  if (file.size > max) return STUDY_MATERIAL_MAX_MSG
   return ''
 }
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: MATERIAL_VIDEO_MAX_BYTES, files: 1, fields: 24 },
+  limits: { fileSize: FACULTY_STUDY_MATERIAL_MAX_BYTES, files: 1, fields: 24 },
   fileFilter(_req, file, cb) {
     const ext = path.extname(String(file.originalname || '')).toLowerCase()
     if (!ALLOWED_EXT.has(ext)) {
@@ -136,7 +136,7 @@ const upload = multer({
 
 const documentUpload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: MATERIAL_OTHER_MAX_BYTES, files: 1, fields: 24 },
+  limits: { fileSize: FACULTY_STUDY_MATERIAL_MAX_BYTES, files: 1, fields: 24 },
   fileFilter(_req, file, cb) {
     const ext = path.extname(String(file.originalname || '')).toLowerCase()
     const mime = String(file.mimetype || '').toLowerCase()
@@ -154,7 +154,7 @@ function isMultipart(req) {
 
 const documentEditUpload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: DOCUMENT_EDIT_MAX_BYTES, files: 1, fields: 24 },
+  limits: { fileSize: DEFAULT_UPLOAD_MAX_BYTES, files: 1, fields: 24 },
   fileFilter(_req, file, cb) {
     const ext = path.extname(String(file.originalname || '')).toLowerCase()
     const mime = String(file.mimetype || '').toLowerCase()
@@ -173,25 +173,22 @@ function multerSingle(multerInstance, sizeLimitMsg) {
       if (!err) return next()
       res.status(400).json({
         success: false,
-        error:
-          err.code === 'LIMIT_FILE_SIZE'
-            ? sizeLimitMsg || FILE_SIZE_MAX_MSG
-            : String(err.message || err),
+        error: err.code === 'LIMIT_FILE_SIZE' ? sizeLimitMsg : String(err.message || err),
       })
     })
   }
 }
 
 export function studyMaterialUploadMiddleware(req, res, next) {
-  multerSingle(upload, 'File exceeds maximum size (50 MB, or 1 GB for video).')(req, res, next)
+  multerSingle(upload, STUDY_MATERIAL_MAX_MSG)(req, res, next)
 }
 
 export function studyMaterialDocumentUploadMiddleware(req, res, next) {
-  multerSingle(documentUpload, 'File must be under 50 MB.')(req, res, next)
+  multerSingle(documentUpload, STUDY_MATERIAL_MAX_MSG)(req, res, next)
 }
 
 export function studyMaterialEditUploadMiddleware(req, res, next) {
-  multerSingle(documentEditUpload, FILE_SIZE_MAX_MSG)(req, res, next)
+  multerSingle(documentEditUpload, DEFAULT_UPLOAD_MAX_MSG)(req, res, next)
 }
 
 export function getStudyMaterialUploadFile(req) {
@@ -203,19 +200,14 @@ export function validateStudyMaterialUploadFile(file) {
 }
 
 export function validateDocumentStudyMaterialUploadFile(file) {
-  return validateDocumentMaterialFile(file)
+  return validateDocumentMaterialFile(file, FACULTY_STUDY_MATERIAL_MAX_BYTES, STUDY_MATERIAL_MAX_MSG)
 }
 
+/** Subject materials — PDF/DOC/DOCX, max 15MB. */
 export function validateEditDocumentStudyMaterialUploadFile(file) {
-  if (!file) return ''
-  const ext = path.extname(String(file.originalname || '')).toLowerCase()
-  const mime = String(file.mimetype || '').toLowerCase()
-  if (!DOCUMENT_ALLOWED_EXT.has(ext) && !DOCUMENT_ALLOWED_MIMES.has(mime)) {
-    return FILE_TYPE_MSG
-  }
-  const maxSize = 25 * 1024 * 1024
-  if (file.size > maxSize) {
-    return FILE_SIZE_MAX_MSG
-  }
-  return ''
+  return validateDocumentMaterialFile(file, DEFAULT_UPLOAD_MAX_BYTES, DEFAULT_UPLOAD_MAX_MSG)
+}
+
+export function validateSubjectMaterialEditUploadFile(file) {
+  return validateDocumentMaterialFile(file, DEFAULT_UPLOAD_MAX_BYTES, DEFAULT_UPLOAD_MAX_MSG)
 }

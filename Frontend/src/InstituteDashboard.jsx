@@ -10,17 +10,24 @@ import InstituteCurriculum, {
   CURRICULUM_STORAGE_KEY,
   normalizeCurriculumList,
 } from './modules/curriculum/InstituteCurriculum.jsx'
-import TermsAndConditions, { isInstituteTermsAccepted } from './TermsAndConditions.jsx'
 import { useNotify } from './components/notifications.jsx'
 import { getLmsStateEndpointUrl, apiUrl } from './lib/lmsStateStorage.js'
+import { saveListSnapshot, getListSnapshot } from './lib/indexedDB.js'
+import { isOnline } from './lib/offlineSync.js'
+import { warmAdminOfflineCache } from './lib/adminPortalOffline.js'
+import OfflineBanner from './components/OfflineBanner.jsx'
+import AdminAuditBanner from './components/AdminAuditBanner.jsx'
 import { resolveSubjectImageFromMap } from './lib/subjectImages.js'
 import MonitoringRecords from './pages/MonitoringRecords.jsx'
 import BackupPage from './pages/BackupPage.jsx'
 import ArchiveVault from './pages/ArchiveVault.jsx'
 import AuditStatisticsSection from './components/AuditStatisticsSection.jsx'
+import AdminLatestAnnouncementsExpanded from './components/admin/AdminLatestAnnouncementsExpanded.jsx'
 import Header from './components/Header.jsx'
-import { dispatchAuditLogsRefresh } from './lib/auditLogRefresh.js'
-import { facultyPhotoAuthImageUrl } from './lib/facultyPhoto.js'
+import PortalSidebarShell from './components/PortalSidebarShell.jsx'
+import { useSidebarCollapsed, SIDEBAR_COLLAPSED_KEYS } from './hooks/useSidebarCollapsed.js'
+import { dispatchAuditLogsRefresh, BACKUP_RESTORED_EVENT } from './lib/auditLogRefresh.js'
+import { facultyPhotoAuthImageUrl, facultyPhotoDisplaySrc } from './lib/facultyPhoto.js'
 import { dedupeById } from './lib/dedupeById.js'
 import { stripSecretsFromList } from './lib/stripLocalStorageSecrets.js'
 import { NAV_ID_TO_PATH, navIdFromPath, pathForNavId } from './lib/adminNavRoutes.js'
@@ -29,11 +36,7 @@ const SIDEBAR_GOLD = '#1e4fa3'
 const SIDEBAR_GOLD_DARK = '#15397a'
 const ACTION_BLUE = '#1e4fa3'
 const ADMIN_AVATAR_STORAGE_KEY = 'lenlearn.adminAvatarDataUrl'
-const SECTION_STORAGE_KEY = 'lenlearn.sections'
-const STUDENT_STORAGE_KEY = 'lenlearn.students'
-const FACULTY_STORAGE_KEY = 'lenlearn.faculties'
-const SUBJECT_STORAGE_KEY = 'lenlearn.subjects'
-const UPDATE_STORAGE_KEY = 'lenlearn.updates'
+/** UI-only local preference (not roster data). */
 
 const GRADE_LEVELS = ['Grade 7', 'Grade 8', 'Grade 9', 'Grade 10']
 
@@ -86,7 +89,7 @@ function mapPgStudentRow(row, sectionsList) {
     parentContactNumber: String(row.parent_contact || '').trim(),
     parentEmail: String(row.parent_email || '').trim().toLowerCase(),
     grade: String(row.grade_level || '').trim(),
-    semester: String(row.quarter || '').trim(),
+    semester: String(row.semester || '').trim(),
     sectionId: sec?.id || '',
     sectionName: String(row.section_name || sec?.name || '').trim(),
     rollNo: String(row.roll_no || '').trim(),
@@ -95,7 +98,7 @@ function mapPgStudentRow(row, sectionsList) {
     appPassword: '',
     photoDataUrl: photo,
     photo_url: photo,
-    authUserId: '',
+    authUserId: String(row.auth_user_id ?? row.authUserId ?? '').trim(),
   }
 }
 
@@ -164,6 +167,8 @@ function mapPgFacultyRow(row, sectionsList) {
     email: String(row.email || '').trim().toLowerCase(),
     contactNumber: String(row.contactNumber ?? row.contact_number ?? '').trim(),
     qualification: String(row.qualification || '').trim(),
+    semester: String(row.semester ?? '').trim(),
+    address: String(row.address ?? '').trim(),
     facultyUsername: facultyCodeId,
     facultyCode: facultyCodeId,
     grade_level: gradeLevels[0] || String(row.grade_level || row.grade || '').trim(),
@@ -186,7 +191,7 @@ function mapPgSubjectRow(row, facultiesList) {
     : null
   const gradeLabel = String(row.grade ?? row.grade_level ?? '').trim()
   const gradeNum = gradeLabel.replace(/[^0-9]/g, '')
-  const q = String(row.quarter ?? '').trim()
+  const q = String(row.semester ?? '').trim()
   const semCode = gradeNum && q ? `${gradeNum.padStart(2, '0')}_${q}` : ''
   const syllabusDataUrl = String(row.syllabusDataUrl ?? row.syllabus_pdf ?? '').trim()
   return {
@@ -195,7 +200,7 @@ function mapPgSubjectRow(row, facultiesList) {
     subjectCode: String(row.subjectCode ?? row.subject_code ?? '').trim(),
     subjectName: String(row.subjectName ?? row.subject_name ?? '').trim(),
     grade: gradeLabel,
-    quarter: Number(row.quarter) || row.quarter,
+    semester: Number(row.semester) || row.semester,
     semCode,
     assignedFacultyId: facultyId,
     assignedFacultyName: String(row.assignedFacultyName ?? row.faculty_name ?? fac?.name ?? '').trim(),
@@ -217,7 +222,7 @@ function buildSubjectApiBody(payload) {
     subjectName: String(payload.subjectName || '').trim(),
     grade,
     grade_level: grade,
-    quarter: payload.quarter,
+    semester: payload.semester,
     assignedFacultyId: String(payload.assignedFacultyId || '').trim(),
     faculty_id: String(payload.assignedFacultyId || '').trim(),
     ...(syllabus ? { syllabusDataUrl: syllabus, syllabus_pdf: syllabus } : {}),
@@ -316,7 +321,7 @@ async function resolvePostgresSectionIdsForFaculty(advisorySections, sectionsLis
 
 const MAX_FACULTY_PHOTO_CHARS = 1_500_000
 
-function buildFacultyApiBody(payload, sectionIds, authUserId, { forUpdate = false } = {}) {
+function buildFacultyApiBody(payload, sectionIds, authUserId, { forUpdate = false, persistAuthUserId = false } = {}) {
   const advisorySections = Array.isArray(payload.advisorySections) ? payload.advisorySections : []
   const rawPhoto = String(payload.photo_url ?? payload.photoDataUrl ?? '').trim()
   const photo_url =
@@ -346,19 +351,24 @@ function buildFacultyApiBody(payload, sectionIds, authUserId, { forUpdate = fals
     contactNumber,
     contact_number: contactNumber,
     qualification,
+    semester: payload.semester ?? null,
+    address: payload.address ?? null,
     facultyCodeId,
     faculty_code_id: facultyCodeId,
     facultyUsername: facultyCodeId,
     facultyCode: facultyCodeId,
     password: payload.password,
-    appPasswordGmail: payload.appPassword,
-    app_password_gmail: payload.appPassword,
+    ...(payload.appPassword
+      ? { appPasswordGmail: payload.appPassword, app_password_gmail: payload.appPassword }
+      : {}),
     sectionIds,
     section_ids: sectionIds,
     advisorySections,
     ...(payload.photoChanged ? { photoChanged: true } : {}),
     ...(forUpdate
-      ? {}
+      ? persistAuthUserId && authUserId
+        ? { authUserId: authUserId, auth_user_id: authUserId }
+        : {}
       : {
           authUserId: authUserId || undefined,
           auth_user_id: authUserId || undefined,
@@ -367,8 +377,13 @@ function buildFacultyApiBody(payload, sectionIds, authUserId, { forUpdate = fals
 }
 
 /** JSON body or multipart FormData when a new photo file is included. */
-function buildFacultySaveRequest(payload, sectionIds, authUserId, { forUpdate = false, photoFile = null } = {}) {
-  const jsonBody = buildFacultyApiBody(payload, sectionIds, authUserId, { forUpdate })
+function buildFacultySaveRequest(
+  payload,
+  sectionIds,
+  authUserId,
+  { forUpdate = false, photoFile = null, persistAuthUserId = false } = {},
+) {
+  const jsonBody = buildFacultyApiBody(payload, sectionIds, authUserId, { forUpdate, persistAuthUserId })
   if (forUpdate && !(photoFile instanceof File)) {
     delete jsonBody.photo_url
     delete jsonBody.photoDataUrl
@@ -625,17 +640,15 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
   const toast = useNotify()
   const location = useLocation()
   const navigate = useNavigate()
+  const { collapsed: sidebarCollapsed, toggleCollapsed: toggleSidebarCollapsed } = useSidebarCollapsed(
+    SIDEBAR_COLLAPSED_KEYS.admin,
+  )
   const fileInputRef = useRef(null)
   const curriculumRef = useRef(null)
   const [adminAvatarDataUrl, setAdminAvatarDataUrl] = useState('')
   const [activeNav, setActiveNav] = useState(
     () => navIdFromPath(typeof window !== 'undefined' ? window.location.pathname : '') || 'dashboard',
   )
-  const [termsOpen, setTermsOpen] = useState(false)
-  const [termsGateRequired, setTermsGateRequired] = useState(() => !isInstituteTermsAccepted())
-  // If the user clicks a protected nav item while the terms gate is required,
-  // remember where they wanted to go so we can open it immediately after acceptance.
-  const [postTermsNav, setPostTermsNav] = useState(null)
   const [sectionPage, setSectionPage] = useState('manage')
   const [activeSection, setActiveSection] = useState(null)
   const [students, setStudents] = useState([])
@@ -694,104 +707,13 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
           const saved = localStorage.getItem(ADMIN_AVATAR_STORAGE_KEY) || ''
           if (saved) setAdminAvatarDataUrl(saved)
         } catch {}
-
-        try {
-          const raw = localStorage.getItem(CURRICULUM_STORAGE_KEY)
-          if (raw) {
-            const parsed = JSON.parse(raw)
-            if (Array.isArray(parsed)) setCurriculums(normalizeCurriculumList(parsed))
-          }
-        } catch {}
-
-        try {
-          const raw = localStorage.getItem(SECTION_STORAGE_KEY)
-          if (raw) {
-            const parsed = JSON.parse(raw)
-            if (Array.isArray(parsed)) setSections(parsed)
-          }
-        } catch {}
-
-        try {
-          const raw = localStorage.getItem(STUDENT_STORAGE_KEY)
-          if (raw) {
-            const parsed = JSON.parse(raw)
-            if (Array.isArray(parsed)) {
-              const normalized = parsed.map((s) => {
-                const fullName = String(s.name || '').trim()
-                const parts = fullName ? fullName.split(/\s+/).filter(Boolean) : []
-                const firstName = s.firstName || parts[0] || ''
-                const lastName = s.lastName || (parts.length > 1 ? parts[parts.length - 1] : '')
-                const middleName =
-                  s.middleName || (parts.length > 2 ? parts.slice(1, -1).join(' ') : '')
-
-                const email = String(s.email || '').trim()
-                const enrollmentNo = String(s.enrollmentNo || '').trim()
-                const loginId = String(s.loginId || email || enrollmentNo).trim()
-
-                return {
-                  ...s,
-                  firstName,
-                  middleName,
-                  lastName,
-                  enrollmentNo,
-                  email,
-                  loginId,
-                  name: fullName || `${firstName} ${lastName}`.trim(),
-                  phone: s.phone || s.studentContactNumber || '',
-                  studentContactNumber: s.studentContactNumber || s.phone || '',
-                  sectionName: s.sectionName || '',
-                  grade: s.grade || '',
-                  semester: s.semester || '1',
-                  studentAddress: s.studentAddress || '',
-                  dateOfBirth: s.dateOfBirth || '',
-                  parentContactNumber: s.parentContactNumber || '',
-                  parentEmail: s.parentEmail || '',
-                  photoDataUrl: s.photoDataUrl || '',
-                  password: s.password || '',
-                }
-              })
-              setStudents(normalized)
-            }
-          }
-        } catch {}
-
-        let pgFacultyApiOk = false
-        try {
-          const probe = await fetchStateApi(apiUrl('/api/v1/faculty'), { credentials: 'include' })
-          pgFacultyApiOk = probe.ok
-        } catch {
-          pgFacultyApiOk = false
-        }
-
-        if (!pgFacultyApiOk) {
-          try {
-            const raw = localStorage.getItem(FACULTY_STORAGE_KEY)
-            if (raw) {
-              const parsed = JSON.parse(raw)
-              if (Array.isArray(parsed)) setFaculties(parsed)
-            }
-          } catch {}
-        } else {
-          setFaculties([])
-        }
-
-        try {
-          const raw = localStorage.getItem(SUBJECT_STORAGE_KEY)
-          if (raw) {
-            const parsed = JSON.parse(raw)
-            if (Array.isArray(parsed)) setSubjects(parsed)
-          }
-        } catch {}
-
-        try {
-          const raw = localStorage.getItem(UPDATE_STORAGE_KEY)
-          if (raw) {
-            const parsed = JSON.parse(raw)
-            if (Array.isArray(parsed)) setUpdates(parsed)
-          }
-        } catch {}
-
-        setPersistenceMode(pgFacultyApiOk ? 'server' : 'local')
+        setCurriculums([])
+        setSections([])
+        setStudents([])
+        setFaculties([])
+        setSubjects([])
+        setUpdates([])
+        setPersistenceMode('server')
       } finally {
         if (!cancelled) setStateBootstrapDone(true)
       }
@@ -803,62 +725,11 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
     }
   }, [])
 
-  // If Terms "view" mode is open (not the required gate), allow the user to navigate away
-  // without needing an explicit "Back".
   useEffect(() => {
-    if (termsGateRequired) return
-    if (!termsOpen) return
-    if (!postTermsNav) return
-    // navigation will be handled by the other effect once gate is false.
-  }, [termsGateRequired, termsOpen, postTermsNav])
-
-  useEffect(() => {
-    if (persistenceMode !== 'local') return
-    try {
-      localStorage.setItem(SECTION_STORAGE_KEY, JSON.stringify(sections))
-    } catch {}
-  }, [sections, persistenceMode])
-
-  useEffect(() => {
-    if (persistenceMode !== 'local') return
-    try {
-      localStorage.setItem(
-        STUDENT_STORAGE_KEY,
-        JSON.stringify(stripSecretsFromList(students)),
-      )
-    } catch {}
-  }, [students, persistenceMode])
-
-  useEffect(() => {
-    if (persistenceMode !== 'local') return
-    try {
-      localStorage.setItem(
-        FACULTY_STORAGE_KEY,
-        JSON.stringify(stripSecretsFromList(faculties)),
-      )
-    } catch {}
-  }, [faculties, persistenceMode])
-
-  useEffect(() => {
-    if (persistenceMode !== 'local') return
-    try {
-      localStorage.setItem(SUBJECT_STORAGE_KEY, JSON.stringify(subjects))
-    } catch {}
-  }, [subjects, persistenceMode])
-
-  useEffect(() => {
-    if (persistenceMode !== 'local') return
-    try {
-      localStorage.setItem(UPDATE_STORAGE_KEY, JSON.stringify(updates))
-    } catch {}
-  }, [updates, persistenceMode])
-
-  useEffect(() => {
-    if (persistenceMode !== 'local') return
     try {
       localStorage.setItem(ADMIN_AVATAR_STORAGE_KEY, adminAvatarDataUrl || '')
     } catch {}
-  }, [adminAvatarDataUrl, persistenceMode])
+  }, [adminAvatarDataUrl])
 
   useEffect(() => {
     if (persistenceMode !== 'server' || !stateBootstrapDone) return
@@ -867,12 +738,6 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
     const timeout = setTimeout(() => {
       const state = {
         adminAvatarDataUrl,
-        curriculums,
-        sections,
-        students,
-        ...(persistenceMode === 'local' ? { faculties, __localFacultyMirror: true } : {}),
-        subjects,
-        updates,
       }
       ;(async () => {
         try {
@@ -923,12 +788,6 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
     persistenceMode,
     stateBootstrapDone,
     adminAvatarDataUrl,
-    curriculums,
-    sections,
-    students,
-    faculties,
-    subjects,
-    updates,
   ])
 
   const sectionsForGrade = useMemo(
@@ -945,7 +804,8 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
     ]
   }, [students.length, faculties.length, sections.length])
 
-  const recentFaculties = useMemo(() => dedupeById(faculties).slice(0, 6), [faculties])
+  const recentFaculties = useMemo(() => dedupeById(faculties).slice(0, 4), [faculties])
+  const recentAnnouncements = useMemo(() => updates.slice(0, 5), [updates])
 
   function openFacultiesAllPage() {
     navigateToNav('faculties')
@@ -992,16 +852,6 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
     applyNavSideEffects(id)
   }, [location.pathname, activeNav, applyNavSideEffects])
 
-  // After the user accepts the Terms & Conditions, open the nav item they clicked.
-  useEffect(() => {
-    if (termsGateRequired) return
-    if (!postTermsNav) return
-
-    const id = postTermsNav
-    setPostTermsNav(null)
-    navigateToNav(id)
-  }, [termsGateRequired, postTermsNav, navigateToNav])
-
   function isAdminCreateUserDuplicateError(status, json) {
     if (status !== 400) return false
     const code = String(json?.code || json?.error?.code || '')
@@ -1010,7 +860,7 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
     return /user already exists/i.test(msg) && /email/i.test(msg)
   }
 
-  /** Resolves Better Auth user id for an email (server SQLite first; then admin list-users fallbacks). */
+  /** Resolves Better Auth user id for an email (PostgreSQL lookup first; then admin list-users fallbacks). */
   async function findAuthUserIdByEmail(email) {
     const e = String(email || '').trim().toLowerCase()
     if (!e) return ''
@@ -1056,12 +906,95 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
     )
   }
 
+  /** Resolves Better Auth user id for a login id / faculty code (username). */
+  async function findAuthUserIdByUsername(loginId) {
+    const u = String(loginId || '').trim().toLowerCase()
+    if (!u) return ''
+    try {
+      const postRes = await fetchAuthAdmin(apiUrl('/api/lms/admin/auth-user-id-by-username'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ username: u }),
+      })
+      const postJson = await postRes.json().catch(() => ({}))
+      if (postRes.ok && postJson?.userId) return String(postJson.userId)
+    } catch {
+      /* fall through */
+    }
+
+    const tryList = async (params) => {
+      const res = await fetchAuthAdmin(apiUrl(`/api/auth/admin/list-users?${params}`), { credentials: 'include' })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) return ''
+      const users = Array.isArray(json?.users) ? json.users : []
+      const row = users.find((r) => String(r?.username || '').trim().toLowerCase() === u)
+      return row?.id ? String(row.id) : ''
+    }
+
+    let id = await tryList(
+      new URLSearchParams({
+        filterField: 'username',
+        filterOperator: 'eq',
+        filterValue: u,
+        limit: '20',
+      }),
+    )
+    if (id) return id
+
+    return tryList(
+      new URLSearchParams({
+        searchField: 'username',
+        searchOperator: 'contains',
+        searchValue: u,
+        limit: '50',
+      }),
+    )
+  }
+
+  async function resolvePortalAuthUserId({ existingAuthUserId, loginId, email }) {
+    const username = String(loginId || '').trim().toLowerCase()
+    let authUserId = String(existingAuthUserId || '').trim()
+    const byUsername = username ? await findAuthUserIdByUsername(username) : ''
+    if (byUsername) {
+      if (!authUserId) authUserId = byUsername
+      else if (authUserId !== byUsername) authUserId = byUsername
+    }
+    if (!authUserId) {
+      const byEmail = await findAuthUserIdByEmail(email)
+      if (byEmail) authUserId = byEmail
+    }
+    return authUserId
+  }
+
+  async function sendPasswordResetEmail(email) {
+    const trimmed = String(email || '').trim().toLowerCase()
+    if (!trimmed) return { error: 'No email on record for this account.' }
+    try {
+      const res = await fetchAuthAdmin(apiUrl('/api/v1/admin/send-password-reset'), {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: trimmed }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        const message = String(json?.message || json?.error || 'Could not send reset email.').trim()
+        return { error: message }
+      }
+      return { ok: true, maskedEmail: json?.maskedEmail || trimmed }
+    } catch (e) {
+      return { error: e?.message || 'Could not send reset email.' }
+    }
+  }
+
   async function ensureFacultyAuthUser({
     email,
     name,
     facultyUsername,
     password,
     existingAuthUserId,
+    previousFacultyUsername = '',
     facultyQualification = '',
     facultyContactNumber = '',
     photoDataUrl = '',
@@ -1070,17 +1003,19 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
     const username = String(facultyUsername || '').trim().toLowerCase()
     if (!username) return { error: 'Faculty Code ID is required.' }
     const pw = String(password || '').trim()
+    const prevUsername = String(previousFacultyUsername || facultyUsername || '').trim().toLowerCase()
+    const usernameChanged = username !== prevUsername
 
     const fq = String(facultyQualification || '').trim()
     const fc = String(facultyContactNumber || '').trim()
     const rawImg = facultyPhotoAuthImageUrl(String(photoDataUrl ?? '').trim())
     const image = rawImg
 
-    let authUserId = String(existingAuthUserId || '').trim()
-    if (!authUserId) {
-      const resolved = await findAuthUserIdByEmail(email)
-      if (resolved) authUserId = resolved
-    }
+    const authUserId = await resolvePortalAuthUserId({
+      existingAuthUserId,
+      loginId: username,
+      email,
+    })
 
     if (!authUserId) {
       if (!pw) return { error: 'Faculty password is required to create a new login.' }
@@ -1107,7 +1042,8 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
       const json = await res.json().catch(() => ({}))
       if (!res.ok) {
         if (isAdminCreateUserDuplicateError(res.status, json)) {
-          const existingId = await findAuthUserIdByEmail(email)
+          const existingId =
+            (await findAuthUserIdByUsername(username)) || (await findAuthUserIdByEmail(email))
           if (existingId) {
             return ensureFacultyAuthUser({
               email,
@@ -1115,6 +1051,7 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
               facultyUsername,
               password,
               existingAuthUserId: existingId,
+              previousFacultyUsername,
               facultyQualification,
               facultyContactNumber,
               photoDataUrl,
@@ -1126,22 +1063,25 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
       return { ok: true, authUserId: json?.user?.id || '' }
     }
 
-    // Update username + ensure 2FA enabled
+    const updateData = {
+      name,
+      twoFactorEnabled: 1,
+      facultyQualification: fq,
+      facultyContactNumber: fc,
+      ...(image ? { image } : {}),
+    }
+    if (usernameChanged) {
+      updateData.username = username
+      updateData.displayUsername = username
+    }
+
     const upRes = await fetchAuthAdmin(apiUrl('/api/auth/admin/update-user'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
       body: JSON.stringify({
         userId: authUserId,
-        data: {
-          name,
-          username,
-          displayUsername: username,
-          twoFactorEnabled: 1,
-          facultyQualification: fq,
-          facultyContactNumber: fc,
-          ...(image ? { image } : {}),
-        },
+        data: updateData,
       }),
     })
     const upJson = await upRes.json().catch(() => ({}))
@@ -1167,17 +1107,20 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
     loginId,
     password,
     existingAuthUserId,
+    previousLoginId = '',
     setCredentialPassword = true,
   }) {
     const username = String(loginId || '').trim().toLowerCase()
     if (!username) return { error: 'Student Login ID is required.' }
     const pw = String(password || '').trim()
+    const prevUsername = String(previousLoginId || loginId || '').trim().toLowerCase()
+    const usernameChanged = username !== prevUsername
 
-    let authUserId = String(existingAuthUserId || '').trim()
-    if (!authUserId) {
-      const resolved = await findAuthUserIdByEmail(email)
-      if (resolved) authUserId = resolved
-    }
+    const authUserId = await resolvePortalAuthUserId({
+      existingAuthUserId,
+      loginId: username,
+      email,
+    })
 
     if (!authUserId) {
       if (!pw) return { error: 'Student password is required to create a new login.' }
@@ -1201,7 +1144,8 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
       const json = await res.json().catch(() => ({}))
       if (!res.ok) {
         if (isAdminCreateUserDuplicateError(res.status, json)) {
-          const existingId = await findAuthUserIdByEmail(email)
+          const existingId =
+            (await findAuthUserIdByUsername(username)) || (await findAuthUserIdByEmail(email))
           if (existingId) {
             return ensureStudentAuthUser({
               email,
@@ -1209,6 +1153,7 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
               loginId,
               password,
               existingAuthUserId: existingId,
+              previousLoginId,
             })
           }
         }
@@ -1217,17 +1162,23 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
       return { ok: true, authUserId: json?.user?.id || '' }
     }
 
+    const updateData = {
+      name: String(name || '').trim() || email,
+      email: String(email || '').trim().toLowerCase(),
+      twoFactorEnabled: 1,
+    }
+    if (usernameChanged) {
+      updateData.username = username
+      updateData.displayUsername = username
+    }
+
     const upRes = await fetchAuthAdmin(apiUrl('/api/auth/admin/update-user'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
       body: JSON.stringify({
         userId: authUserId,
-        data: {
-          username,
-          displayUsername: username,
-          twoFactorEnabled: 1,
-        },
+        data: updateData,
       }),
     })
     const upJson = await upRes.json().catch(() => ({}))
@@ -1251,7 +1202,6 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
     const email = String(payload.email || '').trim().toLowerCase()
     const facultyCodeId = String(payload.facultyUsername || payload.facultyCode || '').trim()
     const password = String(payload.password || '').trim()
-    const appPassword = String(payload.appPassword || '').trim()
     if (!email || !facultyCodeId || !password) return { error: 'Please complete all required fields.' }
 
     const normalized = facultyCodeId.toLowerCase()
@@ -1289,7 +1239,7 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
       }
       try {
         const saveReq = buildFacultySaveRequest(
-          { ...payload, email, password, appPassword },
+          { ...payload, email, password },
           sectionIds,
           authSync.authUserId,
           { photoFile },
@@ -1327,6 +1277,7 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
               facultyUsername: facultyCodeId,
               password,
               existingAuthUserId: authSync.authUserId,
+              previousFacultyUsername: facultyCodeId,
               facultyQualification: payload.qualification,
               facultyContactNumber: payload.contactNumber,
               photoDataUrl: savedPath,
@@ -1359,7 +1310,6 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
         facultyCode: facultyCodeId,
         facultyUsername: facultyCodeId,
         password,
-        appPassword,
         authUserId: authSync.authUserId,
       },
       ...faculties,
@@ -1409,6 +1359,10 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
     const patchPhoto = String(patch.photo_url ?? patch.photoDataUrl ?? '').trim()
     const currentPhoto = String(current.photo_url ?? current.photoDataUrl ?? '').trim()
     const photoChanged = Boolean(photoFile) || (patchPhoto !== '' && patchPhoto !== currentPhoto)
+    const previousFacultyUsername = String(
+      current.facultyUsername || current.facultyCode || current.username || '',
+    ).trim()
+    const existingAuthUserId = String(current.authUserId || '').trim()
 
     if (persistenceMode === 'server') {
       const facultyKey = String(current.id || current.postgresFacultyId || '').trim()
@@ -1468,7 +1422,8 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
           name: String(patch.name || current.name || '').trim() || 'Faculty',
           facultyUsername: facultyCodeId,
           password,
-          existingAuthUserId: current.authUserId,
+          existingAuthUserId,
+          previousFacultyUsername,
           facultyQualification: qualification,
           facultyContactNumber: contactForAuth,
           photoDataUrl: photoChanged ? savedPhoto || patchPhoto : '',
@@ -1479,7 +1434,49 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
           return { error: authSync.error }
         }
 
+        const resolvedAuthUserId = String(authSync.authUserId || existingAuthUserId).trim()
+        const needsAuthUserIdPersist = !existingAuthUserId && Boolean(resolvedAuthUserId)
+        if (needsAuthUserIdPersist) {
+          const linkReq = buildFacultySaveRequest(
+            {
+              ...current,
+              ...patch,
+              email,
+              facultyUsername: facultyCodeId,
+              facultyCode: facultyCodeId,
+              qualification,
+              contactNumber: contactForAuth,
+            },
+            sectionIds,
+            resolvedAuthUserId,
+            { forUpdate: true, persistAuthUserId: true },
+          )
+          const linkRes = await fetchStateApi(apiUrl(`/api/v1/faculty/${encodeURIComponent(facultyKey)}`), {
+            method: 'PUT',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(linkReq.body),
+          })
+          const linkData = await linkRes.json().catch(() => ({}))
+          if (!linkRes.ok) {
+            const msg = String(
+              linkData?.error ||
+                linkData?.message ||
+                (linkData?.success === false ? linkData?.error : '') ||
+                `Could not link faculty login (${linkRes.status}).`,
+            )
+            toast.error(msg, { title: 'Faculty login link' })
+            return { error: msg }
+          }
+          if (linkData?.faculty) upsertFacultyInState(linkData.faculty, sectionsRef.current)
+        }
+
         if (data?.faculty) upsertFacultyInState(data.faculty, sectionsRef.current)
+        if (resolvedAuthUserId) {
+          setFaculties((prev) =>
+            prev.map((f) => (f.id === id ? { ...f, authUserId: resolvedAuthUserId } : f)),
+          )
+        }
         void refreshFacultiesFromPostgres()
         dispatchAuditLogsRefresh({ type: 'faculty', id: facultyKey })
         return { ok: true }
@@ -1495,7 +1492,8 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
       name: String(patch.name || current.name || '').trim() || 'Faculty',
       facultyUsername: facultyCodeId,
       password,
-      existingAuthUserId: current.authUserId,
+      existingAuthUserId,
+      previousFacultyUsername,
       facultyQualification: qualification,
       facultyContactNumber: contactForAuth,
       photoDataUrl: photoChanged ? facultyPhotoAuthImageUrl(patchPhoto || currentPhoto) : '',
@@ -1505,6 +1503,8 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
       toast.error(authSyncLocal.error, { title: 'Faculty login error' })
       return { error: authSyncLocal.error }
     }
+
+    const resolvedAuthUserIdLocal = String(authSyncLocal.authUserId || existingAuthUserId).trim()
 
     setFaculties((prev) =>
       prev.map((f) =>
@@ -1517,7 +1517,7 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
               facultyUsername: facultyCodeId,
               password: password || f.password,
               appPassword,
-              authUserId: authSyncLocal.authUserId || f.authUserId,
+              authUserId: resolvedAuthUserIdLocal || f.authUserId,
             }
           : f,
       ),
@@ -1537,7 +1537,12 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
         try {
           const res = await fetch(
             apiUrl(`/api/v1/admin/immediate-purge/faculties/${encodeURIComponent(facultyKey)}`),
-            { method: 'DELETE', credentials: 'include' },
+            {
+              method: 'DELETE',
+              credentials: 'include',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ confirm: 'DELETE_IMMEDIATE' }),
+            },
           )
           const data = await res.json().catch(() => ({}))
           if (!res.ok) {
@@ -1553,20 +1558,6 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
       await refreshFacultiesFromPostgres()
     } else {
       setFaculties((prev) => prev.filter((f) => f.id !== id))
-    }
-    try {
-      const raw = localStorage.getItem(FACULTY_STORAGE_KEY)
-      if (raw) {
-        const parsed = JSON.parse(raw)
-        if (Array.isArray(parsed)) {
-          localStorage.setItem(
-            FACULTY_STORAGE_KEY,
-            JSON.stringify(parsed.filter((f) => String(f?.id || '').trim() !== id)),
-          )
-        }
-      }
-    } catch {
-      /* ignore */
     }
     return { ok: true }
   }
@@ -1598,25 +1589,12 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
     } else {
       setFaculties((prev) => prev.filter((f) => f.id !== id))
     }
-    try {
-      const raw = localStorage.getItem(FACULTY_STORAGE_KEY)
-      if (raw) {
-        const parsed = JSON.parse(raw)
-        if (Array.isArray(parsed)) {
-          localStorage.setItem(
-            FACULTY_STORAGE_KEY,
-            JSON.stringify(parsed.filter((f) => String(f?.id || '').trim() !== id)),
-          )
-        }
-      }
-    } catch {
-      /* ignore */
-    }
     return { ok: true }
   }
 
   const refreshSubjectsFromPostgres = useCallback(async () => {
     try {
+      if (!isOnline()) throw new Error('offline')
       const res = await fetchStateApi(apiUrl('/api/v1/subjects'), { credentials: 'include' })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) {
@@ -1625,9 +1603,19 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
         return { ok: false, error: msg }
       }
       const list = Array.isArray(data.subjects) ? data.subjects : []
+      await saveListSnapshot('admin_subjects', list)
       setSubjects(list.map((row) => mapPgSubjectRow(row, facultiesRef.current)))
       return { ok: true, count: list.length }
     } catch (e) {
+      try {
+        const list = await getListSnapshot('admin_subjects')
+        if (list.length) {
+          setSubjects(list.map((row) => mapPgSubjectRow(row, facultiesRef.current)))
+          return { ok: true, count: list.length, fromCache: true }
+        }
+      } catch {
+        void 0
+      }
       const msg = String(e?.message || e || 'Could not load subjects from PostgreSQL.')
       console.warn('[subjects] refreshSubjectsFromPostgres:', msg)
       return { ok: false, error: msg }
@@ -1638,8 +1626,8 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
     const subjectCode = String(payload.subjectCode || '').trim()
     const subjectName = String(payload.subjectName || '').trim()
     const grade = String(payload.grade || '').trim()
-    const quarter = Number(payload.quarter || 0)
-    if (!subjectCode || !subjectName || !grade || !(quarter >= 1)) return { error: 'Please complete all required fields.' }
+    const semester = Number(payload.semester || 0)
+    if (!subjectCode || !subjectName || !grade || !(semester >= 1)) return { error: 'Please complete all required fields.' }
 
     if (persistenceMode === 'server') {
       try {
@@ -1671,7 +1659,7 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
         subjectCode,
         subjectName,
         grade,
-        quarter,
+        semester,
         subjectPhoto: resolveSubjectImageFromMap(subjectName),
         subject_photo: resolveSubjectImageFromMap(subjectName),
       },
@@ -1690,8 +1678,8 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
     const subjectCode = String(patch.subjectCode || current.subjectCode || '').trim()
     const subjectName = String(patch.subjectName || current.subjectName || '').trim()
     const grade = String(patch.grade || current.grade || '').trim()
-    const quarter = Number(patch.quarter || current.quarter || 0)
-    if (!subjectCode || !subjectName || !grade || !(quarter >= 1)) return { error: 'Please complete all required fields.' }
+    const semester = Number(patch.semester || current.semester || 0)
+    if (!subjectCode || !subjectName || !grade || !(semester >= 1)) return { error: 'Please complete all required fields.' }
 
     const merged = {
       ...current,
@@ -1699,7 +1687,7 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
       subjectCode,
       subjectName,
       grade,
-      quarter,
+      semester,
       syllabusDataUrl: String(patch.syllabusDataUrl ?? current.syllabusDataUrl ?? '').trim(),
     }
 
@@ -2035,7 +2023,7 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
     setSectionDeleteTarget(item)
   }
 
-  function saveSectionEdit() {
+  async function saveSectionEdit() {
     if (!sectionEditTarget) return
     const name = sectionEditName.trim()
     if (!name) return
@@ -2049,6 +2037,37 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
     if (duplicate) {
       window.alert('Section already exists for this grade.')
       return
+    }
+
+    if (persistenceMode === 'server') {
+      const sid = Number(sectionEditTarget.postgresSectionId)
+      if (Number.isFinite(sid) && sid > 0) {
+        try {
+          const res = await fetch(apiUrl(`/api/v1/sections/${sid}`), {
+            method: 'PATCH',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              section_name: name,
+              grade_level: sectionEditTarget.grade,
+            }),
+          })
+          const data = await res.json().catch(() => ({}))
+          if (!res.ok) {
+            toast.error(String(data?.message || data?.error || `Update failed (${res.status}).`), {
+              title: 'Could not update section',
+              durationMs: 10000,
+            })
+            return
+          }
+        } catch (e) {
+          toast.error(String(e?.message || e || 'Network error updating section.'), {
+            title: 'Could not update section',
+            durationMs: 10000,
+          })
+          return
+        }
+      }
     }
 
     setSections((prev) =>
@@ -2121,6 +2140,7 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
 
   async function refreshStudentsFromPostgres() {
     try {
+      if (!isOnline()) throw new Error('offline')
       const [secRes, stuRes] = await Promise.all([
         fetch(apiUrl('/api/v1/sections'), { credentials: 'include' }),
         fetch(apiUrl('/api/v1/students'), { credentials: 'include' }),
@@ -2130,15 +2150,34 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
       const apiSec = Array.isArray(secData.sections) ? secData.sections : []
       const merged = mergePostgresSectionIdsIntoSections(sectionsRef.current, apiSec)
       setSections(merged)
+      await saveListSnapshot('admin_sections', apiSec)
       if (!stuRes.ok) return
       const list = Array.isArray(stuData.students) ? stuData.students : []
+      await saveListSnapshot('admin_students', list)
       const mapped = list.map((row) => mapPgStudentRow(row, merged))
       setStudents(mapped)
       recomputeSectionStudentCounts(mapped)
     } catch {
-      /* ignore */
+      try {
+        const apiSec = await getListSnapshot('admin_sections')
+        const list = await getListSnapshot('admin_students')
+        const merged = mergePostgresSectionIdsIntoSections(sectionsRef.current, apiSec)
+        if (apiSec.length) setSections(merged)
+        if (list.length) {
+          const mapped = list.map((row) => mapPgStudentRow(row, merged))
+          setStudents(mapped)
+          recomputeSectionStudentCounts(mapped)
+        }
+      } catch {
+        /* ignore */
+      }
     }
   }
+
+  useEffect(() => {
+    if (persistenceMode !== 'server' || !stateBootstrapDone) return
+    void warmAdminOfflineCache()
+  }, [persistenceMode, stateBootstrapDone])
 
   useEffect(() => {
     if (persistenceMode !== 'server' || !stateBootstrapDone) return
@@ -2163,6 +2202,7 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
 
   const refreshFacultiesFromPostgres = useCallback(async () => {
     try {
+      if (!isOnline()) throw new Error('offline')
       const [secRes, facRes] = await Promise.all([
         fetchStateApi(apiUrl('/api/v1/sections'), { credentials: 'include' }),
         fetchStateApi(apiUrl('/api/v1/faculty'), { credentials: 'include' }),
@@ -2172,15 +2212,29 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
       const apiSec = Array.isArray(secData.sections) ? secData.sections : []
       const merged = mergePostgresSectionIdsIntoSections(sectionsRef.current, apiSec)
       setSections(merged)
+      await saveListSnapshot('admin_sections', apiSec)
       if (!facRes.ok) {
         const msg = String(facData?.message || facData?.error || `Faculty list failed (${facRes.status}).`)
         console.warn('[faculty] GET /api/v1/faculty failed:', msg)
         return { ok: false, error: msg }
       }
       const list = Array.isArray(facData.faculty) ? facData.faculty : []
+      await saveListSnapshot('admin_faculties', list)
       setFaculties(dedupeById(list.map((row) => mapPgFacultyRow(row, merged))))
       return { ok: true, count: list.length }
     } catch (e) {
+      try {
+        const apiSec = await getListSnapshot('admin_sections')
+        const list = await getListSnapshot('admin_faculties')
+        const merged = mergePostgresSectionIdsIntoSections(sectionsRef.current, apiSec)
+        if (apiSec.length) setSections(merged)
+        if (list.length) {
+          setFaculties(dedupeById(list.map((row) => mapPgFacultyRow(row, merged))))
+          return { ok: true, count: list.length, fromCache: true }
+        }
+      } catch {
+        void 0
+      }
       const msg = String(e?.message || e || 'Could not load faculty from PostgreSQL.')
       console.warn('[faculty] refreshFacultiesFromPostgres:', msg)
       return { ok: false, error: msg }
@@ -2193,6 +2247,41 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
     postgresFacultyBootstrapped.current = true
     void refreshFacultiesFromPostgres()
   }, [persistenceMode, stateBootstrapDone, refreshFacultiesFromPostgres])
+
+  const refreshInstituteStateFromServer = useCallback(async () => {
+    try {
+      const res = await fetch(getLmsStateEndpointUrl(), { credentials: 'include' })
+      if (!res.ok) return
+      const payload = await res.json()
+      if (!payload?.state) return
+      const s = payload.state
+      setCurriculums(normalizeCurriculumList(s.curriculums))
+      setSections(Array.isArray(s.sections) ? s.sections : [])
+    } catch (e) {
+      console.warn('[state] refresh after backup restore:', e?.message || e)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (persistenceMode !== 'server' || !stateBootstrapDone) return
+    const onBackupRestored = () => {
+      void refreshFacultiesFromPostgres()
+      void refreshSubjectsFromPostgres()
+      void refreshStudentsFromPostgres()
+      void refreshAnnouncementsFromPostgres()
+      void refreshInstituteStateFromServer()
+    }
+    window.addEventListener(BACKUP_RESTORED_EVENT, onBackupRestored)
+    return () => window.removeEventListener(BACKUP_RESTORED_EVENT, onBackupRestored)
+  }, [
+    persistenceMode,
+    stateBootstrapDone,
+    refreshFacultiesFromPostgres,
+    refreshSubjectsFromPostgres,
+    refreshStudentsFromPostgres,
+    refreshAnnouncementsFromPostgres,
+    refreshInstituteStateFromServer,
+  ])
 
   useEffect(() => {
     if (persistenceMode !== 'server' || !stateBootstrapDone) return
@@ -2225,7 +2314,6 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
     const photoDataUrl = String(payload.photoDataUrl || '').trim()
     const password = String(payload.password || '').trim()
     const loginId = String(payload.loginId || '').trim()
-    const appPassword = String(payload.appPassword || '').trim()
     const sectionId = String(payload.sectionId || '').trim()
     const section = sections.find((s) => s.id === sectionId)
     if (!section) return { error: 'Selected section does not exist.' }
@@ -2298,12 +2386,13 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
             enrollmentNo,
             rollNo: nextRoll,
             gradeLevel: section.grade,
-            quarter: semester,
+            semester: semester,
             sectionId: pgSid,
             loginId,
             password,
-            appPasswordGmail: appPassword,
             photoDataUrl,
+            authUserId: String(authSync.authUserId || '').trim(),
+            auth_user_id: String(authSync.authUserId || '').trim(),
           }),
         })
         const data = await res.json().catch(() => ({}))
@@ -2346,7 +2435,6 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
       rollNo: nextRoll,
       loginId,
       password,
-      appPassword,
       photoDataUrl,
     }
 
@@ -2426,15 +2514,20 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
     const name = `${firstName}${middleName ? ` ${middleName}` : ''} ${lastName}`.trim()
 
     const existingAuthUserId = String(current.authUserId || '').trim()
+    const previousLoginId = String(current.loginId || '').trim()
     const authSync = await ensureStudentAuthUser({
       email,
       name,
       loginId,
       password,
       existingAuthUserId,
+      previousLoginId,
       setCredentialPassword: passwordInPatch,
     })
     if (authSync?.error) return { error: authSync.error }
+
+    const resolvedAuthUserId = String(authSync.authUserId || existingAuthUserId).trim()
+    const needsAuthUserIdPersist = !existingAuthUserId && Boolean(resolvedAuthUserId)
 
     if (persistenceMode === 'server') {
       const rawPid = current.postgresStudentId ?? (Number.isFinite(Number(id)) ? Number(id) : NaN)
@@ -2458,13 +2551,17 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
           enrollmentNo,
           rollNo,
           gradeLevel: section.grade,
-          quarter: semester,
+          semester: semester,
           sectionId: pgSid,
           loginId,
           photoDataUrl,
         }
         if (passwordInPatch) putBody.password = trimmedPatchPw
         if (appPasswordInPatch) putBody.appPasswordGmail = appPassword
+        if (needsAuthUserIdPersist) {
+          putBody.authUserId = resolvedAuthUserId
+          putBody.auth_user_id = resolvedAuthUserId
+        }
         try {
           const res = await fetch(apiUrl(`/api/v1/students/${encodeURIComponent(String(pgStudentId))}`), {
             method: 'PUT',
@@ -2477,11 +2574,12 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
             return { error: String(data?.message || data?.error || `Update failed (${res.status}).`) }
           }
           await refreshStudentsFromPostgres()
-          const aid = String(authSync.authUserId || existingAuthUserId).trim()
-          if (aid) {
+          if (resolvedAuthUserId) {
             setStudents((prev) =>
               prev.map((s) =>
-                String(s.enrollmentNo || '').trim() === enrollmentNo ? { ...s, authUserId: aid } : s,
+                String(s.enrollmentNo || '').trim() === enrollmentNo
+                  ? { ...s, authUserId: resolvedAuthUserId }
+                  : s,
               ),
             )
           }
@@ -2518,7 +2616,7 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
             password,
             appPassword,
             photoDataUrl,
-            authUserId: authSync.authUserId || existingAuthUserId,
+            authUserId: resolvedAuthUserId,
           }
         : s,
     )
@@ -2537,7 +2635,12 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
       try {
         const res = await fetch(
           apiUrl(`/api/v1/admin/immediate-purge/students/${encodeURIComponent(String(pgId))}`),
-          { method: 'DELETE', credentials: 'include' },
+          {
+            method: 'DELETE',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ confirm: 'DELETE_IMMEDIATE' }),
+          },
         )
         const data = await res.json().catch(() => ({}))
         if (!res.ok) {
@@ -2755,72 +2858,84 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
       className="flex h-svh min-h-0 overflow-hidden font-[Inter,system-ui,sans-serif]"
       style={{ fontFamily: 'Inter, system-ui, sans-serif' }}
     >
-      <aside
-        className="flex h-full min-h-0 w-56 shrink-0 flex-col overflow-hidden text-white md:w-60"
-        style={{ background: `linear-gradient(180deg, ${SIDEBAR_GOLD} 0%, ${SIDEBAR_GOLD_DARK} 100%)` }}
+      <PortalSidebarShell
+        collapsed={sidebarCollapsed}
+        onToggle={toggleSidebarCollapsed}
+        sidebarGold={SIDEBAR_GOLD}
+        sidebarGoldDark={SIDEBAR_GOLD_DARK}
+        header={<Header collapsed={sidebarCollapsed} />}
+        footer={
+          <div className="shrink-0 border-t border-white/15 px-2 py-4 text-center text-white/85">
+            {!sidebarCollapsed ? (
+              <p className="text-xs font-semibold uppercase tracking-wider text-white/70">Legal center</p>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => navigate('/admin/terms')}
+              title="Terms & Conditions"
+              aria-label="Terms & Conditions"
+              className={`flex w-full items-center rounded-lg text-sm font-medium text-white/90 transition hover:bg-white/10 ${
+                sidebarCollapsed ? 'mt-0.5 justify-center px-2 py-2.5' : 'mt-2 justify-center gap-3 px-3 py-2.5'
+              }`}
+            >
+              <i
+                className="ti ti-file-description"
+                style={{ fontSize: '18px', minWidth: '20px' }}
+                aria-hidden="true"
+              />
+              {!sidebarCollapsed ? <span>Terms &amp; Conditions</span> : null}
+            </button>
+            <button
+              type="button"
+              onClick={onLogout}
+              title="Logout"
+              aria-label="Logout"
+              className={`mt-0.5 flex w-full items-center rounded-lg text-sm font-medium text-white/90 transition hover:bg-white/10 ${
+                sidebarCollapsed ? 'justify-center px-2 py-2.5' : 'justify-center gap-3 px-3 py-2.5'
+              }`}
+            >
+              <i className="ti ti-logout" style={{ fontSize: '18px', minWidth: '20px' }} aria-hidden="true" />
+              {!sidebarCollapsed ? <span>Logout</span> : null}
+            </button>
+            {!sidebarCollapsed ? (
+              <p className="mt-3 px-1 text-xs leading-relaxed text-white/60">
+                © {new Date().getFullYear()} LENLEARN LMS. ALL RIGHTS RESERVED.
+              </p>
+            ) : null}
+          </div>
+        }
       >
-        <Header />
-
-        <nav className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2 py-4">
+        <nav className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2 py-2">
           {NAV.map(({ id, label, icon: Icon, to }) => (
-              <NavLink
-                key={id}
-                to={to}
-                end
-                onClick={(e) => {
-                  if (termsGateRequired) {
-                    e.preventDefault()
-                    setPostTermsNav(id)
-                    return
-                  }
-                  if (termsOpen) setTermsOpen(false)
-                }}
-                className={({ isActive }) =>
-                  `flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition ${
-                    termsGateRequired
-                      ? 'opacity-70 hover:bg-white/10 text-white/90'
-                      : isActive
-                        ? 'bg-white/20 text-white shadow-inner'
-                        : 'text-white/90 hover:bg-white/10'
-                  }`
-                }
-                aria-current={activeNav === id ? 'page' : undefined}
-              >
-                <Icon className="h-5 w-5 shrink-0 opacity-95" />
-                {label}
-              </NavLink>
+            <NavLink
+              key={id}
+              to={to}
+              end
+              title={label}
+              aria-label={label}
+              className={({ isActive }) =>
+                `flex items-center rounded-lg text-sm font-medium transition ${
+                  sidebarCollapsed ? 'justify-center px-2 py-2.5' : 'gap-3 px-3 py-2.5'
+                } ${
+                  isActive
+                    ? 'bg-white/20 text-white shadow-inner'
+                    : 'text-white/90 hover:bg-white/10'
+                }`
+              }
+              aria-current={activeNav === id ? 'page' : undefined}
+            >
+              <Icon className="h-5 w-5 shrink-0 opacity-95" />
+              {!sidebarCollapsed ? label : null}
+            </NavLink>
           ))}
         </nav>
-
-        <div className="shrink-0 border-t border-white/15 px-2 py-4 text-center text-white/85">
-          <p className="text-xs font-semibold uppercase tracking-wider text-white/70">Legal center</p>
-          <button
-            type="button"
-            onClick={() => setTermsOpen(true)}
-            className="mt-2 flex w-full items-center justify-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-white/90 transition hover:bg-white/10"
-          >
-            Terms &amp; Conditions
-          </button>
-          <button
-            type="button"
-            onClick={onLogout}
-            className="mt-0.5 flex w-full items-center justify-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-white/90 transition hover:bg-white/10"
-          >
-            Logout
-          </button>
-          <p className="mt-3 px-1 text-xs leading-relaxed text-white/60">
-            © {new Date().getFullYear()} LENLEARN LMS. ALL RIGHTS RESERVED.
-          </p>
-        </div>
-      </aside>
+      </PortalSidebarShell>
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-neutral-100">
         <header className="flex shrink-0 flex-wrap items-start justify-between gap-4 border-b border-neutral-200/80 bg-neutral-50/80 px-4 py-4 backdrop-blur-sm md:px-8 md:py-5">
           <div>
             <h1 className="text-2xl font-bold tracking-tight text-neutral-900 md:text-3xl">
-              {termsGateRequired || termsOpen
-                ? 'Terms and Policy'
-                : activeNav === 'curriculum'
+              {activeNav === 'curriculum'
                   ? 'Curriculum'
                   : activeNav === 'section'
                     ? 'Section'
@@ -2828,9 +2943,9 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
                       ? 'Students'
                       : activeNav === 'faculties'
                         ? 'Faculties'
-                          : activeNav === 'subjects'
-                            ? 'Subjects'
-                            : activeNav === 'updates'
+                            : activeNav === 'subjects'
+                              ? 'Subjects'
+                              : activeNav === 'updates'
                               ? 'Announcements'
                               : activeNav === 'monitoring'
                                 ? 'Audit Logs'
@@ -2851,24 +2966,11 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
           </button>
         </header>
 
+        <OfflineBanner />
+        <AdminAuditBanner persistenceMode={persistenceMode} />
+
         <main className="min-h-0 flex-1 space-y-6 overflow-y-auto overflow-x-hidden p-4 md:space-y-8 md:p-8">
-          {termsGateRequired ? (
-            <div className="mx-auto w-full max-w-4xl pb-8">
-              <TermsAndConditions
-                schoolName={schoolName}
-                gateMode
-                onAccepted={() => {
-                  setTermsGateRequired(false)
-                  setTermsOpen(false)
-                }}
-              />
-            </div>
-          ) : termsOpen ? (
-            <div className="mx-auto w-full max-w-4xl pb-8">
-              <TermsAndConditions schoolName={schoolName} onBack={() => setTermsOpen(false)} />
-            </div>
-          ) : (
-            <>
+          <>
           {activeNav === 'dashboard' ? (
             <section className="rounded-xl border border-neutral-100 bg-white p-5 shadow-md md:p-6">
               <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:gap-6">
@@ -2931,6 +3033,7 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
               onUpdateStudent={updateStudent}
               onArchiveStudent={archiveStudent}
           onImmediatePurgeStudent={immediatePurgeStudent}
+              onSendPasswordResetEmail={sendPasswordResetEmail}
               onBack={() => navigateToNav('dashboard')}
               initialGrade={studentNavContext.grade}
               initialSectionId={studentNavContext.sectionId}
@@ -2944,6 +3047,7 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
               onUpdateFaculty={updateFaculty}
               onArchiveFaculty={archiveFaculty}
               onImmediatePurgeFaculty={immediatePurgeFaculty}
+              onSendPasswordResetEmail={sendPasswordResetEmail}
               onBack={() => navigateToNav('dashboard')}
             />
           ) : activeNav === 'subjects' ? (
@@ -2968,7 +3072,7 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
           ) : activeNav === 'dashboard' ? (
             <>
             <div className="grid gap-6 lg:grid-cols-3 lg:gap-8">
-              <div className="flex flex-col gap-6 lg:col-span-2">
+              <div className="lg:col-span-2">
               <section className="rounded-xl border border-neutral-100 bg-white shadow-md">
                 <div className="flex items-center justify-between border-b border-neutral-100 px-5 py-4 md:px-6">
                   <h3 className="text-lg font-bold text-neutral-900">New Faculties</h3>
@@ -2984,14 +3088,18 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
                   {recentFaculties.length === 0 ? (
                     <li className="px-5 py-6 text-sm font-medium text-neutral-500 md:px-6">No faculty added yet.</li>
                   ) : (
-                    recentFaculties.map((f) => (
+                    recentFaculties.map((f) => {
+                      const facultyPhotoSrc = facultyPhotoDisplaySrc(
+                        f.photo_url || f.photoDataUrl || '',
+                      )
+                      return (
                       <li
                         key={f.id}
                         className="flex flex-wrap items-center gap-3 px-5 py-4 md:flex-nowrap md:gap-4 md:px-6"
                       >
-                        {f.photoDataUrl ? (
+                        {facultyPhotoSrc ? (
                           <img
-                            src={f.photoDataUrl}
+                            src={facultyPhotoSrc}
                             alt={f.name}
                             className="h-11 w-11 shrink-0 rounded-full object-cover ring-2 ring-white shadow-sm"
                           />
@@ -3012,57 +3120,9 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
                           View
                         </button>
                       </li>
-                    ))
+                    )})
                   )}
                 </ul>
-              </section>
-
-              <section className="rounded-xl border border-neutral-100 bg-white shadow-md">
-                <div className="flex items-center justify-between border-b border-neutral-100 px-5 py-4 md:px-6">
-                  <h3 className="text-lg font-bold text-neutral-900">Latest Announcements</h3>
-                  <button
-                    type="button"
-                    className="text-sm font-semibold text-[#3182ce] hover:underline"
-                    onClick={() => navigateToNav('updates')}
-                  >
-                    View all
-                  </button>
-                </div>
-                <div className="p-5 md:p-6">
-                  {updates.length === 0 ? (
-                    <p className="text-sm font-medium text-neutral-500">No announcements published yet.</p>
-                  ) : (
-                    <div className="grid gap-4 md:grid-cols-2">
-                      {updates.slice(0, 4).map((u) => (
-                        <article key={u.id} className="overflow-hidden rounded-xl border bg-neutral-50 shadow-sm">
-                          {u.imageDataUrl ? (
-                            <img
-                              src={u.imageDataUrl}
-                              alt={u.title}
-                              className="h-36 w-full object-cover"
-                            />
-                          ) : (
-                            <div className="flex h-36 w-full items-center justify-center bg-neutral-100 text-sm font-semibold text-neutral-500">
-                              No preview
-                            </div>
-                          )}
-                          <div className="space-y-1.5 p-4">
-                            <div className="flex flex-wrap items-center justify-between gap-2">
-                              <p className="font-semibold text-neutral-900">{u.title}</p>
-                              <span className="rounded-full bg-blue-600/10 px-2.5 py-1 text-[11px] font-bold tracking-wide text-blue-700">
-                                {u.updateType}
-                              </span>
-                            </div>
-                            <p className="line-clamp-2 text-sm text-neutral-700">{u.description}</p>
-                            <p className="text-xs text-neutral-500">
-                              {u.postedAt ? new Date(u.postedAt).toLocaleString() : ''}{u.uploadedBy ? ` • ${u.uploadedBy}` : ''}
-                            </p>
-                          </div>
-                        </article>
-                      ))}
-                    </div>
-                  )}
-                </div>
               </section>
               </div>
 
@@ -3087,11 +3147,15 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
               </div>
             </div>
 
+            <AdminLatestAnnouncementsExpanded
+              announcements={recentAnnouncements}
+              onViewAll={() => navigateToNav('updates')}
+            />
+
             <AuditStatisticsSection variant="dashboard" enabled />
             </>
           ) : null}
-            </>
-          )}
+          </>
         </main>
       </div>
 

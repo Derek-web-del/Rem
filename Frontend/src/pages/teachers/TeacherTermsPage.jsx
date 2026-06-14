@@ -1,32 +1,44 @@
-import { useEffect } from 'react'
+import { useCallback } from 'react'
 import { useNavigate, useOutletContext } from 'react-router-dom'
-import TermsAndConditions, { TEACHER_TERMS_ACCEPTED_KEY } from '../../TermsAndConditions.jsx'
-import TeacherBackButton from './TeacherBackButton.jsx'
+import PortalTermsMain from '../../components/PortalTermsMain.jsx'
+import TermsAndConditions from '../../TermsAndConditions.jsx'
+import { isTermsAccepted, setTermsAccepted } from '../../lib/termsSession.js'
+import { acceptFacultyTerms } from '../../lib/facultyPortal.js'
 import TeacherMainHeader from './TeacherMainHeader.jsx'
 
 const SCHOOL_NAME = import.meta.env.VITE_SCHOOL_DISPLAY_NAME || 'Glendale School, Inc.'
 
 export default function TeacherTermsPage() {
   const navigate = useNavigate()
-  const { logoutToPortal, setSidebarNavLocked } = useOutletContext()
+  const { logoutToPortal, setSidebarNavLocked } = useOutletContext() || {}
+  const gateMode = !isTermsAccepted()
 
-  useEffect(() => {
+  const goDashboard = useCallback(() => {
     setSidebarNavLocked?.(false)
-  }, [setSidebarNavLocked])
+    navigate('/teacher/dashboard', { replace: true })
+  }, [navigate, setSidebarNavLocked])
+
+  const handleAccepted = useCallback(async () => {
+    setTermsAccepted()
+    try {
+      await acceptFacultyTerms()
+    } catch (e) {
+      console.warn('[TeacherTermsPage] accept-terms API failed:', e?.message || e)
+    }
+    goDashboard()
+  }, [goDashboard])
 
   return (
     <>
-      <TeacherMainHeader pageTitle="Terms & Conditions" onLogout={logoutToPortal} />
-      <main className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-8">
-        <div className="mx-auto w-full max-w-4xl pb-8">
-          <TeacherBackButton to="/teacher/dashboard" />
-          <TermsAndConditions
-            schoolName={SCHOOL_NAME}
-            acceptanceStorageKey={TEACHER_TERMS_ACCEPTED_KEY}
-            onBack={() => navigate('/teacher/dashboard', { replace: false })}
-          />
-        </div>
-      </main>
+      <TeacherMainHeader pageTitle="Terms and Policy" onLogout={logoutToPortal} />
+      <PortalTermsMain>
+        <TermsAndConditions
+          schoolName={SCHOOL_NAME}
+          gateMode={gateMode}
+          onAccepted={gateMode ? handleAccepted : undefined}
+          onBack={gateMode ? undefined : goDashboard}
+        />
+      </PortalTermsMain>
     </>
   )
 }

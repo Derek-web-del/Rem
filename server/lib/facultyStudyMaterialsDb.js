@@ -82,7 +82,7 @@ export async function ensureFacultyStudyMaterialsSchema(pool) {
       file_type VARCHAR(64),
       file_name VARCHAR(512),
       file_size BIGINT,
-      quarter VARCHAR(16),
+      semester VARCHAR(16),
       grade_level VARCHAR(128),
       subject VARCHAR(128),
       uploaded_by VARCHAR(64),
@@ -117,6 +117,16 @@ export async function ensureFacultyStudyMaterialsSchema(pool) {
     `CREATE INDEX IF NOT EXISTS idx_study_materials_grade_level ON study_materials (grade_level)`,
   )
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_study_materials_subject ON study_materials (subject)`)
+  const curriculumCols = [
+    ['module_id', 'BIGINT'],
+    ['topic_id', 'BIGINT'],
+    ['subtopic_label', 'VARCHAR(100)'],
+    ['module_order', 'INT NOT NULL DEFAULT 0'],
+    ['status', "VARCHAR(20) NOT NULL DEFAULT 'published'"],
+  ]
+  for (const [name, type] of curriculumCols) {
+    await pool.query(`ALTER TABLE study_materials ADD COLUMN IF NOT EXISTS ${name} ${type}`)
+  }
   await ensurePdfFileTypeConstraint(pool)
 }
 

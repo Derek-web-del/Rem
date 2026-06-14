@@ -1,8 +1,14 @@
+import apiFetch from './apiClient.js'
+import { uploadsPathToApiUrl } from './fileUrls.js'
+import { getListSnapshot, saveListSnapshot } from './indexedDB.js'
+import { isOnline } from './offlineSync.js'
 import { apiUrl } from './lmsStateStorage.js'
+import { resolveSubmissionStatusBadge } from './gradeStatus.js'
 
 export {
   formatSubjectOption,
   formatDateYmd,
+  isPastDeadline,
   splitDeadlineToDateAndTime,
   combineDateAndTimeToIso,
   formatDeadlineDisplay,
@@ -19,10 +25,12 @@ export function mapActivityRow(row) {
     subject_name: String(row.subject_name ?? '').trim(),
     subject_code: String(row.subject_code ?? '').trim(),
     grade_level: String(row.grade_level ?? '').trim(),
-    quarter: row.quarter != null ? String(row.quarter) : '',
+    semester: row.semester != null ? String(row.semester) : '',
     file_path: String(row.file_path ?? '').trim(),
     file_name: String(row.file_name ?? '').trim(),
     file_size: row.file_size != null ? Number(row.file_size) : null,
+    grade_component_id: row.grade_component_id != null ? Number(row.grade_component_id) : null,
+    grade_component_name: String(row.grade_component_name ?? '').trim(),
     total_score: row.total_score != null ? Number(row.total_score) : 100,
     submission_deadline: row.submission_deadline ?? null,
     uploaded_by: String(row.uploaded_by ?? '').trim(),
@@ -48,10 +56,7 @@ export function mapActivitySubmissionRow(row) {
 }
 
 export function resolveActivityFileUrl(filePath) {
-  const path = String(filePath ?? '').trim()
-  if (!path) return ''
-  if (path.startsWith('http') || path.startsWith('data:')) return path
-  return apiUrl(path.startsWith('/') ? path : `/${path}`)
+  return uploadsPathToApiUrl(filePath)
 }
 
 export async function fetchActivityFormOptions() {
@@ -76,22 +81,42 @@ export async function fetchTeacherActivities(page = 1, options = {}) {
   if (options.sortKey) params.set('sort', options.sortKey)
   if (options.sortDir) params.set('dir', options.sortDir)
 
-  const res = await fetch(apiUrl(`/api/teacher/activities?${params.toString()}`), { credentials: 'include' })
-  const data = await res.json().catch(() => ({}))
-  if (!res.ok) {
-    throw new Error(String(data?.message || data?.error || `Failed to load activities (${res.status}).`))
-  }
-  const list = Array.isArray(data.data)
-    ? data.data
-    : Array.isArray(data.activities)
-      ? data.activities
-      : []
-  return {
-    data: list.map(mapActivityRow).filter(Boolean),
-    total: Number(data.total ?? list.length) || 0,
-    page: Number(data.page ?? page) || 1,
-    limit: Number(data.limit ?? limit) || limit,
-    totalPages: Number(data.totalPages ?? 1) || 1,
+  try {
+    if (!isOnline()) throw new Error('offline')
+    const res = await fetch(apiUrl(`/api/teacher/activities?${params.toString()}`), { credentials: 'include' })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) {
+      throw new Error(String(data?.message || data?.error || `Failed to load activities (${res.status}).`))
+    }
+    const list = Array.isArray(data.data)
+      ? data.data
+      : Array.isArray(data.activities)
+        ? data.activities
+        : []
+    const result = {
+      data: list.map(mapActivityRow).filter(Boolean),
+      total: Number(data.total ?? list.length) || 0,
+      page: Number(data.page ?? page) || 1,
+      limit: Number(data.limit ?? limit) || limit,
+      totalPages: Number(data.totalPages ?? 1) || 1,
+    }
+    if (page === 1 && !options.q) {
+      await saveListSnapshot('activities', result.data, 'faculty_list')
+    }
+    return result
+  } catch (e) {
+    const cached = await getListSnapshot('activities', 'faculty_list')
+    if (cached.length > 0) {
+      return {
+        data: cached,
+        total: cached.length,
+        page: 1,
+        limit,
+        totalPages: 1,
+        fromCache: true,
+      }
+    }
+    throw e
   }
 }
 
@@ -162,15 +187,15 @@ export async function deleteTeacherActivity(id) {
 }
 
 export async function updateActivitySubmissionScore(activityId, submissionId, score) {
-  const res = await fetch(
+  const res = await apiFetch(
     apiUrl(
       `/api/teacher/activities/${encodeURIComponent(String(activityId))}/submissions/${encodeURIComponent(String(submissionId))}/score`,
     ),
     {
       method: 'PATCH',
-      credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ score }),
+      softAuth: true,
     },
   )
   const data = await res.json().catch(() => ({}))
@@ -218,20 +243,5 @@ export async function downloadActivitySubmissionFile(submission) {
 
 export function activitySubmissionStatusBadge(submission) {
   const total = submission?.total_score ?? 100
-  const status = String(submission?.status ?? 'not_submitted').toLowerCase()
-  const score = submission?.score
-
-  if (status === 'expired') {
-    return { label: `Expired - 0/${total}`, tone: 'red' }
-  }
-  if (status === 'not_submitted') {
-    return { label: 'Not Submitted', tone: 'red' }
-  }
-  if (score != null && Number.isFinite(score)) {
-    return { label: `Score: ${score}/${total}`, tone: 'yellow' }
-  }
-  if (status === 'submitted' || submission?.submitted_at) {
-    return { label: 'Submitted - Pending', tone: 'yellow' }
-  }
-  return { label: 'Not Submitted', tone: 'red' }
+  return resolveSubmissionStatusBadge(submission, total)
 }

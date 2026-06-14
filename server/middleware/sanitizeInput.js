@@ -1,36 +1,6 @@
 import { customActivityLogger } from '../services/CustomActivityLogger.js'
 
-/** Only these paths may block + write suspicious_input_detected to Audit Logs. */
-const AUDITABLE_PATH_PATTERNS = [
-  '/api/v1/students',
-  '/api/v1/faculty',
-  '/api/v1/sections',
-  '/api/v1/subjects',
-  '/api/v1/curriculum',
-  '/api/v1/announcements',
-  '/api/v1/admin/archive',
-  '/api/v1/admin/restore',
-  '/api/v1/admin/permanent-purge',
-  '/api/v1/admin/immediate-purge',
-  '/api/monitoring/unified',
-  '/api/monitoring/lms-activity',
-  '/api/auth/sign-in',
-  '/api/auth/login',
-  '/api/students',
-  '/api/faculties',
-  '/api/users',
-  '/api/search',
-  '/api/archive',
-  '/api/announcements',
-  '/api/sections',
-  '/api/subjects',
-  '/api/teacher',
-  '/api/auth/sign-up',
-  '/api/auth/reset-password',
-  '/api/auth/change-password',
-]
-
-/** Internal / session / static — never scan or audit. */
+/** Internal / session / static / large binary — never scan (avoids false positives). */
 const NON_AUDITABLE_PATH_PATTERNS = [
   '/v1/state',
   '/api/v1/state',
@@ -109,10 +79,11 @@ export function isNonAuditablePath(path) {
   return NON_AUDITABLE_PATH_PATTERNS.some((ep) => p.includes(ep))
 }
 
+/** True when the request should be scanned (all /api routes except the skip list). */
 export function isAuditablePath(path) {
   const p = String(path || '')
   if (isNonAuditablePath(p)) return false
-  return AUDITABLE_PATH_PATTERNS.some((ep) => p.startsWith(ep) || p.includes(ep))
+  return p.startsWith('/api')
 }
 
 /**
@@ -194,12 +165,13 @@ function checkObject(obj, hit) {
 }
 
 /**
- * Express middleware: block SQL injection on user-facing API routes only.
+ * Express middleware: block SQLi/XSS probes on /api routes (except NON_AUDITABLE skip list).
+ * Covers student write paths (/api/v1/student/*), teacher routes, auth sign-in, etc.
  */
 export default function sanitizeInput(req, res, next) {
   const path = requestPath(req)
 
-  if (isNonAuditablePath(path) || !isAuditablePath(path)) {
+  if (!isAuditablePath(path)) {
     return next()
   }
 

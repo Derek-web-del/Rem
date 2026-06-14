@@ -65,7 +65,8 @@ function resolveEventType(e, ed) {
   const activity = String(e?.activityType || ed?.activityType || '').toUpperCase()
   const authType = String(e?.eventType || ed?.eventType || ed?.type || rawType(e) || '').toLowerCase()
   if (activity === 'USER_ACCOUNT_CHANGED') return 'user_account_changed'
-  if (activity === 'USER_SIGNED_IN') return 'user_signed_in'
+  if (activity === 'USER_SIGNED_IN' || activity === 'LOGIN') return 'user_signed_in'
+  if (activity === 'TERMS_ACCEPTED') return 'terms_accepted'
   if (activity === 'USER_PROFILE_UPDATED') return 'profile_updated'
   return authType
 }
@@ -82,10 +83,202 @@ function isUserCreatedType(type) {
   return type === 'user_created' || type === 'user_signed_up'
 }
 
+function isSectionEventType(type, activity) {
+  const t = String(activity || type || '').toUpperCase()
+  return t === 'SECTION_CREATED' || t === 'SECTION_UPDATED' || t === 'SECTION_DELETED'
+}
+
+function isSubjectEventType(type, activity) {
+  const t = String(activity || type || '').toUpperCase()
+  return t === 'SUBJECT_CREATED' || t === 'SUBJECT_UPDATED' || t === 'SUBJECT_DELETED'
+}
+
+function isAnnouncementInstituteEventType(type, activity) {
+  const t = String(activity || type || '').toUpperCase()
+  return t === 'ANNOUNCEMENT_CREATED' || t === 'ANNOUNCEMENT_UPDATED' || t === 'ANNOUNCEMENT_DELETED'
+}
+
+function formatSectionEvent(ed, e, eventLabel) {
+  const changes = extractChanges(ed?.detailedDiffs)
+  const actor = person(
+    ed?.actorName || e?.actorName,
+    ed?.actorEmail || e?.actorEmail,
+    ed?.actorRole || 'admin',
+  )
+  const record = pruneEmpty({
+    type: trim(ed?.recordType) || 'section',
+    id: trim(ed?.recordId),
+    sectionName: trim(ed?.sectionName || ed?.section_name || ed?.name),
+    gradeLevel: trim(ed?.gradeLevel || ed?.grade_level || ed?.grade),
+  })
+  const deletedSnapshot =
+    ed?.deletedSnapshot && typeof ed.deletedSnapshot === 'object' ? ed.deletedSnapshot : undefined
+  return pruneEmpty({
+    event: eventLabel,
+    actor,
+    record,
+    ...(changes ? { changes } : {}),
+    ...(deletedSnapshot && !changes ? { deleted: deletedSnapshot } : {}),
+    ...(trim(ed?.description) ? { description: trim(ed.description) } : {}),
+  })
+}
+
+function isCurriculumEventType(type, activity) {
+  const t = String(activity || type || '').toUpperCase()
+  return (
+    t === 'CURRICULUM_CREATED' ||
+    t === 'CURRICULUM_UPLOADED' ||
+    t === 'CURRICULUM_UPDATED' ||
+    t === 'CURRICULUM_DELETED'
+  )
+}
+
+function formatCurriculumEvent(ed, e, eventLabel) {
+  const changes = extractChanges(ed?.detailedDiffs)
+  const actor = person(
+    ed?.actorName || e?.actorName,
+    ed?.actorEmail || e?.actorEmail,
+    ed?.actorRole || 'admin',
+  )
+  const record = pruneEmpty({
+    type: trim(ed?.recordType) || 'curriculum',
+    id: trim(ed?.recordId),
+    subject: trim(ed?.subject),
+    gradeLevel: trim(ed?.gradeLevel || ed?.grade_level),
+    fileName: trim(ed?.fileName || ed?.file_name),
+  })
+  const deletedSnapshot =
+    ed?.deletedSnapshot && typeof ed.deletedSnapshot === 'object' ? ed.deletedSnapshot : undefined
+  return pruneEmpty({
+    event: eventLabel,
+    actor,
+    record,
+    ...(changes ? { changes } : {}),
+    ...(deletedSnapshot && !changes ? { deleted: deletedSnapshot } : {}),
+    ...(trim(ed?.description) ? { description: trim(ed.description) } : {}),
+  })
+}
+
+function formatSubjectEvent(ed, e, eventLabel) {
+  const changes = extractChanges(ed?.detailedDiffs)
+  const actor = person(
+    ed?.actorName || e?.actorName,
+    ed?.actorEmail || e?.actorEmail,
+    ed?.actorRole || 'admin',
+  )
+  const record = pruneEmpty({
+    type: trim(ed?.recordType) || 'subject',
+    id: trim(ed?.recordId),
+    subjectCode: trim(ed?.subjectCode || ed?.subject_code),
+    subjectName: trim(ed?.subjectName || ed?.subject_name),
+    gradeLevel: trim(ed?.gradeLevel || ed?.grade_level),
+    semester: trim(ed?.semester),
+    facultyName: trim(ed?.facultyName || ed?.faculty_name),
+  })
+  const deletedSnapshot =
+    ed?.deletedSnapshot && typeof ed.deletedSnapshot === 'object' ? ed.deletedSnapshot : undefined
+  return pruneEmpty({
+    event: eventLabel,
+    actor,
+    record,
+    ...(changes ? { changes } : {}),
+    ...(deletedSnapshot && !changes ? { deleted: deletedSnapshot } : {}),
+    ...(trim(ed?.description) ? { description: trim(ed.description) } : {}),
+  })
+}
+
+function formatAnnouncementInstituteEvent(ed, e, eventLabel) {
+  const changes = extractChanges(ed?.detailedDiffs)
+  const actor = person(
+    ed?.actorName || e?.actorName,
+    ed?.actorEmail || e?.actorEmail,
+    ed?.actorRole || 'admin',
+  )
+  const record = pruneEmpty({
+    type: trim(ed?.recordType) || 'announcement',
+    id: trim(ed?.recordId),
+    title: trim(ed?.title),
+    announcementType: trim(ed?.announcementType || ed?.type),
+  })
+  const deletedSnapshot =
+    ed?.deletedSnapshot && typeof ed.deletedSnapshot === 'object' ? ed.deletedSnapshot : undefined
+  return pruneEmpty({
+    event: eventLabel,
+    actor,
+    record,
+    ...(changes ? { changes } : {}),
+    ...(deletedSnapshot && !changes ? { deleted: deletedSnapshot } : {}),
+    ...(trim(ed?.description) ? { description: trim(ed.description) } : {}),
+  })
+}
+
+function isLoginSecurityType(type, activity) {
+  return (
+    type === 'auth_lockout' ||
+    type === 'login_failed' ||
+    activity === 'AUTH_LOCKOUT' ||
+    activity === 'LOGIN_FAILED'
+  )
+}
+
+function loginSecurityPortalLabel(ed) {
+  if (ed?.portalLabel) return trim(ed.portalLabel)
+  if (ed?.portal === 'admin') return 'Admin portal'
+  if (ed?.portal === 'faculty') return 'Faculty portal'
+  if (ed?.portal === 'student') return 'Student portal'
+  return trim(ed?.portal)
+}
+
+function formatLoginSecurityEvent(ed, e, eventLabel) {
+  const activity = String(e?.activityType || ed?.activityType || '').toUpperCase()
+  const portal = loginSecurityPortalLabel(ed)
+  return pruneEmpty({
+    event: eventLabel || (activity === 'AUTH_LOCKOUT' ? 'Account Lockout' : 'Sign In Failed'),
+    suspiciousLoginDetected: ed?.suspiciousLoginDetected === true ? true : undefined,
+    account: pruneEmpty({
+      userId: trim(ed?.targetUserId || e?.userId),
+      username: trim(ed?.username),
+      loginId: trim(ed?.loginId || ed?.identifier),
+      type: trim(ed?.accountType),
+    }),
+    portal,
+    attempts: ed?.attempts != null ? Number(ed.attempts) : undefined,
+    maxAttempts: ed?.maxAttempts != null ? Number(ed.maxAttempts) : undefined,
+    lockedUntil: trim(ed?.lockedUntil),
+    reason: trim(ed?.reason),
+    duringLockout: ed?.duringLockout === true ? true : undefined,
+    device: trim(ed?.userAgent),
+  })
+}
+
+function isTermsAcceptedType(type, activity) {
+  return type === 'terms_accepted' || activity === 'TERMS_ACCEPTED'
+}
+
+function formatTermsAccepted(ed, e, eventLabel) {
+  const portal =
+    ed?.portal === 'admin'
+      ? 'Admin portal'
+      : ed?.portal === 'faculty'
+        ? 'Faculty portal'
+        : ed?.portal === 'student'
+          ? 'Student portal'
+          : trim(ed?.portal)
+  const user = person(ed?.userName, ed?.userEmail, ed?.userRole || e?.userRole)
+  return pruneEmpty({
+    event: eventLabel || 'Terms & Conditions Accepted',
+    user,
+    portal,
+    acceptedAt: trim(ed?.acceptedAt),
+    description: trim(ed?.description),
+  })
+}
+
 function isSessionFamilyType(type, activity) {
   if (
     type === 'session_created' ||
     type === 'user_signed_in' ||
+    type === 'login' ||
     type === 'session_revoked' ||
     type === 'user_signed_out' ||
     type === 'user_sign_in_failed' ||
@@ -95,8 +288,10 @@ function isSessionFamilyType(type, activity) {
   }
   return (
     activity === 'USER_SIGNED_IN' ||
+    activity === 'USER_SESSION_STARTED' ||
     activity === 'SESSION_CREATED' ||
-    activity === 'SESSION_REVOKED'
+    activity === 'SESSION_REVOKED' ||
+    activity === 'LOGIN'
   )
 }
 
@@ -144,13 +339,15 @@ function formatSessionFamily(ed, e, eventLabel) {
     ed?.userEmail || ed?.targetEmail,
     ed?.userRole || e?.userRole,
   )
-  const loginMethod = trim(ed?.loginMethod || ed?.method)
+  const loginMethod = trim(ed?.loginMethod || ed?.login_method || ed?.method)
+  const userAgent = trim(ed?.userAgent || ed?.user_agent)
   const sourceToken = String(ed?.source || '').toLowerCase()
   const context = trim(ed?.triggerContext || (sourceToken === 'admin' ? 'admin' : sourceToken ? sourceToken : 'user'))
   return pruneEmpty({
     event: eventLabel,
     user,
     ...(loginMethod ? { loginMethod } : {}),
+    ...(userAgent ? { device: userAgent } : {}),
     ...(context ? { context } : {}),
   })
 }
@@ -254,6 +451,18 @@ export function formatAuditModalEventDataJson(e, eventDisplayName = '') {
     data = formatUserCreated(ed, e, label)
   } else if (isSessionFamilyType(type, activity)) {
     data = formatSessionFamily(ed, e, label)
+  } else if (isLoginSecurityType(type, activity)) {
+    data = formatLoginSecurityEvent(ed, e, label)
+  } else if (isTermsAcceptedType(type, activity)) {
+    data = formatTermsAccepted(ed, e, label)
+  } else if (isCurriculumEventType(type, activity)) {
+    data = formatCurriculumEvent(ed, e, label)
+  } else if (isSectionEventType(type, activity)) {
+    data = formatSectionEvent(ed, e, label)
+  } else if (isSubjectEventType(type, activity)) {
+    data = formatSubjectEvent(ed, e, label)
+  } else if (isAnnouncementInstituteEventType(type, activity)) {
+    data = formatAnnouncementInstituteEvent(ed, e, label)
   } else if (e?.source === 'lms') {
     const lmsUser = person(
       ed?.targetName || ed?.userName || (e?.userEmail || '').split(' (')[0],

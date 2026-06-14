@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import BackButton from './components/BackButton.jsx'
 import { apiUrl } from './lib/lmsStateStorage.js'
 import { resolveTeacherFileUrl } from './lib/teacherMedia.js'
+import { formatSemesterLabel } from './lib/quizQuestionTypes.js'
 import { subjectImageDisplaySrc } from './lib/subjectImages.js'
 
 const labelStyle = {
@@ -52,7 +53,7 @@ export default function SubjectProfile({ subject, onBack, onEdit }) {
   }
 
   const grade = subject?.grade || subject?.grade_level || '—'
-  const quarter = String(subject?.quarter ?? '—')
+  const semester = formatSemesterLabel(subject?.semester) || '—'
   const syllabusFileName = subject.syllabusFileName || 'syllabus.pdf'
   const syllabusUrl = resolveTeacherFileUrl(subject.syllabusDataUrl || subject.syllabus_pdf || '')
   const coverSrc = subjectImageDisplaySrc(subject, { apiUrlFn: apiUrl })
@@ -132,8 +133,8 @@ export default function SubjectProfile({ subject, onBack, onEdit }) {
                   </td>
                 </tr>
                 <tr>
-                  <td style={labelStyle}>Subject Quarter</td>
-                  <td style={valueStyle}>{cell(quarter)}</td>
+                  <td style={labelStyle}>Subject Semester</td>
+                  <td style={valueStyle}>{cell(semester)}</td>
                   <td style={labelStyle}>Subject Grade Level</td>
                   <td style={valueStyle}>{cell(grade)}</td>
                 </tr>

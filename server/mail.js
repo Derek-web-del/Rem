@@ -1,5 +1,6 @@
 import nodemailer from 'nodemailer'
 import { captureOtp } from './test-otp.mjs'
+import { captureResetUrl } from './test-reset.mjs'
 
 let transporter
 
@@ -173,6 +174,85 @@ export async function sendTwoFactorOtpEmail(to, otp) {
       return
     }
 
+    throw err
+  }
+}
+
+/**
+ * Send password reset link. Requires SMTP_USER + SMTP_PASS in .env (same transport as OTP).
+ */
+export async function sendPasswordResetEmail({ to, name, resetUrl }) {
+  if (process.env.NODE_ENV === 'test' && process.env.AUTH_TEST_CAPTURE_RESET === '1') {
+    captureResetUrl(to, resetUrl)
+    return
+  }
+
+  const mailer = getMailer()
+  const displayName = String(name || to || 'User').trim() || 'User'
+  const subject = 'LenLearn LMS — Password Reset'
+  const text = [
+    `Hello ${displayName},`,
+    '',
+    'We received a request to reset your LenLearn LMS password.',
+    '',
+    `Reset your password: ${resetUrl}`,
+    '',
+    'This link expires in 30 minutes and can only be used once.',
+    'If you did not request a password reset, you can ignore this email.',
+    '',
+    '— LenLearn LMS (Glendale School)',
+  ].join('\n')
+
+  const html = `
+    <div style="font-family:Inter,system-ui,sans-serif;max-width:520px;margin:0 auto;color:#1f2937">
+      <p style="font-size:16px;margin:0 0 12px">Hello <strong>${displayName}</strong>,</p>
+      <p style="font-size:14px;line-height:1.6;margin:0 0 16px">
+        We received a request to reset your <strong>LenLearn LMS</strong> password.
+      </p>
+      <p style="margin:0 0 20px">
+        <a href="${resetUrl}" style="display:inline-block;background:#3182ce;color:#fff;text-decoration:none;padding:12px 20px;border-radius:8px;font-weight:600">
+          Reset password
+        </a>
+      </p>
+      <p style="font-size:13px;line-height:1.6;color:#4b5563;margin:0 0 8px">
+        This link expires in <strong>30 minutes</strong> and can only be used <strong>once</strong>.
+      </p>
+      <p style="font-size:13px;line-height:1.6;color:#6b7280;margin:0">
+        If you did not request a password reset, you can ignore this email.
+      </p>
+      <p style="font-size:12px;color:#9ca3af;margin:24px 0 0">LenLearn LMS · Glendale School</p>
+    </div>
+  `.trim()
+
+  if (!mailer) {
+    console.warn('[auth] SMTP_USER/SMTP_PASS missing — configure .env to send password reset email.')
+    console.info(`[auth] Password reset link for ${to} (console only): ${resetUrl}`)
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error(
+        'Email is not configured. Set SMTP_USER and SMTP_PASS in your .env file, then restart the auth server.',
+      )
+    }
+    return
+  }
+
+  const user = (process.env.SMTP_USER || '').trim()
+  let from = (process.env.SMTP_FROM || user).trim()
+  if (!from.includes('@')) from = user
+
+  try {
+    const info = await mailer.sendMail({ from, to, replyTo: user, subject, text, html })
+    console.info(`[auth] Password reset email sent to ${to} (messageId: ${info.messageId || 'n/a'})`)
+  } catch (err) {
+    console.error('[auth] Password reset SMTP send failed:', formatSmtpError(err))
+    const allowConsoleFallback =
+      process.env.NODE_ENV !== 'production' &&
+      (String(process.env.AUTH_SMTP_DEV_FALLBACK || '').toLowerCase() === 'true' ||
+        String(process.env.AUTH_SMTP_DEV_FALLBACK || '').trim() === '1')
+    if (allowConsoleFallback) {
+      console.warn('[auth] AUTH_SMTP_DEV_FALLBACK enabled: printing reset URL to console after send failure.')
+      console.info(`[auth] Password reset link for ${to} (console only): ${resetUrl}`)
+      return
+    }
     throw err
   }
 }

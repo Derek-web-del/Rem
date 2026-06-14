@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
-import BackButton from '../../components/BackButton.jsx'
+import { useNavigate, useOutletContext, useParams } from 'react-router-dom'
 import PasswordInput from '../../components/PasswordInput.jsx'
 import { useNotify } from '../../components/notifications.jsx'
 import {
@@ -11,6 +10,8 @@ import {
 } from '../../lib/studentQuizzes.js'
 import { FACULTY_MSG, FACULTY_TOAST_ID, FACULTY_TOAST_MS } from '../../lib/facultyNotify.js'
 import { QuestionFields } from '../teachers/TeacherQuizQuestionFields.jsx'
+import StudentMainHeader from './StudentMainHeader.jsx'
+import StudentViewHeader from './StudentViewHeader.jsx'
 import { ACTION_BLUE } from '../teachers/instituteChrome.js'
 
 function QuizPasswordModal({ open, onCancel, onSubmit, submitting, error }) {
@@ -65,6 +66,7 @@ function QuizPasswordModal({ open, onCancel, onSubmit, submitting, error }) {
 export default function StudentQuizPage() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const { logoutToPortal } = useOutletContext() || {}
   const { notify } = useNotify()
   const notifyRef = useRef(notify)
   notifyRef.current = notify
@@ -128,10 +130,11 @@ export default function StudentQuizPage() {
   }
 
   return (
-    <div className="min-h-svh bg-neutral-100 font-[Inter,system-ui,sans-serif]">
-      <main className="mx-auto max-w-4xl space-y-6 p-4 md:p-8">
-        <BackButton to="/student/quizzes">« Back</BackButton>
-
+    <>
+      <StudentMainHeader pageTitle="Quizzes" onLogout={logoutToPortal} />
+      <main className="min-h-0 flex-1 overflow-y-auto">
+        <div className="mx-auto max-w-4xl space-y-6 p-4 md:p-8">
+        <StudentViewHeader title="View Quiz" backTo="/student/quizzes" />
         {loading ? (
           <p className="text-sm text-neutral-500">Loading quiz…</p>
         ) : !quiz && !passwordModalOpen ? (
@@ -176,6 +179,7 @@ export default function StudentQuizPage() {
             ))}
           </div>
         ) : null}
+        </div>
       </main>
 
       <QuizPasswordModal
@@ -185,6 +189,6 @@ export default function StudentQuizPage() {
         submitting={verifying}
         error={passwordError}
       />
-    </div>
+    </>
   )
 }

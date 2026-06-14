@@ -1,10 +1,27 @@
+import apiFetch from './apiClient.js'
+import { uploadsPathToApiUrl } from './fileUrls.js'
+import { getListSnapshot, saveListSnapshot } from './indexedDB.js'
+import { isOnline } from './offlineSync.js'
 import { apiUrl } from './lmsStateStorage.js'
+import { resolveSubmissionStatusBadge } from './gradeStatus.js'
+
+async function teacherApiJson(path, options = {}) {
+  const res = await apiFetch(apiUrl(path), options)
+  return res.json().catch(() => ({}))
+}
 
 export function formatSubjectOption(subject) {
   const name = String(subject?.subject_name ?? '').trim()
   const grade = String(subject?.grade_level ?? '').trim()
   if (name && grade) return `${name} - ${grade}`
   return name || grade || 'Subject'
+}
+
+export function isPastDeadline(deadlineIso) {
+  if (!deadlineIso) return false
+  const d = new Date(deadlineIso)
+  if (Number.isNaN(d.getTime())) return false
+  return d.getTime() < Date.now()
 }
 
 export function formatDateYmd(iso) {
@@ -86,10 +103,12 @@ export function mapAssignmentRow(row) {
     subject_name: String(row.subject_name ?? '').trim(),
     subject_code: String(row.subject_code ?? '').trim(),
     grade_level: String(row.grade_level ?? '').trim(),
-    quarter: row.quarter != null ? String(row.quarter) : '',
+    semester: row.semester != null ? String(row.semester) : '',
     file_path: String(row.file_path ?? '').trim(),
     file_name: String(row.file_name ?? '').trim(),
     file_size: row.file_size != null ? Number(row.file_size) : null,
+    grade_component_id: row.grade_component_id != null ? Number(row.grade_component_id) : null,
+    grade_component_name: String(row.grade_component_name ?? '').trim(),
     total_score: row.total_score != null ? Number(row.total_score) : 100,
     submission_deadline: row.submission_deadline ?? null,
     uploaded_by: String(row.uploaded_by ?? '').trim(),
@@ -115,18 +134,11 @@ export function mapSubmissionRow(row) {
 }
 
 export function resolveAssignmentFileUrl(filePath) {
-  const path = String(filePath ?? '').trim()
-  if (!path) return ''
-  if (path.startsWith('http') || path.startsWith('data:')) return path
-  return apiUrl(path.startsWith('/') ? path : `/${path}`)
+  return uploadsPathToApiUrl(filePath)
 }
 
 export async function fetchAssignmentFormOptions() {
-  const res = await fetch(apiUrl('/api/teacher/assignments/form-options'), { credentials: 'include' })
-  const data = await res.json().catch(() => ({}))
-  if (!res.ok) {
-    throw new Error(String(data?.message || data?.error || `Failed to load form options (${res.status}).`))
-  }
+  const data = await teacherApiJson('/api/teacher/assignments/form-options')
   return {
     subjects: Array.isArray(data.subjects) ? data.subjects : [],
     gradeLevels: Array.isArray(data.gradeLevels) ? data.gradeLevels : [],
@@ -134,14 +146,7 @@ export async function fetchAssignmentFormOptions() {
 }
 
 export async function fetchTeacherSubjectsForAssignments() {
-  const res = await fetch(apiUrl('/api/teacher/subjects'), { credentials: 'include' })
-  const data = await res.json().catch(() => [])
-  if (!res.ok) {
-    const msg =
-      (data && typeof data === 'object' && (data.message || data.error)) ||
-      `Failed to load subjects (${res.status}).`
-    throw new Error(String(msg))
-  }
+  const data = await teacherApiJson('/api/teacher/subjects')
   return Array.isArray(data) ? data : []
 }
 
@@ -155,45 +160,50 @@ export async function fetchTeacherAssignments(page = 1, options = {}) {
   if (options.sortKey) params.set('sort', options.sortKey)
   if (options.sortDir) params.set('dir', options.sortDir)
 
-  const res = await fetch(apiUrl(`/api/teacher/assignments?${params.toString()}`), { credentials: 'include' })
-  const data = await res.json().catch(() => ({}))
-  if (!res.ok) {
-    throw new Error(String(data?.message || data?.error || `Failed to load assignments (${res.status}).`))
-  }
-  const list = Array.isArray(data.data)
-    ? data.data
-    : Array.isArray(data.assignments)
-      ? data.assignments
-      : []
-  return {
-    data: list.map(mapAssignmentRow).filter(Boolean),
-    total: Number(data.total ?? list.length) || 0,
-    page: Number(data.page ?? page) || 1,
-    limit: Number(data.limit ?? limit) || limit,
-    totalPages: Number(data.totalPages ?? 1) || 1,
+  try {
+    if (!isOnline()) throw new Error('offline')
+    const data = await teacherApiJson(`/api/teacher/assignments?${params.toString()}`)
+    const list = Array.isArray(data.data)
+      ? data.data
+      : Array.isArray(data.assignments)
+        ? data.assignments
+        : []
+    const result = {
+      data: list.map(mapAssignmentRow).filter(Boolean),
+      total: Number(data.total ?? list.length) || 0,
+      page: Number(data.page ?? page) || 1,
+      limit: Number(data.limit ?? limit) || limit,
+      totalPages: Number(data.totalPages ?? 1) || 1,
+    }
+    if (page === 1 && !options.q) {
+      await saveListSnapshot('assignments', result.data, 'faculty_list')
+    }
+    return result
+  } catch (e) {
+    const cached = await getListSnapshot('assignments', 'faculty_list')
+    if (cached.length > 0) {
+      return {
+        data: cached,
+        total: cached.length,
+        page: 1,
+        limit,
+        totalPages: 1,
+        fromCache: true,
+      }
+    }
+    throw e
   }
 }
 
 export async function fetchTeacherAssignment(id) {
-  const res = await fetch(apiUrl(`/api/teacher/assignments/${encodeURIComponent(String(id))}`), {
-    credentials: 'include',
-  })
-  const data = await res.json().catch(() => ({}))
-  if (!res.ok) {
-    throw new Error(String(data?.message || data?.error || `Failed to load assignment (${res.status}).`))
-  }
+  const data = await teacherApiJson(`/api/teacher/assignments/${encodeURIComponent(String(id))}`)
   return mapAssignmentRow(data.assignment)
 }
 
 export async function fetchTeacherAssignmentSubmissions(id) {
-  const res = await fetch(
-    apiUrl(`/api/teacher/assignments/${encodeURIComponent(String(id))}/submissions`),
-    { credentials: 'include' },
+  const data = await teacherApiJson(
+    `/api/teacher/assignments/${encodeURIComponent(String(id))}/submissions`,
   )
-  const data = await res.json().catch(() => ({}))
-  if (!res.ok) {
-    throw new Error(String(data?.message || data?.error || `Failed to load submissions (${res.status}).`))
-  }
   return {
     assignment: mapAssignmentRow(data.assignment),
     submissions: (Array.isArray(data.submissions) ? data.submissions : [])
@@ -204,52 +214,32 @@ export async function fetchTeacherAssignmentSubmissions(id) {
 }
 
 export async function createTeacherAssignment(formData) {
-  const res = await fetch(apiUrl('/api/teacher/assignments'), {
-    method: 'POST',
-    credentials: 'include',
-    body: formData,
-  })
-  const data = await res.json().catch(() => ({}))
-  if (!res.ok) {
-    throw new Error(String(data?.message || data?.error || data?.error || 'Failed to add assignment.'))
-  }
+  const data = await teacherApiJson('/api/teacher/assignments', { method: 'POST', body: formData })
   return mapAssignmentRow(data.assignment)
 }
 
 export async function updateTeacherAssignment(id, formData) {
-  const res = await fetch(apiUrl(`/api/teacher/assignments/${encodeURIComponent(String(id))}`), {
+  const data = await teacherApiJson(`/api/teacher/assignments/${encodeURIComponent(String(id))}`, {
     method: 'PUT',
-    credentials: 'include',
     body: formData,
   })
-  const data = await res.json().catch(() => ({}))
-  if (!res.ok) {
-    throw new Error(String(data?.message || data?.error || 'Failed to update assignment.'))
-  }
   return mapAssignmentRow(data.assignment)
 }
 
 export async function deleteTeacherAssignment(id) {
-  const res = await fetch(apiUrl(`/api/teacher/assignments/${encodeURIComponent(String(id))}`), {
-    method: 'DELETE',
-    credentials: 'include',
-  })
-  const data = await res.json().catch(() => ({}))
-  if (!res.ok) {
-    throw new Error(String(data?.message || data?.error || 'Failed to delete assignment.'))
-  }
+  await teacherApiJson(`/api/teacher/assignments/${encodeURIComponent(String(id))}`, { method: 'DELETE' })
 }
 
 export async function updateSubmissionScore(assignmentId, submissionId, score) {
-  const res = await fetch(
+  const res = await apiFetch(
     apiUrl(
       `/api/teacher/assignments/${encodeURIComponent(String(assignmentId))}/submissions/${encodeURIComponent(String(submissionId))}/score`,
     ),
     {
       method: 'PATCH',
-      credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ score }),
+      softAuth: true,
     },
   )
   const data = await res.json().catch(() => ({}))
@@ -263,8 +253,12 @@ export async function downloadAssignmentFile(assignment) {
   const url = resolveAssignmentFileUrl(assignment?.file_path)
   const name = String(assignment?.file_name || assignment?.title || 'assignment').trim() || 'assignment'
   if (!url) return false
-  const res = await fetch(url, { credentials: 'include' })
-  if (!res.ok) return false
+  let res
+  try {
+    res = await apiFetch(url)
+  } catch {
+    return false
+  }
   const blob = await res.blob()
   const objectUrl = URL.createObjectURL(blob)
   const a = document.createElement('a')
@@ -281,8 +275,12 @@ export async function downloadSubmissionFile(submission) {
   const url = resolveAssignmentFileUrl(submission?.file_path)
   const name = String(submission?.file_name || 'submission').trim() || 'submission'
   if (!url) return false
-  const res = await fetch(url, { credentials: 'include' })
-  if (!res.ok) return false
+  let res
+  try {
+    res = await apiFetch(url)
+  } catch {
+    return false
+  }
   const blob = await res.blob()
   const objectUrl = URL.createObjectURL(blob)
   const a = document.createElement('a')
@@ -297,20 +295,5 @@ export async function downloadSubmissionFile(submission) {
 
 export function submissionStatusBadge(submission) {
   const total = submission?.total_score ?? 100
-  const status = String(submission?.status ?? 'not_submitted').toLowerCase()
-  const score = submission?.score
-
-  if (status === 'expired') {
-    return { label: `0/${total}`, tone: 'red' }
-  }
-  if (status === 'not_submitted') {
-    return { label: 'Not Submitted', tone: 'red' }
-  }
-  if (score != null && Number.isFinite(score)) {
-    return { label: `Score: ${score}/${total}`, tone: 'yellow' }
-  }
-  if (status === 'submitted' || submission?.submitted_at) {
-    return { label: 'Submitted - Pending', tone: 'yellow' }
-  }
-  return { label: 'Not Submitted', tone: 'red' }
+  return resolveSubmissionStatusBadge(submission, total)
 }

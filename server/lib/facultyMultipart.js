@@ -1,9 +1,9 @@
 import multer from 'multer'
-import { FACULTY_PHOTO_MAX_BYTES } from './facultyPhotoStorage.js'
+import { PHOTO_MAX_BYTES, PHOTO_MAX_MSG } from './uploadLimitsConfig.js'
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: FACULTY_PHOTO_MAX_BYTES, files: 1, fields: 40 },
+  limits: { fileSize: PHOTO_MAX_BYTES, files: 1, fields: 40 },
   fileFilter(_req, file, cb) {
     const mime = String(file.mimetype || '').toLowerCase()
     if (!['image/png', 'image/jpeg', 'image/jpg'].includes(mime)) {
@@ -39,10 +39,9 @@ export function facultyPhotoUploadMiddleware(req, res, next) {
   upload.single('photo')(req, res, (err) => {
     if (!err) return next()
     const msg = String(err.message || err)
-    const status = err.code === 'LIMIT_FILE_SIZE' ? 400 : 400
-    res.status(status).json({
+    res.status(400).json({
       success: false,
-      error: err.code === 'LIMIT_FILE_SIZE' ? 'Photo must be less than 2MB.' : msg,
+      error: err.code === 'LIMIT_FILE_SIZE' ? PHOTO_MAX_MSG : msg,
     })
   })
 }

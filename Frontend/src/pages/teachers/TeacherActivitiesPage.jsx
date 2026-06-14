@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useOutletContext } from 'react-router-dom'
+import { isOnline } from '../../lib/offlineSync.js'
+import OfflineCacheIndicator from '../../components/OfflineCacheIndicator.jsx'
 import {
   deleteTeacherActivity,
   fetchTeacherActivities,
@@ -11,6 +13,7 @@ import {
   FACULTY_ANNOUNCEMENT_TOAST_MS,
   useFacultyNotify,
 } from '../../lib/facultyNotify.js'
+import { formatSemesterLabel } from '../../lib/quizQuestionTypes.js'
 import TeacherMainHeader from './TeacherMainHeader.jsx'
 import TeacherBackButton from './TeacherBackButton.jsx'
 import { ACTION_BLUE } from './instituteChrome.js'
@@ -67,6 +70,7 @@ export default function TeacherActivitiesPage() {
   const [sortDir, setSortDir] = useState('desc')
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [deleting, setDeleting] = useState(false)
+  const [fromCache, setFromCache] = useState(false)
 
   useEffect(() => {
     setSidebarNavLocked?.(false)
@@ -85,6 +89,7 @@ export default function TeacherActivitiesPage() {
         setActivities(result.data)
         setTotal(result.total)
         setTotalPages(result.totalPages)
+        setFromCache(Boolean(result.fromCache) || !isOnline())
         if (result.page !== page) {
           setCurrentPage(result.page)
         }
@@ -163,6 +168,7 @@ export default function TeacherActivitiesPage() {
       <TeacherMainHeader pageTitle="Activities" onLogout={logoutToPortal} />
       <main className="min-h-0 flex-1 space-y-6 overflow-y-auto overflow-x-hidden p-4 md:p-8">
         <TeacherBackButton to="/teacher/dashboard" />
+        <OfflineCacheIndicator fromCache={fromCache} className="mb-2" />
 
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -215,7 +221,7 @@ export default function TeacherActivitiesPage() {
                         <SortHeader label="Grade Level" active={sortKey === 'grade_level'} direction={sortDir} onClick={() => toggleSort('grade_level')} />
                       </th>
                       <th className="px-4 py-3 text-left">
-                        <SortHeader label="Quarter" active={sortKey === 'quarter'} direction={sortDir} onClick={() => toggleSort('quarter')} />
+                        <SortHeader label="Semester" active={sortKey === 'semester'} direction={sortDir} onClick={() => toggleSort('semester')} />
                       </th>
                       <th className="px-4 py-3 text-left">
                         <SortHeader label="Upload Date" active={sortKey === 'upload_date'} direction={sortDir} onClick={() => toggleSort('upload_date')} />
@@ -242,7 +248,7 @@ export default function TeacherActivitiesPage() {
                           <td className="px-4 py-4 font-medium uppercase">{row.subject_name || '—'}</td>
                           <td className="px-4 py-4">{row.grade_level || '—'}</td>
                           <td className="px-4 py-4 tabular-nums">
-                            {row.quarter != null && String(row.quarter).trim() !== '' ? row.quarter : '—'}
+                            {formatSemesterLabel(row.semester) || '—'}
                           </td>
                           <td className="px-4 py-4 tabular-nums">{formatDateYmd(row.created_at)}</td>
                           <td className="px-4 py-4 tabular-nums">{formatDateYmd(row.submission_deadline)}</td>

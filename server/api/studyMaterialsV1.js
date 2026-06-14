@@ -11,6 +11,7 @@ import {
   updateFacultyStudyMaterial,
 } from '../lib/facultyStudyMaterialsDb.js'
 import { fetchFacultyRowForSession, facultyDisplayName } from '../lib/facultySession.js'
+import { customActivityLogger } from '../services/CustomActivityLogger.js'
 import {
   deleteStudyMaterialFileByUrl,
   FACULTY_MATERIAL_FILE_TYPE,
@@ -174,6 +175,17 @@ export function createStudyMaterialsV1Router(express, auth) {
         uploaded_by: facultyRow.id,
         uploaded_by_name: facultyDisplayName(facultyRow),
       })
+      try {
+        await customActivityLogger.logFileUpload(
+          String(gate.user.id),
+          saved.file_name,
+          file_type,
+          subject,
+          { userEmail: String(gate.user?.email || '').trim().toLowerCase(), userRole: 'faculty' },
+        )
+      } catch {
+        /* ignore */
+      }
       res.status(201).json({ success: true, material })
     } catch (e) {
       sendSafeServerError(res, e, 'POST /api/v1/study-materials')

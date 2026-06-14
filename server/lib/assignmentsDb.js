@@ -1,5 +1,10 @@
 import { deleteAssignmentFileByUrl } from './assignmentStorage.js'
 import { filterGradeLevelsForDropdown, isAllowedHighSchoolGradeLevel } from './gradeLevels.js'
+import {
+  decryptStudentRows,
+  studentDisplayName,
+  submissionStudentDisplayName,
+} from './studentPiiCrypto.js'
 
 const ASSIGNMENT_SELECT = `
   a.id,
@@ -9,10 +14,11 @@ const ASSIGNMENT_SELECT = `
   a.subject_id,
   a.subject_name AS assignment_subject_name,
   a.grade_level AS assignment_grade_level,
-  a.quarter,
+  a.semester,
   a.file_path,
   a.file_name,
   a.file_size,
+  a.grade_component_id,
   a.total_score,
   a.submission_deadline,
   a.uploaded_by,
@@ -20,7 +26,8 @@ const ASSIGNMENT_SELECT = `
   a.updated_at,
   sub.subject_name,
   sub.subject_code,
-  sub.grade_level
+  sub.grade_level,
+  sgc.name AS grade_component_name
 `
 
 export const DEFAULT_ASSIGNMENT_SUBJECTS = ['English', 'Math', 'Science', 'Filipino']
@@ -48,7 +55,7 @@ export async function ensureAssignmentsSchema(pool) {
     ['subject_id', 'INT REFERENCES public.subjects(id) ON DELETE SET NULL'],
     ['subject_name', 'VARCHAR(100)'],
     ['grade_level', 'VARCHAR(50)'],
-    ['quarter', 'INT'],
+    ['semester', 'INT'],
     ['file_path', 'VARCHAR(512)'],
     ['file_name', 'VARCHAR(512)'],
     ['file_size', 'BIGINT'],
@@ -66,6 +73,16 @@ export async function ensureAssignmentsSchema(pool) {
   await pool.query(
     `CREATE INDEX IF NOT EXISTS idx_assignments_submission_deadline ON public.assignments (submission_deadline)`,
   )
+
+  const curriculumCols = [
+    ['module_id', 'BIGINT'],
+    ['topic_id', 'BIGINT'],
+    ['module_order', 'INT NOT NULL DEFAULT 0'],
+    ['status', "VARCHAR(20) NOT NULL DEFAULT 'published'"],
+  ]
+  for (const [name, type] of curriculumCols) {
+    await pool.query(`ALTER TABLE assignments ADD COLUMN IF NOT EXISTS ${name} ${type}`)
+  }
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS assignment_submissions (
@@ -89,6 +106,7 @@ export async function ensureAssignmentsSchema(pool) {
   await pool.query(
     `CREATE INDEX IF NOT EXISTS idx_assignment_submissions_student_id ON public.assignment_submissions (student_id)`,
   )
+  await pool.query(`ALTER TABLE assignment_submissions ADD COLUMN IF NOT EXISTS feedback TEXT`)
 }
 
 export function mapAssignmentRow(row) {
@@ -104,10 +122,12 @@ export function mapAssignmentRow(row) {
     subject_name: subjectName,
     subject_code: String(row.subject_code ?? '').trim(),
     grade_level: gradeLevel,
-    quarter: row.quarter != null ? Number(row.quarter) : null,
+    semester: row.semester != null ? Number(row.semester) : null,
     file_path: String(row.file_path ?? '').trim(),
     file_name: String(row.file_name ?? '').trim(),
     file_size: row.file_size != null ? Number(row.file_size) : null,
+    grade_component_id: row.grade_component_id != null ? Number(row.grade_component_id) : null,
+    grade_component_name: String(row.grade_component_name ?? '').trim(),
     total_score: row.total_score != null ? Number(row.total_score) : 100,
     submission_deadline: row.submission_deadline ?? null,
     uploaded_by: String(row.uploaded_by ?? '').trim(),
@@ -124,12 +144,15 @@ export function mapSubmissionRow(row, totalScore = 100) {
     id: row.id != null ? String(row.id) : '',
     assignment_id: row.assignment_id != null ? String(row.assignment_id) : '',
     student_id: row.student_id != null ? String(row.student_id) : '',
-    student_name: String(row.student_name ?? '').trim(),
+    student_name:
+      submissionStudentDisplayName(row) ||
+      (row.student_id != null ? `Student #${row.student_id}` : ''),
     file_path: String(row.file_path ?? '').trim(),
     file_name: String(row.file_name ?? '').trim(),
     score,
     status,
     submitted_at: row.submitted_at ?? null,
+    feedback: String(row.feedback ?? '').trim(),
     total_score: totalScore,
   }
 }
@@ -152,11 +175,7 @@ export async function expireUnsubmittedForAssignment(pool, assignmentId) {
   return rowCount ?? 0
 }
 
-export async function seedSubmissionsForGradeLevel(pool, assignmentId, gradeLevel) {
-  const gradeNorm = normalizeGradeLevel(gradeLevel)
-  if (!gradeNorm || !isAllowedHighSchoolGradeLevel(gradeLevel)) return 0
-
-  let archiveSql = ''
+async function studentsArchiveFilterSql(pool) {
   try {
     const { rows } = await pool.query(
       `
@@ -165,47 +184,84 @@ export async function seedSubmissionsForGradeLevel(pool, assignmentId, gradeLeve
       LIMIT 1
       `,
     )
-    if (rows?.length) archiveSql = ' AND st.archived_at IS NULL '
+    return rows?.length ? ' AND st.archived_at IS NULL ' : ''
   } catch {
-    /* ignore */
+    return ''
   }
+}
 
-  const { rowCount } = await pool.query(
+async function fetchStudentRowsForGradeLevel(pool, gradeNorm) {
+  const archiveSql = await studentsArchiveFilterSql(pool)
+  const { rows } = await pool.query(
     `
-    INSERT INTO assignment_submissions (assignment_id, student_id, student_name, status, score, created_at)
-    SELECT
-      $1,
-      st.id,
-      trim(concat_ws(' ',
-        nullif(trim(st.first_name), ''),
-        nullif(trim(st.middle_name), ''),
-        nullif(trim(st.last_name), '')
-      )),
-      'not_submitted',
-      NULL,
-      NOW()
+    SELECT st.id, st.first_name, st.middle_name, st.last_name
     FROM students st
     JOIN sections sec ON st.section_id = sec.id
     WHERE (
-      lower(trim(coalesce(sec.grade_level, ''))) = $2
-      OR lower(trim(coalesce(st.grade_level, ''))) = $2
+      lower(trim(coalesce(sec.grade_level, ''))) = $1
+      OR lower(trim(coalesce(st.grade_level, ''))) = $1
     )
     ${archiveSql}
-    AND NOT EXISTS (
-      SELECT 1 FROM assignment_submissions s
-      WHERE s.assignment_id = $1 AND s.student_id = st.id
-    )
     `,
-    [assignmentId, gradeNorm],
+    [gradeNorm],
   )
-  return rowCount ?? 0
+  return decryptStudentRows(rows || [])
+}
+
+export async function seedSubmissionsForGradeLevel(pool, assignmentId, gradeLevel) {
+  const gradeNorm = normalizeGradeLevel(gradeLevel)
+  if (!gradeNorm || !isAllowedHighSchoolGradeLevel(gradeLevel)) return 0
+
+  const students = await fetchStudentRowsForGradeLevel(pool, gradeNorm)
+  let inserted = 0
+  for (const st of students) {
+    const studentName = studentDisplayName(st)
+    const { rowCount } = await pool.query(
+      `
+      INSERT INTO assignment_submissions (assignment_id, student_id, student_name, status, score, created_at)
+      VALUES ($1, $2, $3, 'not_submitted', NULL, NOW())
+      ON CONFLICT (assignment_id, student_id) DO NOTHING
+      `,
+      [assignmentId, st.id, studentName || `Student #${st.id}`],
+    )
+    inserted += rowCount ?? 0
+  }
+  return inserted
+}
+
+export async function refreshSubmissionStudentNames(pool, assignmentId) {
+  const { rows } = await pool.query(
+    `
+    SELECT s.id AS submission_id, s.student_name, st.first_name, st.middle_name, st.last_name
+    FROM assignment_submissions s
+    JOIN students st ON st.id = s.student_id
+    WHERE s.assignment_id = $1
+      AND (
+        s.student_name IS NULL
+        OR trim(s.student_name) = ''
+        OR s.student_name LIKE '%enc:v1:%'
+      )
+    `,
+    [assignmentId],
+  )
+  let updated = 0
+  for (const row of rows || []) {
+    const name = submissionStudentDisplayName(row)
+    if (!name) continue
+    await pool.query(
+      `UPDATE assignment_submissions SET student_name = $1, updated_at = NOW() WHERE id = $2`,
+      [name, row.submission_id],
+    )
+    updated += 1
+  }
+  return updated
 }
 
 export async function fetchSubmissionsForAssignment(pool, assignmentId, gradeLevel) {
   const gradeNorm = normalizeGradeLevel(gradeLevel)
   const { rows } = await pool.query(
     `
-    SELECT s.*
+    SELECT s.*, st.first_name, st.middle_name, st.last_name
     FROM assignment_submissions s
     JOIN students st ON s.student_id = st.id
     JOIN sections sec ON st.section_id = sec.id
@@ -214,7 +270,7 @@ export async function fetchSubmissionsForAssignment(pool, assignmentId, gradeLev
         lower(trim(coalesce(sec.grade_level, ''))) = $2
         OR lower(trim(coalesce(st.grade_level, ''))) = $2
       )
-    ORDER BY COALESCE(lower(s.student_name), ''), s.id
+    ORDER BY s.id
     `,
     [assignmentId, gradeNorm],
   )
@@ -227,6 +283,7 @@ export async function fetchAssignmentById(pool, assignmentId, facultyId) {
     SELECT ${ASSIGNMENT_SELECT}
     FROM assignments a
     LEFT JOIN subjects sub ON sub.id = a.subject_id
+    LEFT JOIN subject_grade_components sgc ON sgc.id = a.grade_component_id
     WHERE a.id = $1 AND a.faculty_id::text = $2::text
     LIMIT 1
     `,
@@ -320,6 +377,49 @@ export async function resolveSubjectIdForAssignment(pool, facultyId, subjectName
 
 export function deleteAssignmentFiles(row) {
   if (row?.file_path) deleteAssignmentFileByUrl(row.file_path)
+}
+
+export async function upsertStudentAssignmentSubmission(pool, { assignmentId, studentId, studentName, fileMeta }) {
+  const { rows } = await pool.query(
+    `
+      INSERT INTO assignment_submissions (
+        assignment_id, student_id, student_name, file_path, file_name, status, submitted_at, updated_at
+      )
+      VALUES ($1, $2, $3, $4, $5, 'submitted', NOW(), NOW())
+      ON CONFLICT (assignment_id, student_id) DO UPDATE SET
+        file_path = EXCLUDED.file_path,
+        file_name = EXCLUDED.file_name,
+        status = 'submitted',
+        score = NULL,
+        feedback = NULL,
+        submitted_at = NOW(),
+        updated_at = NOW()
+      RETURNING *
+    `,
+    [
+      assignmentId,
+      studentId,
+      studentName,
+      fileMeta.file_path,
+      fileMeta.file_name,
+    ],
+  )
+  return rows?.[0] ?? null
+}
+
+export async function fetchAssignmentByIdForStudent(pool, assignmentId) {
+  const { rows } = await pool.query(
+    `
+      SELECT ${ASSIGNMENT_SELECT}
+      FROM assignments a
+      LEFT JOIN subjects sub ON sub.id = a.subject_id
+      LEFT JOIN subject_grade_components sgc ON sgc.id = a.grade_component_id
+      WHERE a.id = $1
+      LIMIT 1
+    `,
+    [assignmentId],
+  )
+  return rows?.[0] ?? null
 }
 
 export { ASSIGNMENT_SELECT }

@@ -8,6 +8,7 @@ import {
   updateTeacherAnnouncement,
 } from '../../lib/teacherAnnouncements.js'
 import { FACULTY_MSG, FACULTY_TOAST_ID, FACULTY_ANNOUNCEMENT_TOAST_MS, useFacultyNotify } from '../../lib/facultyNotify.js'
+import { PROFILE_PHOTO_MAX_BYTES, PROFILE_PHOTO_MAX_MSG, PHOTO_UPLOAD_LABEL } from '../../lib/uploadLimits.js'
 import TeacherMainHeader from './TeacherMainHeader.jsx'
 import BackButton from '../../components/BackButton.jsx'
 import { ACTION_BLUE } from './instituteChrome.js'
@@ -100,7 +101,7 @@ export default function TeacherAnnouncementForm({ mode = 'add' }) {
         })
         return
       }
-      if (file.size > 2 * 1024 * 1024) {
+      if (file.size > PROFILE_PHOTO_MAX_BYTES) {
         toast.error(FACULTY_MSG.announcements.imageSize, {
           toastId: FACULTY_TOAST_ID.announcementImageSize,
           durationMs: FACULTY_ANNOUNCEMENT_TOAST_MS,
@@ -241,7 +242,7 @@ export default function TeacherAnnouncementForm({ mode = 'add' }) {
                 )}
                 <div>
                   <p className="font-semibold text-neutral-900">Update Image</p>
-                  <p className="mt-1 text-sm text-neutral-500">Only allowed PNG or JPG less than 2MB</p>
+                  <p className="mt-1 text-sm text-neutral-500">{PHOTO_UPLOAD_LABEL}</p>
                 </div>
               </div>
               <div

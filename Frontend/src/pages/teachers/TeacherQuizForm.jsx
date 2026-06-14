@@ -1,15 +1,24 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate, useOutletContext, useParams } from 'react-router-dom'
+import { useNavigate, useOutletContext, useParams, useSearchParams } from 'react-router-dom'
 import { fetchActivityFormOptions } from '../../lib/teacherActivities.js'
 import {
   combineDateAndTimeToIso,
   createTeacherQuiz,
   fetchTeacherQuiz,
   quizToApiPayload,
+  QUESTION_TYPE_LABELS,
   splitDeadlineToDateAndTime,
+  typeBadgeClass,
   updateTeacherQuiz,
 } from '../../lib/teacherQuizzes.js'
-import { QUARTER_OPTIONS, emptyPart } from '../../lib/quizQuestionTypes.js'
+import {
+  SEMESTER_OPTIONS,
+  SEMESTER_LABELS,
+  QUIZ_ACTIVITY_TYPE_OPTIONS,
+  DEFAULT_QUIZ_ACTIVITY_TYPE,
+  normalizeQuizActivityType,
+  emptyPart,
+} from '../../lib/quizQuestionTypes.js'
 import {
   FACULTY_MSG,
   FACULTY_TOAST_ID,
@@ -21,6 +30,13 @@ import BackButton from '../../components/BackButton.jsx'
 import PasswordInput from '../../components/PasswordInput.jsx'
 import { PartBlock, calcTotalPoints, inputClass, labelClass } from './TeacherQuizQuestionFields.jsx'
 import { ACTION_BLUE } from './instituteChrome.js'
+import {
+  curriculumReturnPath,
+  linkCreatedItemToCurriculum,
+  prefillSubjectFromQuery,
+  readCurriculumQuery,
+} from '../../lib/curriculumFormPrefill.js'
+import { fetchGradeComponentsForSubject } from '../../lib/teacherSubjectCurriculum.js'
 
 const FALLBACK_SUBJECTS = ['English', 'Math', 'Science', 'Filipino']
 const FALLBACK_GRADES = ['Grade 7', 'Grade 8', 'Grade 9', 'Grade 10']
@@ -50,6 +66,8 @@ export default function TeacherQuizForm({ mode = 'add' }) {
   const isEdit = mode === 'edit'
   const { id } = useParams()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const curriculumQuery = readCurriculumQuery(searchParams)
   const { logoutToPortal, setSidebarNavLocked } = useOutletContext() || {}
   const toast = useFacultyNotify()
   const toastRef = useRef(toast)
@@ -57,22 +75,30 @@ export default function TeacherQuizForm({ mode = 'add' }) {
 
   const [subjectOptions, setSubjectOptions] = useState(FALLBACK_SUBJECTS)
   const [gradeOptions, setGradeOptions] = useState(FALLBACK_GRADES)
+  const [gradeComponents, setGradeComponents] = useState([])
+  const [loadedSubjectId, setLoadedSubjectId] = useState('')
+  const [includeComponentId, setIncludeComponentId] = useState('')
+  const [fallbackComponentName, setFallbackComponentName] = useState('')
+  const linkedSubjectId = curriculumQuery.subjectId || loadedSubjectId
   const [loading, setLoading] = useState(isEdit)
   const [submitting, setSubmitting] = useState(false)
   const [hasPassword, setHasPassword] = useState(false)
   const [passwordTouched, setPasswordTouched] = useState(false)
   const [form, setForm] = useState({
     title: '',
-    activity_type: 'Quiz',
+    activity_type: DEFAULT_QUIZ_ACTIVITY_TYPE,
     description: '',
     instructions: '',
     duration_mins: '',
     subject: '',
     grade_level: '',
-    quarter: '',
+    subject_id: '',
+    grade_component_id: '',
+    semester: '',
     deadline_date: '',
     deadline_time: '',
     quiz_password: '',
+    max_attempts: '1',
   })
   const [parts, setParts] = useState([emptyPart(0)])
 
@@ -100,6 +126,75 @@ export default function TeacherQuizForm({ mode = 'add' }) {
   }, [])
 
   useEffect(() => {
+    if (isEdit || !curriculumQuery.subjectId) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        await prefillSubjectFromQuery(curriculumQuery.subjectId, (patch) => {
+          if (!cancelled) {
+            setForm((p) => ({
+              ...p,
+              subject: patch.subject || p.subject,
+              grade_level: patch.grade_level || p.grade_level,
+              subject_id: curriculumQuery.subjectId || p.subject_id,
+            }))
+          }
+        })
+      } catch (e) {
+        console.error('[TeacherQuizForm] curriculum prefill', e)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [isEdit, curriculumQuery.subjectId])
+
+  useEffect(() => {
+    if (!linkedSubjectId) {
+      setGradeComponents([])
+      if (!curriculumQuery.subjectId) {
+        setForm((p) => ({ ...p, grade_component_id: '', subject_id: '' }))
+      }
+      return
+    }
+    let cancelled = false
+    ;(async () => {
+      try {
+        const rows = await fetchGradeComponentsForSubject(linkedSubjectId, 'quiz', {
+          includeComponentId: includeComponentId || undefined,
+        })
+        if (cancelled) return
+        setGradeComponents(rows)
+        setForm((p) => ({
+          ...p,
+          subject_id: linkedSubjectId,
+        }))
+        if (!isEdit) {
+          setForm((p) => {
+            const selected = String(p.grade_component_id || '').trim()
+            if (selected && rows.some((r) => String(r.id) === selected)) {
+              return { ...p, subject_id: linkedSubjectId }
+            }
+            return {
+              ...p,
+              subject_id: linkedSubjectId,
+              grade_component_id: rows[0]?.id != null ? String(rows[0].id) : '',
+            }
+          })
+        }
+      } catch (e) {
+        if (!cancelled) {
+          console.error('[TeacherQuizForm] grade components', e)
+          setGradeComponents([])
+        }
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [linkedSubjectId, curriculumQuery.subjectId, includeComponentId, isEdit])
+
+  useEffect(() => {
     if (!isEdit || !id) return
     let cancelled = false
     ;(async () => {
@@ -110,19 +205,31 @@ export default function TeacherQuizForm({ mode = 'add' }) {
         const { date, time } = splitDeadlineToDateAndTime(quiz.deadline)
         setForm({
           title: quiz.title || '',
-          activity_type: quiz.activity_type || 'Quiz',
+          activity_type: normalizeQuizActivityType(quiz.activity_type),
           description: quiz.description || '',
           instructions: quiz.instructions || '',
           duration_mins: quiz.duration_mins != null ? String(quiz.duration_mins) : '',
           subject: quiz.subject || '',
           grade_level: quiz.grade_level || '',
-          quarter: quiz.quarter != null ? String(quiz.quarter) : '',
+          subject_id: quiz.subject_id != null ? String(quiz.subject_id) : '',
+          grade_component_id:
+            quiz.grade_component_id != null && String(quiz.grade_component_id).trim() !== ''
+              ? String(quiz.grade_component_id)
+              : '',
+          semester: quiz.semester != null ? String(quiz.semester) : '',
           deadline_date: date,
           deadline_time: time,
           quiz_password: '',
+          max_attempts: String(quiz.max_attempts ?? 1),
         })
         setHasPassword(Boolean(quiz.has_password))
         setPasswordTouched(false)
+        if (quiz.grade_component_id != null && String(quiz.grade_component_id).trim() !== '') {
+          setIncludeComponentId(String(quiz.grade_component_id).trim())
+        }
+        if (quiz.subject_id != null && String(quiz.subject_id).trim() !== '') {
+          setLoadedSubjectId(String(quiz.subject_id).trim())
+        }
         const loadedParts = (quiz.parts || []).map(partFromApi)
         setParts(loadedParts.length ? loadedParts : [emptyPart(0)])
       } catch (e) {
@@ -171,9 +278,16 @@ export default function TeacherQuizForm({ mode = 'add' }) {
       })
       return false
     }
-    if (!String(form.quarter || '').trim()) {
-      toastRef.current.error('Please select a Quarter.', {
-        toastId: FACULTY_TOAST_ID.quizQuarterError,
+    if (!String(form.semester || '').trim()) {
+      toastRef.current.error('Please select a Semester.', {
+        toastId: FACULTY_TOAST_ID.quizSemesterError,
+        durationMs: FACULTY_ANNOUNCEMENT_TOAST_MS,
+      })
+      return false
+    }
+    if (linkedSubjectId && !String(form.grade_component_id || '').trim()) {
+      toastRef.current.error('Grade component is required for subject-linked quizzes.', {
+        toastId: FACULTY_TOAST_ID.quizAddError,
         durationMs: FACULTY_ANNOUNCEMENT_TOAST_MS,
       })
       return false
@@ -181,6 +295,20 @@ export default function TeacherQuizForm({ mode = 'add' }) {
     const hasQuestions = parts.some((p) => (p.questions || []).length > 0)
     if (!hasQuestions) {
       toastRef.current.error('Generate question structure for at least one part.', {
+        toastId: FACULTY_TOAST_ID.quizAddError,
+        durationMs: FACULTY_ANNOUNCEMENT_TOAST_MS,
+      })
+      return false
+    }
+    if (!String(form.deadline_date || '').trim() || !String(form.deadline_time || '').trim()) {
+      toastRef.current.error(FACULTY_MSG.quiz.deadlineRequired, {
+        toastId: FACULTY_TOAST_ID.quizAddError,
+        durationMs: FACULTY_ANNOUNCEMENT_TOAST_MS,
+      })
+      return false
+    }
+    if (!combineDateAndTimeToIso(form.deadline_date, form.deadline_time)) {
+      toastRef.current.error(FACULTY_MSG.quiz.deadlineRequired, {
         toastId: FACULTY_TOAST_ID.quizAddError,
         durationMs: FACULTY_ANNOUNCEMENT_TOAST_MS,
       })
@@ -207,8 +335,21 @@ export default function TeacherQuizForm({ mode = 'add' }) {
         await updateTeacherQuiz(id, payload)
         navigate('/teacher/quizzes', { state: { quizToast: 'updated' } })
       } else {
-        await createTeacherQuiz(payload)
-        navigate('/teacher/quizzes', { state: { quizToast: 'created' } })
+        const created = await createTeacherQuiz({
+          ...payload,
+          subject_id: curriculumQuery.subjectId || payload.subject_id,
+          grade_component_id: payload.grade_component_id,
+        })
+        await linkCreatedItemToCurriculum({
+          itemType: 'quiz',
+          itemId: created?.id,
+          moduleId: curriculumQuery.moduleId,
+          topicId: curriculumQuery.topicId,
+          subjectId: curriculumQuery.subjectId || payload.subject_id,
+        })
+        navigate(curriculumReturnPath(curriculumQuery.subjectId, '/teacher/quizzes'), {
+          state: { quizToast: 'created' },
+        })
       }
     } catch (e) {
       toastRef.current.error(String(e?.message || FACULTY_MSG.quiz.createFailed), {
@@ -259,7 +400,7 @@ export default function TeacherQuizForm({ mode = 'add' }) {
                     className={inputClass}
                     value={form.title}
                     onChange={(e) => patchForm('title', e.target.value)}
-                    placeholder="e.g., Midterm Exam"
+                    placeholder="e.g., Chapter 5 Quiz"
                   />
                 </div>
                 <div>
@@ -269,9 +410,11 @@ export default function TeacherQuizForm({ mode = 'add' }) {
                     value={form.activity_type}
                     onChange={(e) => patchForm('activity_type', e.target.value)}
                   >
-                    <option value="Quiz">Quiz</option>
-                    <option value="Exam">Exam</option>
-                    <option value="Long Test">Long Test</option>
+                    {QUIZ_ACTIVITY_TYPE_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
                   </select>
                 </div>
                 <div>
@@ -302,9 +445,21 @@ export default function TeacherQuizForm({ mode = 'add' }) {
                     placeholder="e.g., 90"
                   />
                 </div>
+                <div>
+                  <label className={labelClass}>Max attempts *</label>
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    className={inputClass}
+                    value={form.max_attempts}
+                    onChange={(e) => patchForm('max_attempts', e.target.value)}
+                  />
+                  <p className="mt-1 text-xs text-neutral-500">Minimum 1. Students can retake until this limit.</p>
+                </div>
               </div>
 
-              {/* Row 2: Subject | Quarter | Total Points | Password */}
+              {/* Row 2: Subject | Semester | Total Points | Pass code */}
               <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 <div className="space-y-2">
                   <div>
@@ -339,16 +494,16 @@ export default function TeacherQuizForm({ mode = 'add' }) {
                   </div>
                 </div>
                 <div>
-                  <label className={labelClass}>Quarter *</label>
+                  <label className={labelClass}>Semester *</label>
                   <select
                     className={inputClass}
-                    value={form.quarter}
-                    onChange={(e) => patchForm('quarter', e.target.value)}
+                    value={form.semester}
+                    onChange={(e) => patchForm('semester', e.target.value)}
                   >
-                    <option value="">Select quarter</option>
-                    {QUARTER_OPTIONS.map((q) => (
+                    <option value="">Select semester</option>
+                    {SEMESTER_OPTIONS.map((q) => (
                       <option key={q} value={q}>
-                        Quarter {q}
+                        {SEMESTER_LABELS[q]}
                       </option>
                     ))}
                   </select>
@@ -358,7 +513,7 @@ export default function TeacherQuizForm({ mode = 'add' }) {
                   <input className={`${inputClass} bg-neutral-100`} readOnly value={totalPoints.toFixed(2)} />
                 </div>
                 <div>
-                  <label className={labelClass}>Password (optional)</label>
+                  <label className={labelClass}>Pass code (optional)</label>
                   <PasswordInput
                     value={form.quiz_password}
                     onChange={(e) => {
@@ -371,8 +526,42 @@ export default function TeacherQuizForm({ mode = 'add' }) {
                         : 'Optional'
                     }
                   />
+                  <p className="mt-1 text-xs text-neutral-500">Students must enter this pass code before starting.</p>
                 </div>
               </div>
+
+              {linkedSubjectId ? (
+                <div className="mt-3 max-w-md">
+                  <label className={labelClass}>Grade component *</label>
+                  <select
+                    className={inputClass}
+                    value={form.grade_component_id}
+                    onChange={(e) => patchForm('grade_component_id', e.target.value)}
+                    disabled={gradeComponents.length === 0 && !form.grade_component_id}
+                  >
+                    {gradeComponents.length === 0 && !form.grade_component_id ? (
+                      <option value="">No components available</option>
+                    ) : null}
+                    {isEdit &&
+                    form.grade_component_id &&
+                    !gradeComponents.some((c) => String(c.id) === String(form.grade_component_id)) ? (
+                      <option value={form.grade_component_id}>
+                        {fallbackComponentName || 'Linked component'} (current)
+                      </option>
+                    ) : null}
+                    {gradeComponents.map((component) => (
+                      <option key={String(component.id)} value={String(component.id)}>
+                        {component.name} ({component.percentage}%)
+                      </option>
+                    ))}
+                  </select>
+                  {gradeComponents.length === 0 ? (
+                    <p className="mt-1 text-xs text-amber-700">
+                      Configure grade criteria on the subject Grades tab first.
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
 
               {/* Row 3: Description | Instructions */}
               <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-2">
@@ -400,6 +589,28 @@ export default function TeacherQuizForm({ mode = 'add' }) {
             </section>
 
             <section className="rounded-xl border border-neutral-200 bg-white p-5 shadow-sm">
+              {parts.some((p) => p.structureGenerated && (p.questions || []).length > 0) ? (
+                <div className="mb-4 rounded-lg border border-sky-100 bg-sky-50 px-4 py-3">
+                  <p className="text-xs font-bold uppercase tracking-wide text-sky-900">Quiz structure</p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {parts.map((part, index) => {
+                      if (!part.structureGenerated || !(part.questions || []).length) return null
+                      const typeLabel =
+                        QUESTION_TYPE_LABELS[part.question_type] || part.question_type || '—'
+                      const title = part.part_title?.trim() || `Part ${index + 1}`
+                      return (
+                        <span
+                          key={part.clientKey}
+                          className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold ${typeBadgeClass(part.question_type)}`}
+                        >
+                          <span>{title}:</span>
+                          <span>{typeLabel}</span>
+                        </span>
+                      )
+                    })}
+                  </div>
+                </div>
+              ) : null}
               <div className="mb-4 flex items-center justify-between gap-3">
                 <h3 className="text-sm font-bold uppercase tracking-wide text-neutral-700">Parts &amp; questions</h3>
                 <button

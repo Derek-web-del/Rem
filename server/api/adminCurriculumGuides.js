@@ -5,6 +5,7 @@ import {
   curriculumPdfUploadMiddleware,
   deleteCurriculumFileByUrl,
   saveCurriculumPdf,
+  validateCurriculumPdfFile,
 } from '../lib/curriculumGuideStorage.js'
 import {
   deleteCurriculumGuideById,
@@ -13,31 +14,12 @@ import {
   listAdminCurriculumGuides,
   setCurriculumGuidePublished,
 } from '../lib/curriculumGuidesDb.js'
-
-async function requireAdminSession(req, res, auth) {
-  if (!auth?.api?.getSession) {
-    res.status(503).json({ success: false, message: 'Admin auth is not available.' })
-    return null
-  }
-  try {
-    const session = await auth.api.getSession({ headers: req.headers })
-    const role = String(session?.user?.role || session?.data?.user?.role || '')
-      .trim()
-      .toLowerCase()
-    if (!session?.user?.id || role !== 'admin') {
-      res.status(403).json({
-        success: false,
-        error: 'FORBIDDEN',
-        message: 'Institute admin session required.',
-      })
-      return null
-    }
-    return session
-  } catch (e) {
-    sendSafeServerError(res, e, 'admin curriculum requireAdminSession')
-    return null
-  }
-}
+import { requireAdminSession, auditInstituteRecord } from './state/shared.js'
+import {
+  curriculumAuditDescription,
+  curriculumAuditDetails,
+  curriculumGuideRowSnapshot,
+} from '../lib/curriculumAudit.js'
 
 function adminDisplayName(session) {
   const u = session?.user ?? session?.data?.user ?? {}
@@ -65,7 +47,8 @@ export function createAdminCurriculumGuidesRouter(express, auth) {
 
   router.get('/admin/curriculum-guides', async (req, res) => {
     try {
-      if (!(await requireAdminSession(req, res, auth))) return
+      const session = await requireAdminSession(req, res, auth)
+      if (!session) return
       const pool = getPgPool()
       const guides = await listAdminCurriculumGuides(pool)
       res.json(guides)
@@ -80,8 +63,9 @@ export function createAdminCurriculumGuidesRouter(express, auth) {
       if (!session) return
 
       const file = req.file
-      if (!file?.buffer?.length) {
-        res.status(400).json({ error: 'BAD_REQUEST', message: 'PDF file is required.' })
+      const fileErr = validateCurriculumPdfFile(file)
+      if (fileErr) {
+        res.status(400).json({ error: 'BAD_REQUEST', message: fileErr })
         return
       }
 
@@ -119,6 +103,17 @@ export function createAdminCurriculumGuidesRouter(express, auth) {
         uploaded_by_name: adminDisplayName(session),
         is_published: publishNow,
       })
+
+      const snap = curriculumGuideRowSnapshot(guide)
+      if (snap) {
+        await auditInstituteRecord(session, 'CURRICULUM_CREATED', {
+          recordType: 'curriculum',
+          recordId: String(id),
+          description: curriculumAuditDescription('created', snap),
+          details: curriculumAuditDetails(snap, { title, is_published: publishNow }),
+        })
+      }
+
       res.status(201).json(guide)
     } catch (e) {
       sendSafeServerError(res, e, 'POST /api/admin/curriculum-guides')
@@ -127,7 +122,8 @@ export function createAdminCurriculumGuidesRouter(express, auth) {
 
   router.patch('/admin/curriculum-guides/:id', async (req, res) => {
     try {
-      if (!(await requireAdminSession(req, res, auth))) return
+      const session = await requireAdminSession(req, res, auth)
+      if (!session) return
       const id = String(req.params.id || '').trim()
       if (!id) {
         res.status(400).json({ error: 'BAD_REQUEST', message: 'Missing guide id.' })
@@ -137,12 +133,36 @@ export function createAdminCurriculumGuidesRouter(express, auth) {
         req.body?.is_published === true ||
         String(req.body?.is_published || '').toLowerCase() === 'true'
       const pool = getPgPool()
+      const oldGuide = await fetchCurriculumGuideById(pool, id)
+      if (!oldGuide) {
+        res.status(404).json({ error: 'NOT_FOUND', message: 'Curriculum guide not found.' })
+        return
+      }
       const ok = await setCurriculumGuidePublished(pool, id, isPublished)
       if (!ok) {
         res.status(404).json({ error: 'NOT_FOUND', message: 'Curriculum guide not found.' })
         return
       }
       const guide = await fetchCurriculumGuideById(pool, id)
+      const oldPublished = Boolean(oldGuide.is_published)
+      if (oldPublished !== isPublished) {
+        const snap = curriculumGuideRowSnapshot(guide)
+        const detailedDiffs = {
+          Published: { old: oldPublished ? 'Yes' : 'No', new: isPublished ? 'Yes' : 'No' },
+        }
+        const updatedFields = ['Published']
+        await auditInstituteRecord(session, 'CURRICULUM_UPDATED', {
+          recordType: 'curriculum',
+          recordId: id,
+          description: curriculumAuditDescription('updated', snap),
+          details: {
+            ...curriculumAuditDetails(snap),
+            detailedDiffs,
+            updatedFields,
+            changed_fields: updatedFields,
+          },
+        })
+      }
       res.json(guide)
     } catch (e) {
       sendSafeServerError(res, e, 'PATCH /api/admin/curriculum-guides/:id')
@@ -151,7 +171,8 @@ export function createAdminCurriculumGuidesRouter(express, auth) {
 
   router.delete('/admin/curriculum-guides/:id', async (req, res) => {
     try {
-      if (!(await requireAdminSession(req, res, auth))) return
+      const session = await requireAdminSession(req, res, auth)
+      if (!session) return
       const id = String(req.params.id || '').trim()
       if (!id) {
         res.status(400).json({ error: 'BAD_REQUEST', message: 'Missing guide id.' })
@@ -167,6 +188,20 @@ export function createAdminCurriculumGuidesRouter(express, auth) {
         if (removed.file_url?.startsWith('/uploads/curriculum/')) {
           deleteCurriculumFileByUrl(removed.file_url)
         }
+
+        const snap = curriculumGuideRowSnapshot(removed)
+        if (snap) {
+          await auditInstituteRecord(session, 'CURRICULUM_DELETED', {
+            recordType: 'curriculum',
+            recordId: id,
+            description: curriculumAuditDescription('deleted', snap),
+            details: {
+              ...curriculumAuditDetails(snap),
+              deletedSnapshot: snap,
+            },
+          })
+        }
+
         res.json({ ok: true, id: removed.id })
       } catch (e) {
         if (e?.code === 'APP_STATE_SYNCED') {

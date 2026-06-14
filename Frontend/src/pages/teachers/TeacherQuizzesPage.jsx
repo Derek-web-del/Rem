@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate, useOutletContext } from 'react-router-dom'
+import { isOnline } from '../../lib/offlineSync.js'
+import OfflineCacheIndicator from '../../components/OfflineCacheIndicator.jsx'
 import {
   deleteTeacherQuiz,
   fetchTeacherQuizzes,
   formatDateYmd,
   formatDeadlineDisplay,
   formatDurationMins,
-  QUESTION_TYPE_LABELS,
-  quizDisplayType,
+  quizPartTypeLabels,
   toggleTeacherQuizVisibility,
   typeBadgeClass,
 } from '../../lib/teacherQuizzes.js'
@@ -50,6 +51,7 @@ export default function TeacherQuizzesPage() {
   const [quizzes, setQuizzes] = useState([])
   const [loading, setLoading] = useState(true)
   const [deleteTarget, setDeleteTarget] = useState(null)
+  const [fromCache, setFromCache] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [togglingId, setTogglingId] = useState('')
 
@@ -62,6 +64,7 @@ export default function TeacherQuizzesPage() {
     try {
       const rows = await fetchTeacherQuizzes()
       setQuizzes(rows)
+      setFromCache(!isOnline())
     } catch (e) {
       setQuizzes([])
       console.error('[TeacherQuizzesPage]', e)
@@ -141,6 +144,7 @@ export default function TeacherQuizzesPage() {
       <TeacherMainHeader pageTitle="Quiz maker" onLogout={logoutToPortal} />
       <main className="min-h-0 flex-1 space-y-6 overflow-y-auto overflow-x-hidden p-4 md:p-8">
         <TeacherBackButton to="/teacher/dashboard" />
+        <OfflineCacheIndicator fromCache={fromCache} className="mb-2" />
 
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -184,8 +188,7 @@ export default function TeacherQuizzesPage() {
                   </tr>
                 ) : (
                   quizzes.map((quiz) => {
-                    const qType = quizDisplayType(quiz)
-                    const typeLabel = QUESTION_TYPE_LABELS[qType] || qType || '—'
+                    const partTypes = quizPartTypeLabels(quiz)
                     return (
                       <tr
                         key={quiz.id}
@@ -208,11 +211,20 @@ export default function TeacherQuizzesPage() {
                           <div className="text-xs text-neutral-500">{quiz.subject || '—'}</div>
                         </td>
                         <td className="px-4 py-4">
-                          <span
-                            className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${typeBadgeClass(qType)}`}
-                          >
-                            {typeLabel}
-                          </span>
+                          <div className="flex flex-wrap gap-1">
+                            {partTypes.length > 0 ? (
+                              partTypes.map((pt) => (
+                                <span
+                                  key={pt.value}
+                                  className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${typeBadgeClass(pt.value)}`}
+                                >
+                                  {pt.label}
+                                </span>
+                              ))
+                            ) : (
+                              <span className="text-neutral-500">—</span>
+                            )}
+                          </div>
                         </td>
                         <td className="px-4 py-4">
                           <span className="inline-flex rounded-full bg-neutral-100 px-2.5 py-0.5 text-xs font-semibold text-neutral-700">

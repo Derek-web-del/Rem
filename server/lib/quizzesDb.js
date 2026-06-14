@@ -1,24 +1,60 @@
 const QUIZ_COLUMNS = `
   id, title, description, instructions, activity_type, subject, grade_level,
-  branch, quarter, duration_mins, deadline, total_points, quiz_password, is_hidden,
-  created_by, created_at, updated_at
+  branch, semester, duration_mins, deadline, total_points, quiz_password, is_hidden,
+  max_attempts, created_by, created_at, updated_at
 `
 
-const quizAccessGrants = new Map()
+const QUIZ_ACCESS_TTL_MS = 4 * 60 * 60 * 1000
 
-export function grantQuizAccess(studentId, quizId, ttlMs = 4 * 60 * 60 * 1000) {
-  quizAccessGrants.set(`${String(studentId)}:${String(quizId)}`, Date.now() + ttlMs)
+export async function grantQuizAccess(pool, authUserId, quizId, ttlMs = QUIZ_ACCESS_TTL_MS) {
+  if (!pool) return
+  const uid = String(authUserId || '').trim()
+  const qid = Number(quizId)
+  if (!uid || !Number.isFinite(qid) || qid <= 0) return
+  await ensureQuizzesSchema(pool)
+  const expiresAt = new Date(Date.now() + Math.max(60_000, Number(ttlMs) || QUIZ_ACCESS_TTL_MS))
+  await pool.query(
+    `
+      INSERT INTO quiz_password_access (quiz_id, auth_user_id, granted_at, expires_at)
+      VALUES ($1, $2, NOW(), $3)
+      ON CONFLICT (quiz_id, auth_user_id) DO UPDATE SET
+        granted_at = NOW(),
+        expires_at = EXCLUDED.expires_at
+    `,
+    [qid, uid, expiresAt],
+  )
 }
 
-export function hasQuizAccess(studentId, quizId) {
-  const key = `${String(studentId)}:${String(quizId)}`
-  const exp = quizAccessGrants.get(key)
-  if (!exp) return false
-  if (Date.now() > exp) {
-    quizAccessGrants.delete(key)
+export async function hasQuizAccess(pool, authUserId, quizId) {
+  if (!pool) return false
+  const uid = String(authUserId || '').trim()
+  const qid = Number(quizId)
+  if (!uid || !Number.isFinite(qid) || qid <= 0) return false
+  try {
+    await ensureQuizzesSchema(pool)
+    const { rows } = await pool.query(
+      `
+        SELECT 1 FROM quiz_password_access
+        WHERE quiz_id = $1 AND auth_user_id = $2 AND expires_at > NOW()
+        LIMIT 1
+      `,
+      [qid, uid],
+    )
+    return rows.length > 0
+  } catch {
     return false
   }
-  return true
+}
+
+export async function revokeQuizPasswordAccess(pool, quizId) {
+  if (!pool) return
+  const qid = Number(quizId)
+  if (!Number.isFinite(qid) || qid <= 0) return
+  try {
+    await pool.query(`DELETE FROM quiz_password_access WHERE quiz_id = $1`, [qid])
+  } catch {
+    /* non-fatal */
+  }
 }
 
 export async function ensureQuizzesSchema(pool) {
@@ -32,7 +68,7 @@ export async function ensureQuizzesSchema(pool) {
       subject VARCHAR(128),
       grade_level VARCHAR(128),
       branch VARCHAR(128),
-      quarter SMALLINT,
+      semester SMALLINT,
       duration_mins INTEGER,
       deadline TIMESTAMPTZ,
       total_points NUMERIC(10, 2) NOT NULL DEFAULT 0,
@@ -84,6 +120,42 @@ export async function ensureQuizzesSchema(pool) {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_quiz_questions_quiz_id ON quiz_questions (quiz_id)`)
   await pool.query(`ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS quiz_password VARCHAR(255)`)
   await pool.query(`ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS is_hidden BOOLEAN NOT NULL DEFAULT FALSE`)
+  await pool.query(
+    `ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS max_attempts INTEGER NOT NULL DEFAULT 1`,
+  )
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS quiz_password_access (
+      quiz_id BIGINT NOT NULL REFERENCES quizzes(id) ON DELETE CASCADE,
+      auth_user_id VARCHAR(64) NOT NULL,
+      granted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      expires_at TIMESTAMPTZ NOT NULL,
+      PRIMARY KEY (quiz_id, auth_user_id)
+    )
+  `)
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS idx_quiz_password_access_expires ON quiz_password_access (expires_at)`,
+  )
+  const curriculumCols = [
+    ['subject_id', 'INT REFERENCES subjects(id) ON DELETE SET NULL'],
+    ['module_id', 'BIGINT'],
+    ['topic_id', 'BIGINT'],
+    ['module_order', 'INT NOT NULL DEFAULT 0'],
+    ['status', "VARCHAR(20) NOT NULL DEFAULT 'published'"],
+  ]
+  for (const [name, type] of curriculumCols) {
+    await pool.query(`ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS ${name} ${type}`)
+  }
+  await pool.query(`
+    ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS grade_component_id BIGINT
+      REFERENCES subject_grade_components(id) ON DELETE SET NULL
+  `)
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_quizzes_subject_id ON quizzes (subject_id)`)
+}
+
+export function normalizeMaxAttempts(value) {
+  const n = Number(value)
+  if (!Number.isFinite(n) || n < 1) return 1
+  return Math.floor(n)
 }
 
 function mapQuizRow(row, extra = {}) {
@@ -96,12 +168,15 @@ function mapQuizRow(row, extra = {}) {
     activity_type: String(row.activity_type ?? 'Quiz').trim(),
     subject: String(row.subject ?? '').trim(),
     grade_level: String(row.grade_level ?? '').trim(),
-    quarter: row.quarter != null ? Number(row.quarter) : null,
+    semester: row.semester != null ? Number(row.semester) : null,
     duration_mins: row.duration_mins != null ? Number(row.duration_mins) : null,
     deadline: row.deadline instanceof Date ? row.deadline.toISOString() : row.deadline ?? null,
     total_points: row.total_points != null ? Number(row.total_points) : 0,
+    max_attempts: normalizeMaxAttempts(row.max_attempts ?? 1),
     is_hidden: Boolean(row.is_hidden),
     has_password: Boolean(String(row.quiz_password ?? '').trim()),
+    subject_id: row.subject_id != null ? Number(row.subject_id) : null,
+    grade_component_id: row.grade_component_id != null ? Number(row.grade_component_id) : null,
     created_by: String(row.created_by ?? '').trim(),
     created_at: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at ?? null,
     updated_at: row.updated_at instanceof Date ? row.updated_at.toISOString() : row.updated_at ?? null,
@@ -163,7 +238,16 @@ export async function listQuizzes(pool, facultyId) {
         WHERE p.quiz_id = q.id
         ORDER BY p.order_index ASC, p.id ASC
         LIMIT 1
-      ) AS primary_question_type
+      ) AS primary_question_type,
+      (
+        SELECT COALESCE(array_agg(sub.question_type ORDER BY sub.min_ord), ARRAY[]::varchar[])
+        FROM (
+          SELECT p.question_type, MIN(p.order_index) AS min_ord
+          FROM quiz_parts p
+          WHERE p.quiz_id = q.id
+          GROUP BY p.question_type
+        ) sub
+      ) AS part_types
     FROM quizzes q
     WHERE q.created_by::text = $1::text
     ORDER BY q.created_at DESC, q.id DESC
@@ -171,11 +255,15 @@ export async function listQuizzes(pool, facultyId) {
     [String(facultyId)],
   )
   return (rows || [])
-    .map((row) =>
-      mapQuizRow(row, {
+    .map((row) => {
+      const partTypes = Array.isArray(row.part_types)
+        ? row.part_types.map((t) => String(t ?? '').trim()).filter(Boolean)
+        : []
+      return mapQuizRow(row, {
         primary_question_type: String(row.primary_question_type ?? '').trim(),
-      }),
-    )
+        part_types: partTypes,
+      })
+    })
     .filter(Boolean)
 }
 
@@ -414,13 +502,23 @@ export async function createQuiz(pool, facultyId, payload) {
   try {
     await client.query('BEGIN')
     const totalPoints = Number(payload.total_points) || 0
+    const subjectId =
+      payload.subject_id != null && Number.isFinite(Number(payload.subject_id)) && Number(payload.subject_id) > 0
+        ? Number(payload.subject_id)
+        : null
+    const gradeComponentId =
+      payload.grade_component_id != null &&
+      Number.isFinite(Number(payload.grade_component_id)) &&
+      Number(payload.grade_component_id) > 0
+        ? Number(payload.grade_component_id)
+        : null
     const { rows } = await client.query(
       `
       INSERT INTO quizzes (
         title, description, instructions, activity_type, subject, grade_level,
-        quarter, duration_mins, deadline, total_points, quiz_password, is_hidden,
-        created_by, updated_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW())
+        semester, duration_mins, deadline, total_points, quiz_password, is_hidden,
+        max_attempts, subject_id, grade_component_id, created_by, updated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, NOW())
       RETURNING id
       `,
       [
@@ -430,12 +528,15 @@ export async function createQuiz(pool, facultyId, payload) {
         payload.activity_type || 'Quiz',
         payload.subject || null,
         payload.grade_level || null,
-        payload.quarter,
+        payload.semester,
         payload.duration_mins,
         parseDeadline(payload.deadline),
         totalPoints,
         payload.quiz_password || null,
         Boolean(payload.is_hidden),
+        normalizeMaxAttempts(payload.max_attempts),
+        subjectId,
+        gradeComponentId,
         String(facultyId),
       ],
     )
@@ -461,16 +562,31 @@ export async function updateQuiz(pool, id, facultyId, payload) {
       return null
     }
     const totalPoints = Number(payload.total_points) || 0
+    const subjectId =
+      payload.subject_id != null && Number.isFinite(Number(payload.subject_id)) && Number(payload.subject_id) > 0
+        ? Number(payload.subject_id)
+        : existing.subject_id != null
+          ? Number(existing.subject_id)
+          : null
+    const gradeComponentId =
+      payload.grade_component_id != null &&
+      Number.isFinite(Number(payload.grade_component_id)) &&
+      Number(payload.grade_component_id) > 0
+        ? Number(payload.grade_component_id)
+        : existing.grade_component_id != null
+          ? Number(existing.grade_component_id)
+          : null
     const passwordProvided = Object.prototype.hasOwnProperty.call(payload, 'quiz_password')
     if (passwordProvided) {
       await client.query(
         `
         UPDATE quizzes SET
           title = $1, description = $2, instructions = $3, activity_type = $4,
-          subject = $5, grade_level = $6, quarter = $7,
+          subject = $5, grade_level = $6, semester = $7,
           duration_mins = $8, deadline = $9, total_points = $10,
-          quiz_password = $11, updated_at = NOW()
-        WHERE id = $12 AND created_by::text = $13::text
+          quiz_password = $11, max_attempts = $12,
+          subject_id = $13, grade_component_id = $14, updated_at = NOW()
+        WHERE id = $15 AND created_by::text = $16::text
         `,
         [
           payload.title,
@@ -479,23 +595,28 @@ export async function updateQuiz(pool, id, facultyId, payload) {
           payload.activity_type || 'Quiz',
           payload.subject || null,
           payload.grade_level || null,
-          payload.quarter,
+          payload.semester,
           payload.duration_mins,
           parseDeadline(payload.deadline),
           totalPoints,
           payload.quiz_password || null,
+          normalizeMaxAttempts(payload.max_attempts),
+          subjectId,
+          gradeComponentId,
           id,
           String(facultyId),
         ],
       )
+      await revokeQuizPasswordAccess(pool, id)
     } else {
       await client.query(
         `
         UPDATE quizzes SET
           title = $1, description = $2, instructions = $3, activity_type = $4,
-          subject = $5, grade_level = $6, quarter = $7,
-          duration_mins = $8, deadline = $9, total_points = $10, updated_at = NOW()
-        WHERE id = $11 AND created_by::text = $12::text
+          subject = $5, grade_level = $6, semester = $7,
+          duration_mins = $8, deadline = $9, total_points = $10,
+          max_attempts = $11, subject_id = $12, grade_component_id = $13, updated_at = NOW()
+        WHERE id = $14 AND created_by::text = $15::text
         `,
         [
           payload.title,
@@ -504,10 +625,13 @@ export async function updateQuiz(pool, id, facultyId, payload) {
           payload.activity_type || 'Quiz',
           payload.subject || null,
           payload.grade_level || null,
-          payload.quarter,
+          payload.semester,
           payload.duration_mins,
           parseDeadline(payload.deadline),
           totalPoints,
+          normalizeMaxAttempts(payload.max_attempts),
+          subjectId,
+          gradeComponentId,
           id,
           String(facultyId),
         ],

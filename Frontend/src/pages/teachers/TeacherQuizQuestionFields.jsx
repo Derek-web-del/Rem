@@ -1,6 +1,6 @@
 import {
   QUESTION_TYPES,
-  QUARTER_OPTIONS,
+  SEMESTER_OPTIONS,
   calcTotalPoints,
   emptyPart,
   emptyQuestion,

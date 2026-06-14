@@ -3,12 +3,15 @@ import { useNotify } from '../components/notifications.jsx'
 
 /** Faculty toasts auto-dismiss after ~3.5s (Admin default is 5s). */
 export const FACULTY_TOAST_MS = 3500
+
+export const SCORE_LOCKED_MSG =
+  'Deadline has passed. Scores are locked. Contact admin to request a grade correction.'
 export const FACULTY_ANNOUNCEMENT_TOAST_MS = 3000
 
 export const FACULTY_TOAST_ID = {
   dashboardFetchError: 'dashboard-fetch-error',
   dashboardActivitiesError: 'dashboard-activities-error',
-  quarterRequiredError: 'quarter-required-error',
+  semesterRequiredError: 'semester-required-error',
   curriculumFetchError: 'curriculum-fetch-error',
   sectionsFetchError: 'sections-fetch-error',
   subjectsFetchError: 'subjects-fetch-error',
@@ -55,12 +58,16 @@ export const FACULTY_TOAST_ID = {
   quizEditError: 'quiz-edit-error',
   quizDeleteSuccess: 'quiz-delete-success',
   quizDeleteError: 'quiz-delete-error',
-  quizQuarterError: 'quiz-quarter-error',
+  quizSemesterError: 'quiz-semester-error',
   quizHideSuccess: 'quiz-hide-success',
   quizUnhideSuccess: 'quiz-unhide-success',
   quizVisibilityError: 'quiz-visibility-error',
   quizPasswordError: 'quiz-password-error',
   quizPasswordVerified: 'quiz-password-verified',
+  originalityFetchError: 'originality-fetch-error',
+  originalityDeleteSuccess: 'originality-delete-success',
+  originalityDeleteError: 'originality-delete-error',
+  originalityCreateError: 'originality-create-error',
 }
 
 export const FACULTY_MSG = {
@@ -76,7 +83,7 @@ export const FACULTY_MSG = {
     deleteFailed: 'Failed to delete study material.',
     loadFailed: 'Failed to load study materials.',
     fileType: 'Only PDF files are allowed.',
-    fileSize: 'File size must not exceed 10MB.',
+    fileSize: 'File too large. Maximum size is 25MB.',
   },
   subjects: {
     loadFailed: 'Failed to load subject data.',
@@ -93,32 +100,36 @@ export const FACULTY_MSG = {
     addFailed: 'Failed to add assignment.',
     updated: 'Assignment updated successfully.',
     updateFailed: 'Failed to update assignment.',
+    loadFailed: 'Failed to load assignment.',
     deleted: 'Assignment deleted successfully.',
     deleteFailed: 'Failed to delete assignment.',
-    fileSize: 'File size must not exceed 10MB.',
+    fileSize: 'File too large. Maximum size is 15MB.',
     fileType: 'Only PDF, DOC, and DOCX files are allowed.',
     scoreUpdated: 'Score updated successfully.',
     scoreUpdateFailed: 'Failed to update score.',
     subjectRequired: 'Please select a Subject.',
     gradeRequired: 'Please select a Grade Level.',
-    quarterRequired: 'Please select a Quarter.',
+    semesterRequired: 'Please select a Semester.',
     deadlineExpired: 'Submission deadline has passed. Unsubmitted students received 0.',
+    scoreLocked: SCORE_LOCKED_MSG,
   },
   activities: {
     added: 'Activity added successfully.',
     addFailed: 'Failed to add activity.',
     updated: 'Activity updated successfully.',
     updateFailed: 'Failed to update activity.',
+    loadFailed: 'Failed to load activity.',
     deleted: 'Activity deleted successfully.',
     deleteFailed: 'Failed to delete activity.',
-    fileSize: 'File size must not exceed 10MB.',
+    fileSize: 'File too large. Maximum size is 15MB.',
     fileType: 'Only PDF, DOC, and DOCX files are allowed.',
     scoreUpdated: 'Score updated successfully.',
     scoreUpdateFailed: 'Failed to update score.',
     subjectRequired: 'Please select a Subject.',
     gradeRequired: 'Please select a Grade Level.',
-    quarterRequired: 'Please select a Quarter.',
+    semesterRequired: 'Please select a Semester.',
     deadlineExpired: 'Submission deadline has passed. Unsubmitted students received 0.',
+    scoreLocked: SCORE_LOCKED_MSG,
   },
   announcements: {
     added: 'Announcement added successfully.',
@@ -129,7 +140,7 @@ export const FACULTY_MSG = {
     deleteFailed: 'Failed to delete announcement.',
     downloading: 'Downloading announcement...',
     imageType: 'Only PNG and JPG images are allowed.',
-    imageSize: 'Image must be less than 2MB.',
+    imageSize: 'Photo too large. Maximum size is 2MB.',
     loadFailed: 'Failed to load announcements.',
   },
   quiz: {
@@ -145,6 +156,16 @@ export const FACULTY_MSG = {
     visibilityFailed: 'Failed to update quiz visibility.',
     passwordIncorrect: 'Incorrect password. Please try again.',
     passwordVerified: 'Password verified. Starting quiz...',
+    scoreUpdated: 'Score updated successfully.',
+    scoreUpdateFailed: 'Failed to update score.',
+    scoreLocked: SCORE_LOCKED_MSG,
+    deadlineRequired: 'Submission deadline is required.',
+  },
+  originality: {
+    deleted: 'Report deleted successfully.',
+    deleteFailed: 'Failed to delete report.',
+    loadFailed: 'Failed to load reports.',
+    createFailed: 'Failed to save analysis report.',
   },
 }
 

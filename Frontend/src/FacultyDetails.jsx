@@ -4,6 +4,7 @@ import { useNotify } from './components/notifications.jsx'
 import { STRONG_PASSWORD_REGEX, passwordPolicyHint } from './lib/auth-client.js'
 import { apiUrl } from './lib/lmsStateStorage.js'
 import { facultyPhotoDisplaySrc, validateFacultyPhotoFile } from './lib/facultyPhoto.js'
+import { PHOTO_UPLOAD_LABEL } from './lib/uploadLimits.js'
 
 function initials(name) {
   const parts = String(name || '')
@@ -192,8 +193,8 @@ export default function FacultyDetails({
   const toast = useNotify()
   const fileInputRef = useRef(null)
   const photoPreviewUrlRef = useRef('')
-  /** Edit-mode baselines so unchanged password / app password are omitted from the save payload. */
-  const initialSecretsRef = useRef({ pw: '', appNorm: '' })
+  /** Edit-mode baseline so unchanged password is omitted from the save payload. */
+  const initialSecretsRef = useRef({ pw: '' })
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
   /** Which grade's sections appear in the picker (changing this does not clear selections). */
@@ -203,7 +204,7 @@ export default function FacultyDetails({
   /** Global advisory picks across all grades (unchanged when browse grade changes). */
   const [selectedSections, setSelectedSections] = useState(() => sectionsFromInitial(initial))
   const [photoUrl, setPhotoUrl] = useState(() =>
-    facultyPhotoDisplaySrc(facultyPhotoFromRecord(initial), { apiUrlFn: apiUrl }),
+    facultyPhotoDisplaySrc(facultyPhotoFromRecord(initial)),
   )
   /** New file selected for upload (sent as multipart; not embedded in JSON). */
   const [photoFile, setPhotoFile] = useState(null)
@@ -215,20 +216,19 @@ export default function FacultyDetails({
     contactNumber: initial.contactNumber || '',
     grade_level: facultyGradeFromRecord(initial),
     qualification: initial.qualification || '',
+    semester: String(initial.semester ?? initial.semester ?? '').trim(),
+    address: String(initial.address ?? '').trim(),
     facultyUsername: initial.facultyUsername || initial.username || initial.facultyCode || '',
     password: mode === 'edit' ? String(initial.password || '').trim() : initial.password || generateStrongPassword(),
-    appPassword: mode === 'edit' ? String(initial.appPassword || '').trim() : String(initial.appPassword || '').trim(),
   }))
 
   useEffect(() => {
-    const normApp = (s) => String(s || '').replace(/\s/g, '').trim()
     initialSecretsRef.current = {
       pw: mode === 'edit' ? String(initial.password || '').trim() : '',
-      appNorm: mode === 'edit' ? normApp(initial.appPassword) : '',
     }
   setSectionBrowseGrade(facultyGradeFromRecord(initial))
   setSelectedSections(sectionsFromInitial(initial))
-  const nextPhoto = facultyPhotoDisplaySrc(facultyPhotoFromRecord(initial), { apiUrlFn: apiUrl })
+  const nextPhoto = facultyPhotoDisplaySrc(facultyPhotoFromRecord(initial))
   if (photoPreviewUrlRef.current?.startsWith('blob:')) {
     URL.revokeObjectURL(photoPreviewUrlRef.current)
     photoPreviewUrlRef.current = ''
@@ -243,9 +243,10 @@ export default function FacultyDetails({
     contactNumber: initial.contactNumber || '',
     grade_level: facultyGradeFromRecord(initial),
     qualification: initial.qualification || '',
+    semester: String(initial.semester ?? initial.semester ?? '').trim(),
+    address: String(initial.address ?? '').trim(),
     facultyUsername: initial.facultyUsername || initial.username || initial.facultyCode || '',
     password: mode === 'edit' ? String(initial.password || '').trim() : initial.password || generateStrongPassword(),
-    appPassword: mode === 'edit' ? String(initial.appPassword || '').trim() : String(initial.appPassword || '').trim(),
   })
   setError('')
   }, [initial, mode])
@@ -365,8 +366,6 @@ export default function FacultyDetails({
     if (!isEdit || pwTrim) {
       if (!STRONG_PASSWORD_REGEX.test(pwTrim)) return passwordPolicyHint()
     }
-    if (!isEdit && !String(form.appPassword || '').replace(/\s/g, '').trim())
-      return 'Please enter faculty app password (Gmail).'
     return ''
   }
 
@@ -384,7 +383,6 @@ export default function FacultyDetails({
       deriveDirectoryGrade(selectedSections) ||
       String(form.grade_level || '').trim() ||
       facultyGradeFromRecord(initial)
-    const appPwNormalized = String(form.appPassword || '').replace(/\s/g, '').trim()
     const payload = {
       firstName: form.firstName.trim(),
       middleName: String(form.middleName || '').trim(),
@@ -398,16 +396,14 @@ export default function FacultyDetails({
       advisorySections: selectedSections,
       sectionIds,
       qualification: String(form.qualification || '').trim(),
+      semester: String(form.semester || '').trim() || null,
+      address: String(form.address || '').trim() || null,
       facultyCode: String(form.facultyUsername || '').trim(),
     }
     if (mode === 'edit') {
       if (pwTrim && pwTrim !== initialSecretsRef.current.pw) payload.password = pwTrim
-      if (appPwNormalized && appPwNormalized !== initialSecretsRef.current.appNorm) {
-        payload.appPassword = appPwNormalized
-      }
     } else {
       payload.password = pwTrim
-      payload.appPassword = appPwNormalized
     }
     if (photoFile) {
       payload.photoFile = photoFile
@@ -466,7 +462,7 @@ export default function FacultyDetails({
             </div>
             <div>
               <div className="text-sm font-semibold text-neutral-900">Faculty Photo</div>
-              <div className="text-xs text-neutral-500">Only allowed PNG or JPG less than 2MB</div>
+              <div className="text-xs text-neutral-500">{PHOTO_UPLOAD_LABEL}</div>
             </div>
           </div>
 
@@ -515,6 +511,7 @@ export default function FacultyDetails({
               type="email"
               value={form.email}
               onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))}
+              helper="Faculty can use their school GSuite email (@glendaleschool.edu). Verification codes will be sent here."
             />
             <TextField
               label="Faculty Contact Number"
@@ -623,6 +620,25 @@ export default function FacultyDetails({
           </div>
 
           <div className="grid gap-4 md:grid-cols-2">
+            <SelectField
+              label="Semester"
+              value={form.semester}
+              onChange={(e) => setForm((p) => ({ ...p, semester: e.target.value }))}
+            >
+              <option value="">Select semester</option>
+              <option value="1">1st Semester</option>
+              <option value="2">2nd Semester</option>
+              <option value="3">3rd Semester</option>
+            </SelectField>
+            <TextField
+              label="Address"
+              value={form.address}
+              onChange={(e) => setForm((p) => ({ ...p, address: e.target.value }))}
+              placeholder="Faculty address"
+            />
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
             <TextField
               label="Faculty Qualification"
               required
@@ -647,73 +663,48 @@ export default function FacultyDetails({
             </div>
           </div>
 
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="rounded-xl border border-neutral-200 bg-white p-4">
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <div className="text-sm font-semibold text-neutral-900">Faculty Password</div>
-                  <div className="mt-1 text-xs text-neutral-500">
-                    {mode === 'edit'
-                      ? pwTrim
-                        ? 'Password must contain:'
-                        : 'Leave blank to keep current password'
-                      : 'Password must contain:'}
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  className="rounded bg-neutral-200 px-3 py-2 text-sm font-semibold text-neutral-700 hover:bg-neutral-300"
-                  onClick={() => setForm((p) => ({ ...p, password: generateStrongPassword() }))}
-                  title="Generate"
-                >
-                  Generate
-                </button>
-              </div>
-
-              <div className="mt-2 flex items-center gap-2">
-                <input
-                  type="text"
-                  className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm"
-                  value={form.password}
-                  onChange={(e) => setForm((p) => ({ ...p, password: e.target.value }))}
-                  required={mode !== 'edit'}
-                  placeholder={mode === 'edit' ? 'Unchanged' : ''}
-                />
-              </div>
-
-              {showPasswordRules ? (
-                <ul className="mt-3 space-y-1 text-xs font-medium text-neutral-600">
-                  <li className={checks.len ? 'text-green-700' : ''}>✓ At least 8 characters</li>
-                  <li className={checks.upper ? 'text-green-700' : ''}>✓ At least one uppercase letter</li>
-                  <li className={checks.lower ? 'text-green-700' : ''}>✓ At least one lowercase letter</li>
-                  <li className={checks.num ? 'text-green-700' : ''}>✓ At least one number</li>
-                  <li className={checks.special ? 'text-green-700' : ''}>✓ At least one special character</li>
-                </ul>
-              ) : null}
-            </div>
-
-            <div className="rounded-xl border border-neutral-200 bg-white p-4">
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <div className="text-sm font-semibold text-neutral-900">Faculty App Password (Gmail)</div>
-                  <div className="mt-1 text-xs text-neutral-500">
-                    {mode === 'edit'
-                      ? 'Optional when editing: leave blank to keep the stored app password. Enter a new value only if you are rotating it.'
-                      : 'Required. Store the Gmail App Password for email integration/OTP. This is not the login password.'}
-                  </div>
+          <div className="rounded-xl border border-neutral-200 bg-white p-4">
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <div className="text-sm font-semibold text-neutral-900">Faculty Password</div>
+                <div className="mt-1 text-xs text-neutral-500">
+                  {mode === 'edit'
+                    ? pwTrim
+                      ? 'Password must contain:'
+                      : 'Leave blank to keep current password'
+                    : 'Password must contain:'}
                 </div>
               </div>
-              <div className="mt-2">
-                <input
-                  type="text"
-                  className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm"
-                  value={form.appPassword}
-                  onChange={(e) => setForm((p) => ({ ...p, appPassword: e.target.value }))}
-                  placeholder={mode === 'edit' ? 'Leave blank to keep current' : '16-character Gmail App Password'}
-                  required={mode !== 'edit'}
-                />
-              </div>
+              <button
+                type="button"
+                className="rounded bg-neutral-200 px-3 py-2 text-sm font-semibold text-neutral-700 hover:bg-neutral-300"
+                onClick={() => setForm((p) => ({ ...p, password: generateStrongPassword() }))}
+                title="Generate"
+              >
+                Generate
+              </button>
             </div>
+
+            <div className="mt-2 flex items-center gap-2">
+              <input
+                type="text"
+                className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm"
+                value={form.password}
+                onChange={(e) => setForm((p) => ({ ...p, password: e.target.value }))}
+                required={mode !== 'edit'}
+                placeholder={mode === 'edit' ? 'Unchanged' : ''}
+              />
+            </div>
+
+            {showPasswordRules ? (
+              <ul className="mt-3 space-y-1 text-xs font-medium text-neutral-600">
+                <li className={checks.len ? 'text-green-700' : ''}>✓ At least 8 characters</li>
+                <li className={checks.upper ? 'text-green-700' : ''}>✓ At least one uppercase letter</li>
+                <li className={checks.lower ? 'text-green-700' : ''}>✓ At least one lowercase letter</li>
+                <li className={checks.num ? 'text-green-700' : ''}>✓ At least one number</li>
+                <li className={checks.special ? 'text-green-700' : ''}>✓ At least one special character</li>
+              </ul>
+            ) : null}
           </div>
 
           <div className="flex justify-end">

@@ -1,5 +1,7 @@
 import { Navigate, Outlet } from 'react-router-dom'
 import { authClient } from '../lib/auth-client.js'
+import { INSTITUTE_ADMIN_EMAIL } from '../../../shared/constants.js'
+import { markAccessDenied, redirectPathForWrongRole } from '../lib/roleAccess.js'
 
 /** Faculty / teacher LMS — blocks everyone except role `teacher` or `faculty`. */
 export default function TeacherProtectedRoute() {
@@ -8,6 +10,11 @@ export default function TeacherProtectedRoute() {
   const sessionData = sessionState.data
   const session = sessionData?.session
   const sessionUser = sessionData?.user
+
+  if (import.meta.env.DEV && !pending) {
+    const role = String(sessionUser?.role || '').trim().toLowerCase()
+    console.log('[GUARD] Session:', !!session, 'role:', role)
+  }
 
   if (pending) {
     return (
@@ -21,12 +28,17 @@ export default function TeacherProtectedRoute() {
   }
 
   if (!session) {
+    if (import.meta.env.DEV) console.log('[GUARD] Decision: redirect login (no session)')
     return <Navigate to="/login" replace />
   }
 
   const role = String(sessionUser?.role || '').trim().toLowerCase()
-  if (role !== 'teacher' && role !== 'faculty') {
-    return <Navigate to="/login" replace />
+  const isFaculty = role === 'teacher' || role === 'faculty'
+  if (!isFaculty) {
+    const dest = redirectPathForWrongRole(role, 'teacher')
+    if (import.meta.env.DEV) console.log('[GUARD] Decision: wrong role redirect', dest)
+    if (role === 'student') markAccessDenied()
+    return <Navigate to={dest || '/login'} replace />
   }
 
   return <Outlet />

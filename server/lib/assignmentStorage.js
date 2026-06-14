@@ -2,14 +2,17 @@ import fs from 'node:fs'
 import path from 'node:path'
 import multer from 'multer'
 import { randomUUID } from 'node:crypto'
+import {
+  DEFAULT_UPLOAD_MAX_BYTES,
+  DEFAULT_UPLOAD_MAX_MSG,
+} from './uploadLimitsConfig.js'
 
 export const ASSIGNMENT_UPLOAD_REL = '/uploads/assignments'
-export const ASSIGNMENT_MAX_BYTES = 10 * 1024 * 1024
-export const ASSIGNMENT_FILE_SIZE_MSG = 'File size must not exceed 10MB.'
+export const ASSIGNMENT_MAX_BYTES = DEFAULT_UPLOAD_MAX_BYTES
+export const ASSIGNMENT_FILE_SIZE_MSG = DEFAULT_UPLOAD_MAX_MSG
 export const ASSIGNMENT_FILE_TYPE_MSG = 'Only PDF, DOC, and DOCX files are allowed.'
 
 const ALLOWED_EXT = new Set(['.pdf', '.doc', '.docx'])
-
 const ALLOWED_MIMES = new Set([
   'application/pdf',
   'application/msword',
@@ -110,7 +113,6 @@ export function getAssignmentUploadFile(req) {
   return req.file || null
 }
 
-export function validateAssignmentUploadFile(file, { required = true } = {}) {
-  if (!file) return required ? 'Assignment file is required.' : ''
+export function validateAssignmentUploadFile(file) {
   return validateAssignmentFile(file)
 }

@@ -1,8 +1,10 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import { PHOTO_MAX_BYTES, PHOTO_MAX_MSG } from './uploadLimitsConfig.js'
 
 export const FACULTY_UPLOAD_REL = '/uploads/faculties'
-export const FACULTY_PHOTO_MAX_BYTES = 2 * 1024 * 1024
+export const FACULTY_PHOTO_MAX_BYTES = PHOTO_MAX_BYTES
+
 const ALLOWED_MIME = new Set(['image/png', 'image/jpeg', 'image/jpg'])
 const EXT_BY_MIME = {
   'image/png': 'png',
@@ -44,7 +46,7 @@ export function assertFacultyPhotoSize(byteLength) {
     throw err
   }
   if (n > FACULTY_PHOTO_MAX_BYTES) {
-    const err = new Error('Photo must be less than 2MB.')
+    const err = new Error(PHOTO_MAX_MSG)
     err.statusCode = 400
     throw err
   }

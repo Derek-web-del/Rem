@@ -138,6 +138,50 @@ authDescribe('auth flows (PostgreSQL)', () => {
     assert.ok(signIn.setCookie.length > 0, 'expected Set-Cookie on successful sign-in')
   })
 
+  test('sign-in failure emits AUTH_LOCKOUT audit with user context', async (t) => {
+    const { base } = await startTestServer(t)
+    const email = `${uniq('auditlock')}@example.com`
+    const goodPassword = 'Str0ng#Pass!'
+    await postJson(`${base}/api/auth/sign-up/email`, { email, password: goodPassword, name: 'Audit Lock' })
+
+    const pool = new pg.Pool({ connectionString: PG_TEST_URL, max: 1 })
+    try {
+      const userRow = await pool.query('SELECT id, username FROM "user" WHERE LOWER(email) = LOWER($1)', [email])
+      const userId = String(userRow.rows[0]?.id || '')
+      assert.ok(userId, 'expected auth user row')
+
+      for (let i = 0; i < 5; i++) {
+        const r = await postJson(
+          `${base}/api/auth/sign-in/email`,
+          { email, password: 'wrong-password' },
+          { headers: { 'X-LMS-Login-Portal': 'admin', Referer: `${base}/login/institute` } },
+        )
+        assert.notEqual(r.res.status, 429)
+      }
+
+      const logs = await pool.query(
+        `
+          SELECT details
+          FROM lms_activity_logs
+          WHERE "activityType" = 'AUTH_LOCKOUT' AND "userId" = $1
+          ORDER BY "timestamp" DESC
+          LIMIT 1
+        `,
+        [userId],
+      )
+      assert.equal(logs.rows.length, 1, 'expected AUTH_LOCKOUT LMS audit row')
+      const details = logs.rows[0].details
+      const parsed = typeof details === 'string' ? JSON.parse(details) : details
+      assert.equal(parsed.reason, 'Account Lockout for 5 Attempts failed')
+      assert.equal(parsed.targetUserId, userId)
+      assert.equal(parsed.attempts, 5)
+      assert.equal(parsed.portal, 'admin')
+      assert.equal(parsed.suspiciousLoginDetected, true)
+    } finally {
+      await pool.end()
+    }
+  })
+
   test('sign-in failure increments lockout and locks after 5 attempts', async (t) => {
     const { base } = await startTestServer(t)
     const email = `${uniq('lock')}@example.com`
@@ -150,8 +194,8 @@ authDescribe('auth flows (PostgreSQL)', () => {
     }
 
     const locked = await postJson(`${base}/api/auth/sign-in/email`, { email, password: goodPassword })
-    assert.equal(locked.res.status, 403)
-    assert.ok(String(locked.text).includes('ACCOUNT_LOCKED'))
+    assert.equal(locked.res.status, 401)
+    assert.ok(String(locked.text).includes('INVALID_EMAIL_OR_PASSWORD'))
 
     await sleep(1400)
     const ok = await postJson(`${base}/api/auth/sign-in/email`, { email, password: goodPassword })

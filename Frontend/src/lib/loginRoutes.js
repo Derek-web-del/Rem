@@ -29,5 +29,6 @@ export function roleFromLoginPath(pathname) {
 export function loginViewFromPath(pathname) {
   const p = normalizeLoginPath(pathname)
   if (p === LOGIN_SELECT_PATH) return 'select'
+  if (p === `${LOGIN_SELECT_PATH}/forgot-password`) return 'forgot'
   return roleFromLoginPath(pathname) ? 'login' : null
 }

@@ -21,6 +21,8 @@ export const FORBIDDEN_SELF_UPDATE_FIELDS = [
   'is_admin',
   'isAdmin',
   'permissions',
+  'twoFactorEnabled',
+  'two_factor_enabled',
   'failedLoginAttempts',
   'failed_attempts',
   'lockedUntil',
@@ -194,7 +196,7 @@ export async function requireFacultyRole(req, res, auth) {
  */
 export function requireDestructiveConfirm(req, res, expectedToken) {
   const token = String(req.body?.confirm || '').trim()
-  if (token !== expectedToken) {
+  if (token !== expectedToken && req.body?.confirmed !== true) {
     res.status(400).json({
       error: 'CONFIRMATION_REQUIRED',
       message: `Confirmation required. Send { "confirm": "${expectedToken}" } in the request body.`,

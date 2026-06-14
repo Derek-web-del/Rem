@@ -19,6 +19,13 @@ describe('subjectImages shared map', () => {
     assert.equal(resolveSubjectImageFromMap('English'), SUBJECT_IMAGE_MAP.English)
     assert.equal(resolveSubjectImageFromMap('MATH'), SUBJECT_IMAGE_MAP.Math)
     assert.equal(resolveSubjectImageFromMap('filipino'), SUBJECT_IMAGE_MAP.Filipino)
+    assert.equal(resolveSubjectImageFromMap('TLE'), SUBJECT_IMAGE_MAP.TLE)
+    assert.equal(resolveSubjectImageFromMap('mapeh'), SUBJECT_IMAGE_MAP.MAPEH)
+    assert.equal(resolveSubjectImageFromMap('research'), SUBJECT_IMAGE_MAP.Research)
+    assert.equal(resolveSubjectImageFromMap('ROBOTICS'), SUBJECT_IMAGE_MAP.Robotics)
+    assert.equal(resolveSubjectImageFromMap('araling panlipunan'), SUBJECT_IMAGE_MAP['Araling Panlipunan'])
+    assert.equal(resolveSubjectImageFromMap('Journalism'), SUBJECT_IMAGE_MAP.Journalism)
+    assert.equal(resolveSubjectImageFromMap('bible'), SUBJECT_IMAGE_MAP.Bible)
   })
 
   it('returns placeholder for unknown subjects', () => {
@@ -39,5 +46,21 @@ describe('resolveSubjectImagePath (server)', () => {
 
   it('falls back to placeholder when no file exists', () => {
     assert.equal(resolveSubjectImagePath('History'), SUBJECT_IMAGE_PLACEHOLDER)
+  })
+
+  it('matches new subject logos on disk', () => {
+    const newSubjects = [
+      ['TLE', 'TLE_Logo.png'],
+      ['MAPEH', 'MAPEH_Logo.png'],
+      ['Research', 'Research_Logo.png'],
+      ['Robotics', 'Robotics_Logo.png'],
+      ['Araling Panlipunan', 'Araling_Panlipunan_Logo.png'],
+      ['Journalism', 'Journalism_Logo.png'],
+      ['Bible', 'Bible_Logo.png'],
+    ]
+    for (const [name, file] of newSubjects) {
+      const path = resolveSubjectImagePath(name)
+      assert.match(path, new RegExp(`/uploads/Subjects_images/${file}$`, 'i'))
+    }
   })
 })

@@ -65,6 +65,11 @@ describe('sanitizeInput path rules', () => {
     assert.equal(isNonAuditablePath('/api/monitoring/audit-statistics'), true)
     assert.equal(isAuditablePath('/api/monitoring/audit-statistics'), false)
   })
+
+  it('treats student API routes as auditable', () => {
+    assert.equal(isAuditablePath('/api/v1/student/quizzes/abc/submit'), true)
+    assert.equal(isNonAuditablePath('/api/v1/student/quizzes/abc/submit'), false)
+  })
 })
 
 describe('sqlGuards', () => {

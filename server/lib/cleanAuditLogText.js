@@ -1,6 +1,8 @@
-/** Audit UI noise: default institute admin sign-in label (not stored in LMS DB). */
+/** Audit UI noise: role + code-ID labels (not shown in Monitoring Records). */
 const ADMIN_SIGNIN_NOISE = 'Administrator · Sign-in ID: admin'
 const ADMIN_SIGNIN_NOISE_RE = /Administrator\s*·\s*Sign-in ID:\s*admin/gi
+const RBAC_CODE_ID_NOISE_RE =
+  /(?:Administrator|Faculty|Student)\s*·\s*(?:Sign-in ID|Faculty Code ID|Student Code ID):\s*[^\s—•·]+/gi
 const TRAILING_EDGE_RE = /^[—\s•·]+|[—\s•·]+$/g
 
 /**
@@ -13,6 +15,7 @@ export function cleanAuditDescription(value) {
   if (typeof value !== 'string') return value
   return value
     .replace(ADMIN_SIGNIN_NOISE_RE, '')
+    .replace(RBAC_CODE_ID_NOISE_RE, '')
     .replace(ADMIN_SIGNIN_NOISE, '')
     .replace(TRAILING_EDGE_RE, '')
     .trim()

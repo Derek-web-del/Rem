@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useOutletContext } from 'react-router-dom'
+import { uploadsPathToApiUrl } from '../../lib/fileUrls.js'
 import { apiUrl } from '../../lib/lmsStateStorage.js'
 import { FACULTY_MSG, FACULTY_TOAST_ID, useFacultyNotify } from '../../lib/facultyNotify.js'
 import TeacherBackButton from './TeacherBackButton.jsx'
@@ -24,11 +25,7 @@ function formatUploadDate(raw) {
 }
 
 function resolveFileUrl(fileUrl) {
-  const t = String(fileUrl || '').trim()
-  if (!t) return ''
-  if (t.startsWith('data:') || t.startsWith('http://') || t.startsWith('https://')) return t
-  if (t.startsWith('/uploads/')) return apiUrl(t)
-  return t
+  return uploadsPathToApiUrl(fileUrl)
 }
 
 function PdfPreviewFrame({ fileUrl, title, className = '' }) {

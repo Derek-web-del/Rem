@@ -8,9 +8,25 @@ import {
   normalizeAuditEvent,
   pickTime,
 } from '../lib/auditStatisticsCore.js'
-import { AUDIT_LOGS_REFRESH_EVENT } from '../lib/auditLogRefresh.js'
+import { AUDIT_LOGS_REFRESH_EVENT, dispatchAuditLogsRefresh } from '../lib/auditLogRefresh.js'
+import AuditEventGlyph from '../components/AuditEventGlyph.jsx'
+import ClearAuditLogsModal from '../components/ClearAuditLogsModal.jsx'
+import { useNotify } from '../components/notifications.jsx'
 import { formatAuditModalEventDataJson } from '../lib/formatAuditModalEventData.js'
+import {
+  auditEventMetadata,
+  formatDescription,
+  getEventLabel,
+  isSessionAuditEvent,
+} from '../lib/auditEventDisplay.js'
 import { auditEventReactKey, dedupeAuditEvents } from '../lib/dedupeById.js'
+import { isNonProfileLedgerType, ledgerTypeToActivityType } from '../../../shared/auditLedgerDisplay.js'
+import TeacherAuditDetailPanel, {
+  auditRowAffectedLabel,
+  auditRowModuleLabel,
+  isTeacherStructuredAuditEvent,
+  teacherEventSubline,
+} from '../components/TeacherAuditDetailPanel.jsx'
 const EVENT_LABELS = {
   user_created: 'New user registration',
   user_signed_up: 'New user registration',
@@ -74,7 +90,7 @@ const EVENTS_DROPDOWN = [
   { id: 'email_verified', label: 'Email Verified' },
   { id: 'two_factor_enabled', label: '2FA Enabled' },
   { id: 'two_factor_disabled', label: '2FA Disabled' },
-  { id: 'session_created', label: 'New session created' },
+  { id: 'session_created', label: 'Session started' },
   { id: 'session_revoked', label: 'Single session revoked' },
   { id: 'user_banned', label: 'User Banned' },
   { id: 'user_unbanned', label: 'User Unbanned' },
@@ -98,15 +114,98 @@ const LMS_ACTIVITY_TYPES = [
   'FILE_UPLOADED',
   'GRADE_EXPORTED',
   'ASSIGNMENT_SUBMITTED',
+  'QUIZ_SUBMITTED',
+  'QUIZ_CREATED',
+  'PASSWORD_CHANGED',
+  'PASSWORD_RESET_REQUESTED',
+  'PASSWORD_RESET_COMPLETED',
+  'TERMS_ACCEPTED',
+  'USER_SESSION_STARTED',
   'ANNOUNCEMENT_POSTED',
   'CURRICULUM_UPLOADED',
+  'CURRICULUM_CREATED',
+  'CURRICULUM_UPDATED',
+  'CURRICULUM_DELETED',
+  'SECTION_CREATED',
+  'SECTION_UPDATED',
+  'SECTION_DELETED',
+  'SECTION_ARCHIVED',
+  'faculty_advisory_section_removed',
+  'SUBJECT_CREATED',
+  'SUBJECT_UPDATED',
+  'SUBJECT_DELETED',
+  'ANNOUNCEMENT_CREATED',
+  'ANNOUNCEMENT_UPDATED',
+  'ANNOUNCEMENT_DELETED',
+  'STUDENT_CREATED',
+  'STUDENT_UPDATED',
+  'STUDENT_DELETED',
+  'STUDENT_RESTORED',
+  'STUDENT_PERMANENTLY_PURGED',
+  'STUDENT_IMMEDIATELY_PURGED',
+  'FACULTY_CREATED',
+  'FACULTY_UPDATED',
+  'FACULTY_DELETED',
+  'FACULTY_RESTORED',
+  'FACULTY_PERMANENTLY_PURGED',
+  'FACULTY_IMMEDIATELY_PURGED',
+  'BACKUP_SCHEDULE_UPDATED',
+  'BACKUP_CREATED',
+  'BACKUP_RESTORED',
+  'BACKUP_DELETED',
+  'BACKUP_UPLOADED_TO_GDRIVE',
+  'backup_uploaded_to_gdrive',
+  'GOOGLE_DRIVE_CONNECTED',
+  'google_drive_connected',
+  'GOOGLE_DRIVE_DISCONNECTED',
+  'google_drive_disconnected',
+  'AUDIT_LOGS_CLEARED',
+  'audit_logs_cleared',
+  'audit_cleared',
+  'ARCHIVED_RECORD_ACCESSED',
+  'GRADE_OVERRIDE',
 ]
 
 /** LMS-backed rows merged into Events (filter with unifiedType `lms:…`). */
 const LMS_EVENTS_DROPDOWN = [
   { id: 'USER_ACCOUNT_CHANGED', label: 'Profile Updated (Account)' },
   { id: 'USER_PROFILE_UPDATED', label: 'Profile updated (account)' },
+  { id: 'TERMS_ACCEPTED', label: 'Terms & Conditions Accepted' },
+  { id: 'AUTH_LOCKOUT', label: 'Account Lockout' },
+  { id: 'LOGIN_FAILED', label: 'Sign In Failed' },
+  { id: 'STUDENT_CREATED', label: 'Student created' },
+  { id: 'STUDENT_UPDATED', label: 'Student updated' },
+  { id: 'STUDENT_DELETED', label: 'Student archived' },
+  { id: 'STUDENT_RESTORED', label: 'Student restored' },
+  { id: 'STUDENT_PERMANENTLY_PURGED', label: 'Student permanently purged' },
+  { id: 'STUDENT_IMMEDIATELY_PURGED', label: 'Student immediately purged' },
+  { id: 'FACULTY_CREATED', label: 'Faculty created' },
+  { id: 'FACULTY_UPDATED', label: 'Faculty updated' },
+  { id: 'FACULTY_DELETED', label: 'Faculty archived' },
+  { id: 'FACULTY_RESTORED', label: 'Faculty restored' },
+  { id: 'FACULTY_PERMANENTLY_PURGED', label: 'Faculty permanently purged' },
+  { id: 'FACULTY_IMMEDIATELY_PURGED', label: 'Faculty immediately purged' },
+  { id: 'BACKUP_SCHEDULE_UPDATED', label: 'Backup schedule updated' },
+  { id: 'BACKUP_CREATED', label: 'Backup created' },
+  { id: 'BACKUP_RESTORED', label: 'Data restored' },
+  { id: 'BACKUP_DELETED', label: 'Backup deleted' },
+  { id: 'BACKUP_UPLOADED_TO_GDRIVE', label: 'Backup uploaded to Drive' },
+  { id: 'GOOGLE_DRIVE_CONNECTED', label: 'Google Drive connected' },
+  { id: 'GOOGLE_DRIVE_DISCONNECTED', label: 'Google Drive disconnected' },
+  { id: 'SECTION_ARCHIVED', label: 'Section archived' },
+  { id: 'faculty_advisory_section_removed', label: 'Advisory section removed' },
+  { id: 'AUDIT_LOGS_CLEARED', label: 'Audit logs cleared' },
+  { id: 'PASSWORD_RESET_REQUESTED', label: 'Password reset requested' },
+  { id: 'GRADE_OVERRIDE', label: 'Grade override' },
 ]
+
+function loginSecurityPortalLabel(d) {
+  if (d?.portalLabel) return String(d.portalLabel)
+  if (d?.portal === 'admin') return 'Admin portal'
+  if (d?.portal === 'faculty') return 'Faculty portal'
+  if (d?.portal === 'student') return 'Student portal'
+  return d?.portal ? String(d.portal) : ''
+}
 
 function readUpdatedFields(details) {
   if (!details || typeof details !== 'object') return []
@@ -128,16 +227,215 @@ function readUpdatedFields(details) {
   return []
 }
 
+function isCurriculumEvent(e) {
+  const activity = String(e?.activityType || '').toUpperCase()
+  return (
+    activity === 'CURRICULUM_CREATED' ||
+    activity === 'CURRICULUM_UPLOADED' ||
+    activity === 'CURRICULUM_UPDATED' ||
+    activity === 'CURRICULUM_DELETED'
+  )
+}
+
+function isCurriculumUpdatedEvent(e) {
+  if (String(e?.activityType || '').toUpperCase() !== 'CURRICULUM_UPDATED') return false
+  const d = profileEventDetails(e)
+  const fields = readUpdatedFields(d)
+  return fields.length > 0
+}
+
+function curriculumEventSubtitle(d) {
+  const grade = d?.gradeLevel || d?.grade_level || d?.grade
+  const subject = d?.subject || d?.title
+  const fileName = d?.fileName || d?.file_name
+  return [grade ? `Grade: ${grade}` : '', subject ? `Subject: ${subject}` : '', fileName || '']
+    .filter(Boolean)
+    .join(' • ')
+}
+
+function isSectionEvent(e) {
+  const activity = String(e?.activityType || '').toUpperCase()
+  return (
+    activity === 'SECTION_CREATED' ||
+    activity === 'SECTION_UPDATED' ||
+    activity === 'SECTION_DELETED' ||
+    activity === 'SECTION_ARCHIVED'
+  )
+}
+
+function isSectionUpdatedEvent(e) {
+  if (String(e?.activityType || '').toUpperCase() !== 'SECTION_UPDATED') return false
+  const d = profileEventDetails(e)
+  const fields = readUpdatedFields(d)
+  return fields.length > 0
+}
+
+function sectionEventSubtitle(d) {
+  const grade = d?.gradeLevel || d?.grade_level || d?.grade
+  const name = d?.sectionName || d?.section_name || d?.name
+  return [grade ? `Grade: ${grade}` : '', name ? `Section: ${name}` : ''].filter(Boolean).join(' • ')
+}
+
+function isSubjectEvent(e) {
+  const activity = String(e?.activityType || '').toUpperCase()
+  return activity === 'SUBJECT_CREATED' || activity === 'SUBJECT_UPDATED' || activity === 'SUBJECT_DELETED'
+}
+
+function isSubjectUpdatedEvent(e) {
+  if (String(e?.activityType || '').toUpperCase() !== 'SUBJECT_UPDATED') return false
+  const d = profileEventDetails(e)
+  const fields = readUpdatedFields(d)
+  return fields.length > 0
+}
+
+function subjectEventSubtitle(d) {
+  const grade = d?.gradeLevel || d?.grade_level || d?.grade
+  const code = d?.subjectCode || d?.subject_code
+  const name = d?.subjectName || d?.subject_name
+  const faculty = d?.facultyName || d?.faculty_name
+  return [
+    code ? `Code: ${code}` : '',
+    name ? `Subject: ${name}` : '',
+    grade ? `Grade: ${grade}` : '',
+    faculty ? `Faculty: ${faculty}` : '',
+  ]
+    .filter(Boolean)
+    .join(' • ')
+}
+
+function isAnnouncementInstituteEvent(e) {
+  const activity = String(e?.activityType || '').toUpperCase()
+  return (
+    activity === 'ANNOUNCEMENT_CREATED' ||
+    activity === 'ANNOUNCEMENT_UPDATED' ||
+    activity === 'ANNOUNCEMENT_DELETED'
+  )
+}
+
+function isAnnouncementInstituteUpdatedEvent(e) {
+  if (String(e?.activityType || '').toUpperCase() !== 'ANNOUNCEMENT_UPDATED') return false
+  const d = profileEventDetails(e)
+  const fields = readUpdatedFields(d)
+  return fields.length > 0
+}
+
+function announcementInstituteEventSubtitle(d) {
+  const title = d?.title
+  const type = d?.announcementType || d?.type
+  return [title || '', type ? `Type: ${type}` : ''].filter(Boolean).join(' • ')
+}
+
+const AUDIT_ROW_AMBER = 'bg-amber-50/70 ring-1 ring-inset ring-amber-200/90'
+const AUDIT_ROW_RED_SOFT = 'bg-red-50/50 ring-1 ring-inset ring-red-200/70'
+const AUDIT_ROW_RED_STRONG = 'bg-red-50/70 ring-1 ring-inset ring-red-200/90'
+
+function auditEventTokens(e) {
+  const d = profileEventDetails(e)
+  const activity = String(e?.activityType || d?.activityType || '').toUpperCase()
+  const eventType = String(e?.eventType || d?.eventType || d?.type || e?.raw?.type || '').toLowerCase()
+  return { activity, eventType, d }
+}
+
+function isAuditLockoutEvent(e) {
+  const { activity, eventType } = auditEventTokens(e)
+  return activity === 'AUTH_LOCKOUT' || eventType === 'auth_lockout'
+}
+
+function isAuditLoginFailedEvent(e) {
+  const { activity, eventType } = auditEventTokens(e)
+  return activity === 'LOGIN_FAILED' || eventType === 'login_failed' || eventType === 'user_sign_in_failed'
+}
+
+function isAuditDeleteEvent(e) {
+  const { activity, eventType } = auditEventTokens(e)
+  if (activity.endsWith('_DELETED')) return true
+  return eventType.endsWith('_deleted') || eventType === 'user_deleted'
+}
+
+function isAuditUpdateEvent(e) {
+  if (isAuditDeleteEvent(e) || isAuditLockoutEvent(e) || isAuditLoginFailedEvent(e)) return false
+  const { activity, eventType, d } = auditEventTokens(e)
+  if (isUserAccountChangedEvent(e) || isProfileUpdateEvent(e)) return true
+  if (
+    isCurriculumUpdatedEvent(e) ||
+    isSectionUpdatedEvent(e) ||
+    isSubjectUpdatedEvent(e) ||
+    isAnnouncementInstituteUpdatedEvent(e)
+  ) {
+    return true
+  }
+  if (activity.endsWith('_UPDATED') || eventType.endsWith('_updated')) return true
+  if (activity === 'GRADE_OVERRIDE' || activity === 'PASSWORD_CHANGED') return true
+  if (eventType === 'password_changed' || eventType === 'organization_updated') return true
+  const fields = readUpdatedFields(d)
+  if (fields.length > 0) return true
+  return Boolean(
+    d?.detailedDiffs && typeof d.detailedDiffs === 'object' && Object.keys(d.detailedDiffs).length > 0,
+  )
+}
+
+function resolveAuditRowHighlightClass(e) {
+  if (isAuditLockoutEvent(e)) return AUDIT_ROW_RED_STRONG
+  if (isAuditDeleteEvent(e)) return AUDIT_ROW_RED_SOFT
+  if (isAuditUpdateEvent(e) || isAuditLoginFailedEvent(e)) return AUDIT_ROW_AMBER
+  return ''
+}
+
+function resolveAuditChangedFields(e, { isAccountChanged, accountCtx, isProfileAudit, dProfile } = {}) {
+  if (isAccountChanged) return accountCtx?.changedFields || []
+  const ed = profileEventDetails(e)
+  const fromEd = readUpdatedFields(ed)
+  if (fromEd.length) return fromEd
+  if (Array.isArray(e?.updatedFields) && e.updatedFields.length) return e.updatedFields
+  if (isProfileAudit) return readUpdatedFields(dProfile) || []
+  return []
+}
+
+function resolveFieldsBadgeVariant(e) {
+  if (isStudentProfileUpdateEvent(e)) return 'student'
+  if (isAuditUpdateEvent(e)) return 'amber'
+  return 'neutral'
+}
+
 function isUserAccountChangedEvent(e) {
   const d = profileEventDetails(e)
-  const t = String(d?.type || d?.eventType || e?.eventType || e?.activityType || '').toLowerCase()
-  if (t === 'user_account_changed') return true
-  if (String(e?.activityType || '').toUpperCase() === 'USER_ACCOUNT_CHANGED') return true
-  if (e?.source === 'ledger' && String(e?.eventType || '').toLowerCase() === 'user_account_changed') return true
-  return (
-    String(d?.displayType || '').trim() === 'Profile Updated (Account)' ||
-    String(d?.displayType || '').trim() === 'User Account Updated / Changed'
+  const activity = String(e?.activityType || d?.activityType || '').toUpperCase()
+  const eventToken = String(
+    d?.type || d?.eventType || e?.eventType || e?.raw?.type || e?.activityType || '',
   )
+  const eventLower = eventToken.toLowerCase()
+
+  if (isNonProfileLedgerType(activity) || isNonProfileLedgerType(eventToken)) return false
+  if (
+    activity === 'USER_SIGNED_IN' ||
+    activity === 'USER_SESSION_STARTED' ||
+    activity === 'LOGIN_FAILED' ||
+    activity === 'TERMS_ACCEPTED' ||
+    activity === 'AUTH_LOCKOUT'
+  ) {
+    return false
+  }
+
+  if (eventLower === 'user_account_changed') return true
+  if (activity === 'USER_ACCOUNT_CHANGED') {
+    const fields =
+      (Array.isArray(d?.updatedFields) && d.updatedFields.length ? d.updatedFields : null) ||
+      (Array.isArray(d?.changed_fields) && d.changed_fields.length ? d.changed_fields : null) ||
+      (d?.detailedDiffs && typeof d.detailedDiffs === 'object' && Object.keys(d.detailedDiffs).length
+        ? Object.keys(d.detailedDiffs)
+        : null)
+    return Boolean(fields?.length)
+  }
+  if (e?.source === 'ledger' && eventLower === 'user_account_changed') return true
+
+  const displayType = String(d?.displayType || '').trim()
+  if (
+    displayType === 'Profile Updated (Account)' ||
+    displayType === 'User Account Updated / Changed'
+  ) {
+    return eventLower === 'user_account_changed' || activity === 'USER_ACCOUNT_CHANGED'
+  }
+  return false
 }
 
 function accountChangeContext(e) {
@@ -200,7 +498,9 @@ function UpdatedFieldsBadges({ fields, className = '', variant = 'neutral', show
   const chipClass =
     variant === 'student'
       ? 'mr-1 rounded-md border border-blue-200 bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700'
-      : 'mr-1 rounded bg-neutral-100 px-2 py-1 text-xs font-semibold text-neutral-700'
+      : variant === 'amber'
+        ? 'mr-1 rounded-md border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800'
+        : 'mr-1 rounded bg-neutral-100 px-2 py-1 text-xs font-semibold text-neutral-700'
   return (
     <div className={`mt-1.5 flex flex-wrap items-center gap-1 ${className}`.trim()}>
       {variant === 'student' || showFieldLabel ? (
@@ -243,323 +543,96 @@ function looksLikeEmail(s) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(s || '').trim())
 }
 
-/** UI label for RBAC bucket (Admin / Faculty / Student). */
-function mapRoleToRbacLabel(roleRaw) {
-  const r = String(roleRaw || '').trim().toLowerCase()
-  if (r === 'admin') return 'Administrator'
-  if (r === 'teacher' || r === 'user') return 'Faculty'
-  if (r === 'student') return 'Student'
-  if (r) return r.charAt(0).toUpperCase() + r.slice(1)
-  return ''
-}
-
-/** Long random auth/user ids (cuid, nanoid, UUID) — not shown as "Sign-in ID" in the audit UI. */
-function isOpaqueInternalUserId(code) {
-  const s = String(code || '').trim()
-  if (s.length < 16) return false
-  if (
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(s)
-  ) {
-    return true
+/** Split auth-normalized "Name (email@x.com)" into separate fields. */
+function parseCombinedUserLabel(combined) {
+  const s = String(combined || '').trim()
+  if (!s) return { name: '', email: '' }
+  const m = s.match(/^(.+?)\s*\(([^)]+)\)\s*$/)
+  if (m) {
+    const name = m[1].trim()
+    const email = m[2].trim()
+    if (looksLikeEmail(email)) return { name, email }
   }
-  if (s.length >= 20 && /^[A-Za-z0-9_-]+$/.test(s)) return true
-  return false
+  if (looksLikeEmail(s)) return { name: '', email: s }
+  return { name: s, email: '' }
 }
 
-/**
- * Resolve role + sign-in / faculty / student identifier for Audit Logs (auth Infra + LMS rows).
- */
-function resolveAuditActorContext(e) {
+function finalizeAuditUserDisplay(displayName, displayEmail) {
+  const name = String(displayName || '').trim()
+  let email = String(displayEmail || '').trim()
+  if (!name && email) return { displayName: email, displayEmail: '' }
+  if (email === name) email = ''
+  return { displayName: name || email || '—', displayEmail: email }
+}
+
+/** Unified User column: line 1 = full name, line 2 = email. */
+function resolveAuditUserDisplay(e, ctx = {}) {
   const raw = e?.raw || {}
   const ed = raw?.eventData || e?.detailsObj || {}
   const userObj = raw?.user ?? raw?.actor ?? raw?.account ?? raw?.principal ?? null
+  const combined = parseCombinedUserLabel(e?.userEmail)
 
-  if (e?.source === 'lms') {
-    const roleRaw = pickStr(e.userRole, ed.userRole, ed.targetRole, ed.actorRole)
-    const roleLabel = mapRoleToRbacLabel(roleRaw)
-    const codeId = pickStr(
-      ed.username && !looksLikeEmail(ed.username) ? ed.username : '',
-      ed.targetUsername && !looksLikeEmail(ed.targetUsername) ? ed.targetUsername : '',
-      ed.facultyCode,
-      ed.facultyUsername,
-      ed.studentCode,
-      ed.studentId,
-      ed.loginId,
-      ed.identifier && !looksLikeEmail(ed.identifier) ? ed.identifier : '',
-      e.resourceId,
-      !isOpaqueInternalUserId(String(e.userId || '')) ? e.userId : '',
-    )
-    return { roleRaw, roleLabel, codeId }
+  const {
+    isSecurityAlert = false,
+    isLmsLockout = false,
+    isAccountChanged = false,
+    isProfileAudit = false,
+    accountCtx = null,
+    dProfile = {},
+  } = ctx
+
+  if (isSecurityAlert) {
+    return finalizeAuditUserDisplay(pickStr(ed?.actorName, e?.actorName, 'System'), '')
   }
 
-  const roleRaw = pickStr(ed.role, ed.userRole, userObj?.role, raw.role, raw.userRole, raw?.user?.role)
-  const roleLabel = mapRoleToRbacLabel(roleRaw)
-  const idFromEd = pickStr(ed.username, ed.userUsername, userObj?.username, raw.username)
-  const idNonEmail =
+  if (isLmsLockout) {
+    return finalizeAuditUserDisplay(
+      pickStr(ed?.userName, combined.name, ed?.identifier, combined.email, e?.userEmail),
+      pickStr(ed?.userEmail, e?.actorEmail, combined.email, looksLikeEmail(e?.userEmail) ? e.userEmail : ''),
+    )
+  }
+
+  if (isAccountChanged) {
+    return finalizeAuditUserDisplay(
+      pickStr(accountCtx?.performedBy?.name, e?.actorName, ed?.actorName, ed?.performed_by?.name),
+      pickStr(
+        accountCtx?.performedBy?.email,
+        e?.actorEmail,
+        ed?.actorEmail,
+        ed?.performed_by?.email,
+      ),
+    )
+  }
+
+  if (isProfileAudit) {
+    return finalizeAuditUserDisplay(
+      pickStr(dProfile?.targetName, dProfile?.targetEmail, combined.name, e?.actorName, e?.targetName),
+      pickStr(dProfile?.targetEmail, e?.targetEmail, e?.actorEmail, combined.email),
+    )
+  }
+
+  return finalizeAuditUserDisplay(
     pickStr(
-      ed.identifier && !looksLikeEmail(ed.identifier) ? ed.identifier : '',
-      ed.facultyCode,
-      ed.facultyUsername,
-      ed.studentCode,
-      ed.studentId,
-      ed.loginId,
-    ) || (!looksLikeEmail(idFromEd) ? idFromEd : '')
-  const uid = pickStr(e.userId, raw.userId, userObj?.id, ed.userId)
-  const uidHuman = uid && !isOpaqueInternalUserId(uid) ? uid : ''
-  const codeId =
-    idNonEmail ||
-    (idFromEd && !looksLikeEmail(idFromEd) ? idFromEd : '') ||
-    uidHuman
-  return { roleRaw, roleLabel, codeId }
-}
-
-/** Label for the identifier column (Faculty Code ID, Student Code ID, or admin sign-in). */
-function credentialFieldLabel(ctx) {
-  const r = String(ctx?.roleRaw || '').trim().toLowerCase()
-  const lbl = String(ctx?.roleLabel || '').trim()
-  if (r === 'student' || lbl === 'Student') return 'Student Code ID'
-  if (r === 'teacher' || r === 'user' || lbl === 'Faculty') return 'Faculty Code ID'
-  if (r === 'admin' || lbl === 'Administrator') return 'Sign-in ID'
-  return 'Sign-in ID'
-}
-
-const ADMIN_SIGNIN_AUDIT_NOISE = 'Administrator · Sign-in ID: admin'
-
-function formatRbacCodeLine(ctx) {
-  const role = String(ctx?.roleLabel || '').trim()
-  const code = String(ctx?.codeId || '').trim()
-  const field = credentialFieldLabel(ctx)
-  if (field === 'Sign-in ID' && isOpaqueInternalUserId(code)) {
-    return ''
-  }
-  // Default institute admin (username admin) — omit redundant sign-in label from audit UI/payload.
-  if (role === 'Administrator' && code.toLowerCase() === 'admin') {
-    return ''
-  }
-  let line = ''
-  if (role && code) line = `${role} · ${field}: ${code}`
-  else if (role) line = `${role} · ${field}: —`
-  else if (code) line = `${field}: ${code}`
-  if (!line || line === ADMIN_SIGNIN_AUDIT_NOISE || line.includes(ADMIN_SIGNIN_AUDIT_NOISE)) {
-    return ''
-  }
-  return line
-}
-
-function SvgGlyph({ className, children }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" aria-hidden>
-      {children}
-    </svg>
-  )
-}
-
-/** Distinct icons per event type (replaces emoji). */
-function AuditEventGlyph({ e }) {
-  const cn = 'h-5 w-5 shrink-0 text-neutral-600'
-  const isLms = e?.source === 'lms'
-  if (isLms) {
-    const t = String(e?.activityType || '').toUpperCase()
-    if (t === 'AUTH_LOCKOUT') {
-      return (
-        <SvgGlyph className={cn}>
-          <circle cx="12" cy="12" r="10" />
-          <path d="M4.9 4.9l14.2 14.2M16 8v4M8 8v8" strokeLinecap="round" />
-        </SvgGlyph>
-      )
-    }
-    if (t === 'USER_ACCOUNT_CHANGED') {
-      return (
-        <SvgGlyph className={`${cn} text-amber-800`}>
-          <path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5Z" strokeLinecap="round" strokeLinejoin="round" />
-        </SvgGlyph>
-      )
-    }
-    if (t === 'USER_PROFILE_UPDATED') {
-      return (
-        <SvgGlyph className={cn}>
-          <path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z" />
-          <path d="M19 21v-1a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v1M12 11V3M9 6h6" strokeLinecap="round" strokeLinejoin="round" />
-        </SvgGlyph>
-      )
-    }
-    if (t === 'USER_SIGNED_IN') {
-      return (
-        <SvgGlyph className={cn}>
-          <path d="M15 3h4v4M10 14 21 3M21 14v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h7" strokeLinecap="round" strokeLinejoin="round" />
-        </SvgGlyph>
-      )
-    }
-    if (t === 'LESSON_ACCESSED') {
-      return (
-        <SvgGlyph className={cn}>
-          <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" strokeLinecap="round" />
-          <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z" strokeLinejoin="round" />
-          <path d="M8 7h8M8 11h8" strokeLinecap="round" />
-        </SvgGlyph>
-      )
-    }
-    if (t === 'FILE_UPLOADED' || t === 'GRADE_EXPORTED') {
-      return (
-        <SvgGlyph className={cn}>
-          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" strokeLinejoin="round" />
-          <path d="M14 2v6h6M12 18v-6M9 15h6" strokeLinecap="round" />
-        </SvgGlyph>
-      )
-    }
-    if (t === 'ASSIGNMENT_SUBMITTED') {
-      return (
-        <SvgGlyph className={cn}>
-          <path d="M22 12h-4l-3 9L9 3l-3 9H2" strokeLinecap="round" strokeLinejoin="round" />
-        </SvgGlyph>
-      )
-    }
-    if (t === 'ANNOUNCEMENT_POSTED' || t === 'CURRICULUM_UPLOADED') {
-      return (
-        <SvgGlyph className={cn}>
-          <path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5Z" strokeLinecap="round" strokeLinejoin="round" />
-        </SvgGlyph>
-      )
-    }
-    if (t === 'BACKUP_CREATED' || t === 'BACKUP_RESTORED' || t === 'BACKUP_DELETED') {
-      return (
-        <SvgGlyph className={`${cn} text-sky-800`}>
-          <ellipse cx="12" cy="5" rx="9" ry="3" />
-          <path d="M3 5v14c0 1.66 4.03 3 9 3s9-1.34 9-3V5" />
-          <path d="M3 12c0 1.66 4.03 3 9 3s9-1.34 9-3" />
-          {t === 'BACKUP_RESTORED' ? (
-            <path d="M12 11v6M9 14l3 3 3-3" strokeLinecap="round" strokeLinejoin="round" />
-          ) : t === 'BACKUP_DELETED' ? (
-            <path d="M9 14h6" strokeLinecap="round" />
-          ) : (
-            <path d="M12 11v5M9 14h6" strokeLinecap="round" />
-          )}
-        </SvgGlyph>
-      )
-    }
-    if (t === 'SUSPICIOUS_INPUT_DETECTED') {
-      return (
-        <SvgGlyph className={`${cn} text-amber-700`}>
-          <path d="M12 3l8 4v5c0 5-3.5 9-8 10-4.5-1-8-5-8-10V7l8-4Z" strokeLinejoin="round" />
-          <path d="M12 8v4M12 16h.01" strokeLinecap="round" />
-        </SvgGlyph>
-      )
-    }
-    return (
-      <SvgGlyph className={cn}>
-        <path d="M12 2v4M12 18v4M4.9 4.9l2.8 2.8M16.3 16.3l2.8 2.8M2 12h4M18 12h4M4.9 19.1l2.8-2.8M16.3 7.7l2.8-2.8" strokeLinecap="round" />
-        <circle cx="12" cy="12" r="3" />
-      </SvgGlyph>
-    )
-  }
-
-  const t = String(e?.eventType || '').toLowerCase()
-  if (t.startsWith('security_')) {
-    return (
-      <SvgGlyph className={`${cn} text-amber-700`}>
-        <path d="M12 3l8 4v5c0 5-3.5 9-8 10-4.5-1-8-5-8-10V7l8-4Z" strokeLinejoin="round" />
-        <path d="M12 8v4M12 16h.01" strokeLinecap="round" />
-      </SvgGlyph>
-    )
-  }
-  if (t.includes('sign_in_failed') || t === 'user_sign_in_failed') {
-    return (
-      <SvgGlyph className={`${cn} text-red-600`}>
-        <path d="M10.3 3.6h3.4L21 20H3L10.3 3.6Z" strokeLinejoin="round" />
-        <path d="M12 9v4M12 16h.01" strokeLinecap="round" />
-      </SvgGlyph>
-    )
-  }
-  if (t.includes('signed_in') || t === 'user_signed_in') {
-    return (
-      <SvgGlyph className={`${cn} text-emerald-700`}>
-        <path d="M15 3h4v4M10 14 21 3" strokeLinecap="round" strokeLinejoin="round" />
-        <path d="M21 14v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h7" strokeLinecap="round" strokeLinejoin="round" />
-      </SvgGlyph>
-    )
-  }
-  if (t.includes('signed_out') || t === 'user_signed_out') {
-    return (
-      <SvgGlyph className={cn}>
-        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" strokeLinecap="round" strokeLinejoin="round" />
-      </SvgGlyph>
-    )
-  }
-  if (t.includes('session_created')) {
-    return (
-      <SvgGlyph className={`${cn} text-blue-700`}>
-        <rect x="3" y="11" width="18" height="10" rx="2" strokeLinejoin="round" />
-        <path d="M7 11V7a5 5 0 0 1 10 0v4M12 15v2" strokeLinecap="round" />
-      </SvgGlyph>
-    )
-  }
-  if (t.includes('session_revoked')) {
-    return (
-      <SvgGlyph className={cn}>
-        <rect x="3" y="11" width="18" height="10" rx="2" strokeLinejoin="round" />
-        <path d="M7 11V7a5 5 0 0 1 9.9-1M17 14l-5 5M12 19l5-5" strokeLinecap="round" />
-      </SvgGlyph>
-    )
-  }
-  if (t.includes('password_reset') || t.includes('password_changed')) {
-    return (
-      <SvgGlyph className={cn}>
-        <path d="M7 11V8a5 5 0 0 1 10 0v3M6 11h12v10H6V11Z" strokeLinejoin="round" />
-        <circle cx="12" cy="16" r="1" fill="currentColor" stroke="none" />
-      </SvgGlyph>
-    )
-  }
-  if (t.includes('two_factor')) {
-    return (
-      <SvgGlyph className={cn}>
-        <rect x="5" y="11" width="14" height="10" rx="2" />
-        <path d="M12 15v2M9 11V7a3 3 0 0 1 6 0v4" strokeLinecap="round" />
-      </SvgGlyph>
-    )
-  }
-  if (t.includes('email_verification') || t.includes('email_verified') || t === 'email_sent') {
-    return (
-      <SvgGlyph className={cn}>
-        <path d="M4 6h16v12H4V6Z" strokeLinejoin="round" />
-        <path d="m22 7-10 7L2 7" strokeLinecap="round" strokeLinejoin="round" />
-      </SvgGlyph>
-    )
-  }
-  if (t.includes('user_account_changed')) {
-    return (
-      <SvgGlyph className={`${cn} text-amber-800`}>
-        <path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5Z" strokeLinecap="round" strokeLinejoin="round" />
-      </SvgGlyph>
-    )
-  }
-  if (t.includes('user_created')) {
-    return (
-      <SvgGlyph className={cn}>
-        <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z" strokeLinecap="round" />
-        <path d="M19 8v6M22 11h-6" strokeLinecap="round" />
-      </SvgGlyph>
-    )
-  }
-  if (t.includes('user_banned') || t.includes('user_deleted')) {
-    return (
-      <SvgGlyph className={`${cn} text-red-600`}>
-        <circle cx="12" cy="12" r="10" />
-        <path d="M4.9 4.9l14.2 14.2" strokeLinecap="round" />
-      </SvgGlyph>
-    )
-  }
-  if (t.includes('organization_')) {
-    return (
-      <SvgGlyph className={cn}>
-        <path d="M3 21h18M6 21V10l6-4 6 4v11M9 21v-4h6v4" strokeLinecap="round" strokeLinejoin="round" />
-      </SvgGlyph>
-    )
-  }
-  return (
-    <SvgGlyph className={cn}>
-      <circle cx="12" cy="12" r="10" />
-      <path d="M12 8v4M12 16h.01" strokeLinecap="round" />
-    </SvgGlyph>
+      ed?.name,
+      ed?.userName,
+      ed?.targetName,
+      e?.actorName,
+      e?.targetName,
+      userObj?.name,
+      combined.name,
+      ed?.actorName,
+    ),
+    pickStr(
+      ed?.userEmail,
+      ed?.targetEmail,
+      ed?.actorEmail,
+      e?.actorEmail,
+      e?.targetEmail,
+      userObj?.email,
+      raw?.userEmail,
+      combined.email,
+      looksLikeEmail(e?.userEmail) ? e.userEmail : '',
+    ),
   )
 }
 
@@ -608,11 +681,16 @@ async function fetchLmsActivity(filters = {}) {
 function normalizeLedgerEvent(raw) {
   const ed = raw?.eventData || raw?.details || {}
   const n = normalizeAuditEvent(raw)
+  const ledgerType = String(raw?.type || raw?.eventType || ed?.type || '').trim()
+  const activityType =
+    String(raw?.activityType || ed?.activityType || '').trim() ||
+    ledgerTypeToActivityType(ledgerType)
+  const eventType = ledgerType || String(raw?.eventType || '').trim()
   return {
     ...n,
     source: 'ledger',
-    eventType: raw?.eventType || raw?.type || 'user_account_changed',
-    activityType: 'USER_ACCOUNT_CHANGED',
+    eventType,
+    activityType,
     actorName: ed?.actorName || ed?.performed_by?.name || '',
     actorEmail: ed?.actorEmail || ed?.performed_by?.email || '',
     updatedFields:
@@ -657,6 +735,9 @@ function normalizeLmsEvent(raw) {
 
 function unifiedActivityLabel(e) {
   const d = profileEventDetails(e)
+  if (d?.displayType && !isUserAccountChangedEvent(e)) return String(d.displayType)
+  const mapped = getEventLabel(e?.eventType, e?.activityType)
+  if (mapped) return mapped
   if (isUserAccountChangedEvent(e)) {
     return EVENT_LABELS.user_account_changed || d?.displayType || 'Profile Updated (Account)'
   }
@@ -672,20 +753,60 @@ function unifiedActivityLabel(e) {
   if (t === 'BACKUP_CREATED') return 'Backup Created'
   if (t === 'BACKUP_RESTORED') return 'Data Restored'
   if (t === 'BACKUP_DELETED') return 'Backup Deleted'
+  if (t === 'BACKUP_SCHEDULE_UPDATED') return 'Backup Schedule Updated'
+  if (t === 'STUDENT_CREATED') return 'Student created'
+  if (t === 'STUDENT_UPDATED') return 'Student updated'
+  if (t === 'STUDENT_DELETED') return 'Student archived'
+  if (t === 'STUDENT_RESTORED') return 'Student restored'
+  if (t === 'STUDENT_PERMANENTLY_PURGED') return 'Student permanently purged'
+  if (t === 'STUDENT_IMMEDIATELY_PURGED') return 'Student immediately purged'
+  if (t === 'FACULTY_CREATED') return 'Faculty created'
+  if (t === 'FACULTY_UPDATED') return 'Faculty updated'
+  if (t === 'FACULTY_DELETED') return 'Faculty archived'
+  if (t === 'FACULTY_RESTORED') return 'Faculty restored'
+  if (t === 'FACULTY_PERMANENTLY_PURGED') return 'Faculty permanently purged'
+  if (t === 'FACULTY_IMMEDIATELY_PURGED') return 'Faculty immediately purged'
+  if (t === 'ARCHIVED_RECORD_ACCESSED') return 'Archived record viewed'
+  if (t === 'GRADE_OVERRIDE') return 'Grade override'
+  if (t === 'GOOGLE_DRIVE_CONNECTED' || t === 'google_drive_connected') return 'Google Drive Connected'
+  if (t === 'GOOGLE_DRIVE_DISCONNECTED' || t === 'google_drive_disconnected') return 'Google Drive Disconnected'
+  if (t === 'BACKUP_UPLOADED_TO_GDRIVE' || t === 'backup_uploaded_to_gdrive') return 'Backup Uploaded to Drive'
   if (t === 'LESSON_ACCESSED') return 'Lesson Access'
   if (t === 'FILE_UPLOADED') return 'File Upload'
   if (t === 'GRADE_EXPORTED') return 'Grade Export'
   if (t === 'ASSIGNMENT_SUBMITTED') return 'Assignment Submitted'
   if (t === 'ANNOUNCEMENT_POSTED') return 'Announcement Posted'
-  if (t === 'CURRICULUM_UPLOADED') return 'Curriculum Upload'
+  if (t === 'CURRICULUM_CREATED' || t === 'CURRICULUM_UPLOADED') return 'Curriculum uploaded'
+  if (t === 'CURRICULUM_UPDATED') return 'Curriculum updated'
+  if (t === 'CURRICULUM_DELETED') return 'Curriculum deleted'
+  if (t === 'SECTION_CREATED') return 'Section created'
+  if (t === 'SECTION_UPDATED') return 'Section updated'
+  if (t === 'SECTION_DELETED') return 'Section deleted'
+  if (t === 'SUBJECT_CREATED') return 'Subject created'
+  if (t === 'SUBJECT_UPDATED') return 'Subject updated'
+  if (t === 'SUBJECT_DELETED') return 'Subject deleted'
+  if (t === 'ANNOUNCEMENT_CREATED') return 'Announcement created'
+  if (t === 'ANNOUNCEMENT_UPDATED') return 'Announcement updated'
+  if (t === 'ANNOUNCEMENT_DELETED') return 'Announcement deleted'
+  if (t === 'TERMS_ACCEPTED') return 'Terms & Conditions Accepted'
   return t || 'LMS Activity'
 }
 
 function unifiedDetails(e) {
+  const d = e?.detailsObj || {}
+  const authType = String(e?.eventType || d?.eventType || d?.type || '').trim().toLowerCase()
+  const activity = String(e?.activityType || '').trim().toUpperCase()
+  if (
+    authType === 'session_created' ||
+    activity === 'USER_SESSION_STARTED' ||
+    activity === 'SESSION_CREATED'
+  ) {
+    const formatted = formatDescription(authType || 'session_created', d?.description, auditEventMetadata(e))
+    return formatted || '—'
+  }
   if (e?.source === 'auth') {
     return '—'
   }
-  const d = e?.detailsObj || {}
   const t = String(e?.activityType || '')
   if (t === 'USER_PROFILE_UPDATED') {
     const fields = Array.isArray(d.updatedFields) ? d.updatedFields.join(', ') : ''
@@ -698,11 +819,45 @@ function unifiedDetails(e) {
     const method = d?.method ? `Method: ${d.method}` : ''
     return [id, method].filter(Boolean).join(' • ') || 'Signed in.'
   }
+  if (t === 'LOGIN_FAILED') {
+    const loginId = d?.loginId || d?.identifier
+    const accountType = d?.accountType ? `Account: ${d.accountType}` : ''
+    const attempts = d?.attempts != null ? `Attempts: ${d.attempts}` : ''
+    const portal = loginSecurityPortalLabel(d)
+    const suspicious = d?.suspiciousLoginDetected ? 'Suspicious' : ''
+    return [
+      loginId ? `Login ID: ${loginId}` : '',
+      accountType,
+      attempts,
+      portal,
+      suspicious,
+      d?.reason,
+    ]
+      .filter(Boolean)
+      .join(' · ') || '—'
+  }
   if (t === 'AUTH_LOCKOUT') {
     const attempts = d?.attempts != null ? `Attempts: ${d.attempts}` : ''
-    const id = d?.identifier ? `Identifier: ${d.identifier}` : ''
+    const loginId = d?.loginId || d?.identifier
+    const username = d?.username ? `Username: ${d.username}` : ''
+    const userId = d?.targetUserId ? `User ID: ${d.targetUserId}` : ''
+    const accountType = d?.accountType ? `Account: ${d.accountType}` : ''
+    const portal = loginSecurityPortalLabel(d)
     const until = d?.lockedUntil ? `Locked until: ${String(d.lockedUntil)}` : ''
-    return [attempts, id, until].filter(Boolean).join(' • ') || 'Account locked after failed sign-in attempts.'
+    const suspicious = d?.suspiciousLoginDetected ? 'Suspicious' : ''
+    return [
+      d?.reason,
+      attempts,
+      loginId ? `Login ID: ${loginId}` : '',
+      username,
+      userId,
+      accountType,
+      portal,
+      until,
+      suspicious,
+    ]
+      .filter(Boolean)
+      .join(' · ') || 'Account locked after failed sign-in attempts.'
   }
   if (t === 'SUSPICIOUS_INPUT_DETECTED') {
     const endpoint = d?.endpoint ? String(d.endpoint) : ''
@@ -716,17 +871,85 @@ function unifiedDetails(e) {
     const tables = d?.tablesCount != null ? `Tables: ${d.tablesCount}` : ''
     return [name, size, tables].filter(Boolean).join(' · ') || d?.description || '—'
   }
+  if (t === 'BACKUP_SCHEDULE_UPDATED') {
+    const before = d?.before || {}
+    const after = d?.after || {}
+    const fmt = (s) =>
+      ['daily', 'weekly', 'monthly']
+        .map((k) => `${k}: ${s?.[k] ? 'on' : 'off'}`)
+        .join(', ')
+    return [fmt(before) ? `Before: ${fmt(before)}` : '', fmt(after) ? `After: ${fmt(after)}` : '']
+      .filter(Boolean)
+      .join(' · ') || d?.description || '—'
+  }
+  if (
+    t === 'STUDENT_CREATED' ||
+    t === 'STUDENT_UPDATED' ||
+    t === 'STUDENT_DELETED' ||
+    t === 'STUDENT_RESTORED' ||
+    t === 'STUDENT_PERMANENTLY_PURGED' ||
+    t === 'STUDENT_IMMEDIATELY_PURGED' ||
+    t === 'FACULTY_CREATED' ||
+    t === 'FACULTY_UPDATED' ||
+    t === 'FACULTY_DELETED' ||
+    t === 'FACULTY_RESTORED' ||
+    t === 'FACULTY_PERMANENTLY_PURGED' ||
+    t === 'FACULTY_IMMEDIATELY_PURGED' ||
+    t === 'ARCHIVED_RECORD_ACCESSED'
+  ) {
+    const name = d?.record_name || d?.recordName || ''
+    const id = d?.record_id || d?.recordId || ''
+    return [d?.description, name, id ? `ID: ${id}` : ''].filter(Boolean).join(' · ') || '—'
+  }
+  if (t === 'GOOGLE_DRIVE_CONNECTED' || t === 'google_drive_connected') {
+    return d?.connectedEmail ? `Connected as ${d.connectedEmail}` : d?.description || 'Google Drive connected'
+  }
+  if (t === 'GOOGLE_DRIVE_DISCONNECTED' || t === 'google_drive_disconnected') {
+    return d?.previousEmail ? `Was ${d.previousEmail}` : d?.description || 'Google Drive disconnected'
+  }
+  if (t === 'BACKUP_UPLOADED_TO_GDRIVE' || t === 'backup_uploaded_to_gdrive') {
+    return d?.link ? `Uploaded · ${d.link}` : d?.description || 'Backup uploaded to Google Drive'
+  }
   if (t === 'LESSON_ACCESSED') return `${d.courseId ? `Course: ${d.courseId}` : ''}${d.lessonId ? `${d.courseId ? ' • ' : ''}Lesson: ${d.lessonId}` : ''}` || '—'
   if (t === 'FILE_UPLOADED') return `${d.fileName ? d.fileName : ''}${d.targetCourse ? ` • Course: ${d.targetCourse}` : ''}` || '—'
   if (t === 'GRADE_EXPORTED') return `${d.gradeLevel ? `Grade: ${d.gradeLevel}` : ''}${d.section ? `${d.gradeLevel ? ' • ' : ''}${d.section}` : ''}` || '—'
   if (t === 'ASSIGNMENT_SUBMITTED') return `${d.assignmentId ? `Assignment: ${d.assignmentId}` : ''}${d.plagiarismScore != null ? ` • Plagiarism: ${d.plagiarismScore}` : ''}` || '—'
   if (t === 'ANNOUNCEMENT_POSTED') return `${d.title ? d.title : ''}${d.audience ? ` • Audience: ${d.audience}` : ''}` || '—'
-  if (t === 'CURRICULUM_UPLOADED') return `${d.gradeLevel ? `Grade: ${d.gradeLevel}` : ''}${d.fileName ? `${d.gradeLevel ? ' • ' : ''}${d.fileName}` : ''}` || '—'
+  if (isCurriculumEvent({ activityType: t })) {
+    const sub = curriculumEventSubtitle(d)
+    return sub || d?.description || '—'
+  }
+  if (isSectionEvent({ activityType: t })) {
+    const sub = sectionEventSubtitle(d)
+    return sub || d?.description || '—'
+  }
+  if (isSubjectEvent({ activityType: t })) {
+    const sub = subjectEventSubtitle(d)
+    return sub || d?.description || '—'
+  }
+  if (isAnnouncementInstituteEvent({ activityType: t })) {
+    const sub = announcementInstituteEventSubtitle(d)
+    return sub || d?.description || '—'
+  }
+  if (t === 'TERMS_ACCEPTED') {
+    const portalLabel =
+      d.portal === 'admin'
+        ? 'Admin portal'
+        : d.portal === 'faculty'
+          ? 'Faculty portal'
+          : d.portal === 'student'
+            ? 'Student portal'
+            : d.portal
+              ? String(d.portal)
+              : ''
+    return [d.description, portalLabel].filter(Boolean).join(' · ') || '—'
+  }
   return '—'
 }
 
 export default function MonitoringRecords() {
   const navigate = useNavigate()
+  const { success: notifySuccess } = useNotify()
   // Auth + LMS audit events (unified table).
   const PAGE_SIZE = 50
   const [unifiedType, setUnifiedType] = useState('') // '' | auth:<eventType> | lms:<activityType>
@@ -743,6 +966,7 @@ export default function MonitoringRecords() {
   const [eventDetailsRow, setEventDetailsRow] = useState(null)
   const [eventsSearch, setEventsSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
+  const [clearModalOpen, setClearModalOpen] = useState(false)
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(eventsSearch.trim()), 350)
@@ -861,6 +1085,16 @@ export default function MonitoringRecords() {
                 </option>
               ))}
             </select>
+            <button
+              type="button"
+              onClick={() => setClearModalOpen(true)}
+              className="inline-flex h-[42px] shrink-0 items-center gap-2 rounded-lg border border-red-300 bg-white px-4 text-sm font-semibold text-red-700 shadow-sm hover:bg-red-50"
+            >
+              <span className="text-base leading-none" aria-hidden>
+                🗑
+              </span>
+              Clear Logs
+            </button>
             <div className="relative shrink-0">
               <button
                 type="button"
@@ -937,6 +1171,8 @@ export default function MonitoringRecords() {
               <thead className="sticky top-0 z-10 bg-neutral-50 text-xs font-bold uppercase tracking-wider text-neutral-500">
                 <tr>
                   <th className="px-4 py-3">Event</th>
+                  <th className="px-4 py-3">Module</th>
+                  <th className="px-4 py-3">Affected</th>
                   <th className="px-4 py-3">By</th>
                   <th className="px-4 py-3">Time</th>
                   <th className="px-4 py-3 text-right" aria-label="Details" />
@@ -945,13 +1181,13 @@ export default function MonitoringRecords() {
               <tbody className="divide-y divide-neutral-100">
                 {unifiedRows.length === 0 ? (
                   <tr>
-                    <td className="px-4 py-6 text-center text-neutral-500" colSpan={4}>
+                    <td className="px-4 py-6 text-center text-neutral-500" colSpan={6}>
                       No events.
                     </td>
                   </tr>
                 ) : displayedUnifiedRows.length === 0 ? (
                   <tr>
-                    <td className="px-4 py-6 text-center text-neutral-500" colSpan={4}>
+                    <td className="px-4 py-6 text-center text-neutral-500" colSpan={6}>
                       No events match your search.
                     </td>
                   </tr>
@@ -961,91 +1197,76 @@ export default function MonitoringRecords() {
                     const raw = e?.raw || {}
                     const ed = raw?.eventData || e?.detailsObj || {}
                     const isAccountChanged = isUserAccountChangedEvent(e)
+                    const isAuditUpdate = isAuditUpdateEvent(e)
                     const accountCtx = isAccountChanged ? accountChangeContext(e) : null
                     const eventTitle = unifiedActivityLabel(e)
-                    const isLmsLockout = e?.source === 'lms' && String(e?.activityType) === 'AUTH_LOCKOUT'
+                    const isLmsLockout = isAuditLockoutEvent(e)
                     const isSecurityAlert =
                       e?.source === 'lms' && String(e?.activityType) === 'SUSPICIOUS_INPUT_DETECTED'
                     const isProfileAudit = isProfileUpdateEvent(e) && !isAccountChanged
                     const dProfile = isProfileAudit ? profileEventDetails(e) : {}
-                    const changedFields = isAccountChanged
-                      ? accountCtx?.changedFields || []
-                      : (Array.isArray(e?.updatedFields) && e.updatedFields.length
-                          ? e.updatedFields
-                          : readUpdatedFields(dProfile)) || []
+                    const changedFields = resolveAuditChangedFields(e, {
+                      isAccountChanged,
+                      accountCtx,
+                      isProfileAudit,
+                      dProfile,
+                    })
+                    const fieldsBadgeVariant = resolveFieldsBadgeVariant(e)
                     const targetDisplayName =
                       accountCtx?.targetUser?.name ||
                       accountCtx?.targetUser?.email ||
                       dProfile?.targetName ||
                       dProfile?.targetEmail ||
                       ''
-                    const by = isSecurityAlert
-                      ? pickStr(ed?.actorName, e?.actorName, 'System')
-                      : isLmsLockout
-                      ? ed?.userName || ed?.identifier || (e?.userEmail || '').split(' (')[0] || e?.userEmail || '—'
-                      : isAccountChanged
-                        ? pickStr(
-                            accountCtx?.performedBy?.name,
-                            e?.actorName,
-                            ed?.actorName,
-                            ed?.performed_by?.name,
-                          ) || '—'
-                        : isProfileAudit
-                          ? dProfile.targetName ||
-                            dProfile.targetEmail ||
-                            (e?.userEmail || '').split(' (')[0] ||
-                            e?.userEmail ||
-                            '—'
-                          : pickStr(ed?.userName, e?.actorNamePlain, (e?.userEmail || '').split(' (')[0], e?.userEmail) ||
-                            '—'
-                    const bySub = isLmsLockout
-                      ? ed?.userEmail || e?.userEmail || ''
-                      : isAccountChanged
-                        ? pickStr(
-                            accountCtx?.performedBy?.email,
-                            e?.actorEmail,
-                            ed?.actorEmail,
-                            ed?.performed_by?.email,
-                          )
-                        : isProfileAudit
-                          ? [
-                              dProfile.targetEmail && dProfile.targetName !== dProfile.targetEmail
-                                ? dProfile.targetEmail
-                                : '',
-                              isAdminProfileSource(dProfile.source) &&
-                              (dProfile.actorEmail || e?.actorEmail)
-                                ? `Updated by admin (${dProfile.actorEmail || e.actorEmail})`
-                                : 'Self-service (teacher / faculty)',
-                            ]
-                              .filter(Boolean)
-                              .join(' · ')
-                          : pickStr(ed?.userEmail, e?.actorEmailPlain, e?.userEmail?.includes('(') ? e.userEmail : '')
-                    const rbacCtx = isAccountChanged ? null : resolveAuditActorContext(e)
-                    const rbacLine = rbacCtx ? formatRbacCodeLine(rbacCtx) : ''
+                    const { displayName, displayEmail } = resolveAuditUserDisplay(e, {
+                      isSecurityAlert,
+                      isLmsLockout,
+                      isAccountChanged,
+                      isProfileAudit,
+                      accountCtx,
+                      dProfile,
+                    })
+                    const isLmsLoginFailed = isAuditLoginFailedEvent(e)
+                    const isSuspiciousLogin =
+                      isLmsLoginFailed && !isLmsLockout && Boolean(ed?.suspiciousLoginDetected)
                     const eventSub = isLmsLockout
                       ? [
                           ed?.reason,
                           ed?.attempts != null ? `${ed.attempts} failed sign-in attempts` : null,
-                          ed?.identifier ? `Login: ${ed.identifier}` : null,
+                          ed?.loginId || ed?.identifier ? `Login ID: ${ed.loginId || ed.identifier}` : null,
+                          ed?.username ? `Username: ${ed.username}` : null,
+                          ed?.targetUserId ? `User ID: ${ed.targetUserId}` : null,
+                          ed?.accountType ? `Account: ${ed.accountType}` : null,
+                          loginSecurityPortalLabel(ed) || null,
                           ed?.lockedUntil ? `Locked until ${formatAuditTime(ed.lockedUntil)}` : null,
                         ]
                           .filter(Boolean)
                           .join(' · ')
+                      : isLmsLoginFailed
+                        ? unifiedDetails(e)
                       : isAccountChanged
                         ? targetDisplayName
                           ? `Profile updated for ${targetDisplayName}`
                           : 'Profile updated'
                         : isProfileAudit
                           ? 'Audited for compliance'
-                          : ed?.userName && eventTitle
-                            ? `${eventTitle} for ${ed.userName}`
-                            : ed?.userEmail
-                              ? `${eventTitle} for ${ed.userEmail}`
-                              : ''
+                          : isSessionAuditEvent(e)
+                            ? formatDescription(
+                                String(e?.eventType || ed?.eventType || 'session_created'),
+                                ed?.description,
+                                auditEventMetadata(e),
+                              )
+                            : ed?.userName && eventTitle
+                              ? `${eventTitle} for ${ed.userName}`
+                              : ed?.userEmail
+                                ? `${eventTitle} for ${ed.userEmail}`
+                                : ''
+                    const teacherSub = teacherEventSubline(e)
+                    const displayEventSub = teacherSub || eventSub
                     return (
                       <tr
                         key={auditEventReactKey(e, idx)}
-                        className={`group hover:bg-neutral-50 ${isProfileAudit || isAccountChanged ? 'bg-amber-50/70 ring-1 ring-inset ring-amber-200/90' : ''}`}
+                        className={`group hover:bg-neutral-50 ${resolveAuditRowHighlightClass(e)}`}
                       >
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2 font-semibold text-neutral-900">
@@ -1053,29 +1274,34 @@ export default function MonitoringRecords() {
                               <AuditEventGlyph e={e} />
                             </span>
                             <span>{eventTitle || '—'}</span>
+                            {isLmsLockout ? (
+                              <span className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-red-800">
+                                Locked
+                              </span>
+                            ) : isSuspiciousLogin ? (
+                              <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-800">
+                                Suspicious
+                              </span>
+                            ) : null}
                           </div>
-                          {eventSub ? <div className="text-xs font-medium text-neutral-500">{eventSub}</div> : null}
-                          {isAccountChanged && changedFields.length ? (
+                          {displayEventSub ? (
+                            <div className="text-xs font-medium text-neutral-500">{displayEventSub}</div>
+                          ) : null}
+                          {isAuditUpdate && changedFields.length ? (
                             <>
                               <div className="mt-1.5 text-xs font-medium text-neutral-500">Fields changed</div>
-                              <UpdatedFieldsBadges
-                                fields={changedFields}
-                                variant={isStudentProfileUpdateEvent(e) ? 'student' : 'neutral'}
-                                showFieldLabel
-                              />
+                              <UpdatedFieldsBadges fields={changedFields} variant={fieldsBadgeVariant} showFieldLabel />
                             </>
                           ) : isProfileAudit ? (
-                            <UpdatedFieldsBadges
-                              fields={changedFields}
-                              variant={isStudentProfileUpdateEvent(e) ? 'student' : 'neutral'}
-                            />
+                            <UpdatedFieldsBadges fields={changedFields} variant={fieldsBadgeVariant} />
                           ) : null}
                         </td>
+                        <td className="px-4 py-3 font-medium text-neutral-700">{auditRowModuleLabel(e)}</td>
+                        <td className="px-4 py-3 font-medium text-neutral-700">{auditRowAffectedLabel(e)}</td>
                         <td className="px-4 py-3">
-                          <div className="font-semibold text-neutral-900">{by || '—'}</div>
-                          {bySub ? <div className="text-xs font-medium text-neutral-500">{bySub}</div> : null}
-                          {rbacLine ? (
-                            <div className="mt-1 text-xs font-semibold tracking-tight text-neutral-700">{rbacLine}</div>
+                          <div className="font-semibold text-neutral-900">{displayName || '—'}</div>
+                          {displayEmail ? (
+                            <div className="text-xs font-medium text-neutral-500">{displayEmail}</div>
                           ) : null}
                         </td>
                         <td className="px-4 py-3 whitespace-nowrap">
@@ -1166,34 +1392,42 @@ export default function MonitoringRecords() {
             const ed = raw?.eventData || e?.detailsObj || {}
             const t = pickTime(e)
             const eventTitle = unifiedActivityLabel(e)
-            const isLmsLockoutModal = e?.source === 'lms' && String(e?.activityType) === 'AUTH_LOCKOUT'
+            const isLmsLockoutModal = isAuditLockoutEvent(e)
             const isAccountChangedModal = isUserAccountChangedEvent(e)
             const accountModalCtx = isAccountChangedModal ? accountChangeContext(e) : null
             const isProfileModal = isProfileUpdateEvent(e) && !isAccountChangedModal
             const dModal = isProfileModal ? profileEventDetails(e) : {}
-            const modalChangedFields = isAccountChangedModal
-              ? accountModalCtx?.changedFields || []
-              : (Array.isArray(e?.updatedFields) && e.updatedFields.length
-                  ? e.updatedFields
-                  : readUpdatedFields(dModal)) || []
+            const modalChangedFields = resolveAuditChangedFields(e, {
+              isAccountChanged: isAccountChangedModal,
+              accountCtx: accountModalCtx,
+              isProfileAudit: isProfileModal,
+              dProfile: dModal,
+            })
             const modalTargetName =
               accountModalCtx?.targetUser?.name || accountModalCtx?.targetUser?.email || ''
-            const by = isLmsLockoutModal
-              ? ed?.userName || ed?.identifier || (e?.userEmail || '').split(' (')[0] || e?.userEmail || '—'
-              : isAccountChangedModal
-                ? pickStr(accountModalCtx?.performedBy?.name, e?.actorName, ed?.actorName) || '—'
-                : isProfileModal
-                  ? dModal.targetName || dModal.targetEmail || (e?.userEmail || '').split(' (')[0] || e?.userEmail || '—'
-                  : pickStr(ed?.userName, e?.actorNamePlain, (e?.userEmail || '').split(' (')[0], e?.userEmail) || '—'
-            const rbacModal = isAccountChangedModal ? null : resolveAuditActorContext(e)
+            const { displayName: modalDisplayName, displayEmail: modalDisplayEmail } = resolveAuditUserDisplay(e, {
+              isLmsLockout: isLmsLockoutModal,
+              isAccountChanged: isAccountChangedModal,
+              isProfileAudit: isProfileModal,
+              accountCtx: accountModalCtx,
+              dProfile: dModal,
+            })
+            const isSessionModal = isSessionAuditEvent(e)
+            const isLmsLoginFailedModal = isAuditLoginFailedEvent(e)
             const subtitle = isLmsLockoutModal
               ? [
                   ed?.reason,
                   ed?.attempts != null ? `${ed.attempts} failed attempts` : null,
-                  ed?.identifier ? `Login: ${ed.identifier}` : null,
+                  ed?.loginId || ed?.identifier ? `Login ID: ${ed.loginId || ed.identifier}` : null,
+                  ed?.username ? `Username: ${ed.username}` : null,
+                  ed?.targetUserId ? `User ID: ${ed.targetUserId}` : null,
+                  ed?.accountType ? `Account: ${ed.accountType}` : null,
+                  loginSecurityPortalLabel(ed) || null,
                 ]
                   .filter(Boolean)
                   .join(' · ')
+              : isLmsLoginFailedModal
+                ? unifiedDetails(e)
               : isAccountChangedModal
                 ? modalTargetName
                   ? `Profile updated for ${modalTargetName}`
@@ -1202,11 +1436,17 @@ export default function MonitoringRecords() {
                   ? isAdminProfileSource(dModal.source)
                     ? `Updated by admin (${dModal.actorEmail || e?.actorEmail || 'unknown'})`
                     : 'Self-service account update'
-                  : ed?.userName
-                    ? `Session created for ${ed.userName}`
-                    : ed?.userEmail
-                      ? `Session created for ${ed.userEmail}`
-                      : ''
+                  : isSessionModal
+                    ? formatDescription(
+                        String(e?.eventType || ed?.eventType || 'session_created'),
+                        ed?.description,
+                        auditEventMetadata(e),
+                      )
+                    : ed?.userName
+                      ? `Session created for ${ed.userName}`
+                      : ed?.userEmail
+                        ? `Session created for ${ed.userEmail}`
+                        : ''
             const eventDataJson = formatAuditModalEventDataJson(e, eventTitle)
 
             return (
@@ -1238,12 +1478,6 @@ export default function MonitoringRecords() {
                       <div className="min-w-0">
                         <div className="text-2xl font-bold leading-tight">{eventTitle || 'Event Details'}</div>
                         {subtitle ? <div className="mt-1 text-sm font-semibold text-white/60">{subtitle}</div> : null}
-                        {rbacModal && formatRbacCodeLine(rbacModal) ? (
-                          <div className="mt-2 text-sm font-semibold text-white/75">{formatRbacCodeLine(rbacModal)}</div>
-                        ) : null}
-                        {isAccountChangedModal && accountModalCtx?.performedBy?.email ? (
-                          <div className="mt-1 text-sm font-semibold text-white/60">{accountModalCtx.performedBy.email}</div>
-                        ) : null}
                       </div>
                     </div>
                   </div>
@@ -1260,7 +1494,12 @@ export default function MonitoringRecords() {
                         </div>
                         <div className="flex items-center justify-between gap-4 px-5 py-4">
                           <div className="text-sm font-semibold text-white/60">User</div>
-                          <div className="text-sm font-bold text-white">{by}</div>
+                          <div className="text-right">
+                            <div className="text-sm font-bold text-white">{modalDisplayName || '—'}</div>
+                            {modalDisplayEmail ? (
+                              <div className="text-sm font-semibold text-white/60">{modalDisplayEmail}</div>
+                            ) : null}
+                          </div>
                         </div>
                         {isProfileModal || isAccountChangedModal ? (
                           <div className="px-5 py-4">
@@ -1276,6 +1515,15 @@ export default function MonitoringRecords() {
                       </div>
                     </div>
 
+                    {isTeacherStructuredAuditEvent(e) ? (
+                      <div className="mt-6">
+                        <div className="text-xs font-bold uppercase tracking-wider text-white/50">Change details</div>
+                        <div className="mt-3 overflow-hidden rounded-xl border border-white/10 bg-[#0f0f10] p-5">
+                          <TeacherAuditDetailPanel event={e} variant="modal" />
+                        </div>
+                      </div>
+                    ) : null}
+
                     <div className="mt-6">
                       <div className="text-xs font-bold uppercase tracking-wider text-white/50">Event Data</div>
                       <pre className="mt-3 max-h-[360px] overflow-auto rounded-xl border border-white/10 bg-[#0f0f10] p-5 text-xs leading-relaxed text-white/90">
@@ -1289,6 +1537,22 @@ export default function MonitoringRecords() {
           })() : null}
         </div>
       </section>
+
+      <ClearAuditLogsModal
+        open={clearModalOpen}
+        totalInList={unifiedTotal}
+        onClose={() => setClearModalOpen(false)}
+        onCleared={(result) => {
+          const deleted = Number(result?.deleted ?? 0)
+          notifySuccess(
+            result?.message ||
+              `${deleted} log ${deleted === 1 ? 'entry' : 'entries'} deleted successfully.`,
+          )
+          dispatchAuditLogsRefresh({ reason: 'audit_logs_cleared' })
+          setUnifiedPage(0)
+          setUnifiedPageInput('1')
+        }}
+      />
     </div>
   )
 }

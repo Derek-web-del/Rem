@@ -1,10 +1,14 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
+import {
+  PHOTO_MAX_BYTES,
+  PHOTO_MAX_MSG,
+} from './uploadLimitsConfig.js'
 
 export const ANNOUNCEMENT_UPLOAD_REL = '/uploads/announcements'
 const ALLOWED_MIME = new Set(['image/png', 'image/jpeg', 'image/jpg'])
-const MAX_BYTES = 2 * 1024 * 1024
+const MAX_BYTES = PHOTO_MAX_BYTES
 
 export function getAnnouncementsUploadDir() {
   return path.join(process.cwd(), 'public', 'uploads', 'announcements')
@@ -32,7 +36,7 @@ function extFromMime(mime) {
 
 export function validateAnnouncementImageBuffer(buffer, mimeType) {
   if (!buffer?.length) return 'Image is required.'
-  if (buffer.length > MAX_BYTES) return 'Image must be less than 2MB.'
+  if (buffer.length > MAX_BYTES) return PHOTO_MAX_MSG
   const mime = String(mimeType || '').toLowerCase()
   if (!ALLOWED_MIME.has(mime)) return 'Only PNG and JPG images are allowed.'
   return ''

@@ -8,6 +8,9 @@ import {
 } from 'better-auth/client/plugins'
 
 /**
+ * Canonical auth for LenLearn: Better Auth httpOnly session cookies (not Bearer JWT on internal APIs).
+ * See docs/AUTH.md. JWT via authClient.token() is auxiliary only (jwt-bearer.js).
+ *
  * Infra `sentinelClient` runs fingerprint + optional KV identify before **every** auth fetch
  * (including `/two-factor/verify-otp`), which can add seconds on slow networks and makes OTP feel stuck.
  * Enable explicitly in dev with `VITE_BETTER_AUTH_INFRA_CLIENT=1` if you need Sentinel challenges locally.

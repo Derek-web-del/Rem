@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import BackButton from './components/BackButton.jsx'
 import { STRONG_PASSWORD_REGEX, passwordPolicyHint } from './lib/auth-client.js'
+import { PROFILE_PHOTO_MAX_BYTES, PROFILE_PHOTO_MAX_MSG, PHOTO_UPLOAD_LABEL } from './lib/uploadLimits.js'
 
 function initials(name) {
   const parts = String(name || '')
@@ -104,8 +105,8 @@ export default function StudentDetails({
   savingLabel = 'Save Changes',
 }) {
   const fileInputRef = useRef(null)
-  /** Edit-mode baselines so unchanged password / app password are omitted from the save payload. */
-  const initialSecretsRef = useRef({ pw: '', appNorm: '' })
+  /** Edit-mode baseline so unchanged password is omitted from the save payload. */
+  const initialSecretsRef = useRef({ pw: '' })
   const [error, setError] = useState('')
   const [isSaving, setIsSaving] = useState(false)
   const [form, setForm] = useState(() => ({
@@ -126,14 +127,11 @@ export default function StudentDetails({
     semester: initial.semester || '1',
     sectionId: initial.sectionId || '',
     password: mode === 'edit' ? String(initial.password || '').trim() : initial.password || generateStrongPassword(),
-    appPassword: mode === 'edit' ? String(initial.appPassword || '').trim() : String(initial.appPassword || '').trim(),
   }))
 
   useEffect(() => {
-    const normApp = (s) => String(s || '').replace(/\s/g, '').trim()
     initialSecretsRef.current = {
       pw: mode === 'edit' ? String(initial.password || '').trim() : '',
-      appNorm: mode === 'edit' ? normApp(initial.appPassword) : '',
     }
     setForm({
       photoDataUrl: initial.photoDataUrl || '',
@@ -153,7 +151,6 @@ export default function StudentDetails({
       semester: initial.semester || '1',
       sectionId: initial.sectionId || '',
       password: mode === 'edit' ? String(initial.password || '').trim() : initial.password || generateStrongPassword(),
-      appPassword: mode === 'edit' ? String(initial.appPassword || '').trim() : String(initial.appPassword || '').trim(),
     })
     setError('')
   }, [initial, mode])
@@ -168,8 +165,8 @@ export default function StudentDetails({
       setError('Only PNG/JPG images are allowed.')
       return
     }
-    if (file.size > 2 * 1024 * 1024) {
-      setError('Image must be less than 2MB.')
+    if (file.size > PROFILE_PHOTO_MAX_BYTES) {
+      setError(PROFILE_PHOTO_MAX_MSG)
       return
     }
     const dataUrl = await readFileAsDataUrl(file)
@@ -190,7 +187,7 @@ export default function StudentDetails({
       ['enrollmentNo', 'Student Enrollment No'],
       ['rollNo', 'Student Roll No'],
       ['grade', 'Student Grade Level'],
-      ['semester', 'Student Quarter'],
+      ['semester', 'Student Semester'],
       ['sectionId', 'Student Section'],
     ]
     if (mode !== 'edit') {
@@ -212,9 +209,6 @@ export default function StudentDetails({
     if (mode !== 'edit' || pwTrim) {
       if (!STRONG_PASSWORD_REGEX.test(pwTrim)) return passwordPolicyHint()
     }
-    if (mode !== 'edit' && !String(form.appPassword || '').replace(/\s/g, '').trim()) {
-      return 'Please enter student app password (Gmail).'
-    }
     return ''
   }
 
@@ -229,7 +223,6 @@ export default function StudentDetails({
     const section = sections.find((s) => s.id === form.sectionId)
     setIsSaving(true)
     try {
-      const appPwNormalized = String(form.appPassword || '').replace(/\s/g, '').trim()
       const pwTrim = String(form.password || '').trim()
       const payload = {
         ...form,
@@ -243,14 +236,8 @@ export default function StudentDetails({
       if (mode === 'edit') {
         if (pwTrim && pwTrim !== initialSecretsRef.current.pw) payload.password = pwTrim
         else delete payload.password
-        if (appPwNormalized && appPwNormalized !== initialSecretsRef.current.appNorm) {
-          payload.appPassword = appPwNormalized
-        } else {
-          delete payload.appPassword
-        }
       } else {
         payload.password = pwTrim
-        payload.appPassword = appPwNormalized
       }
       const res = await onSave(payload)
       if (res?.error) {
@@ -292,7 +279,7 @@ export default function StudentDetails({
             </div>
             <div>
               <div className="text-sm font-semibold text-neutral-900">Student Photo</div>
-              <div className="text-xs text-neutral-500">Only allowed PNG or JPG less than 2MB</div>
+              <div className="text-xs text-neutral-500">{PHOTO_UPLOAD_LABEL}</div>
             </div>
           </div>
 
@@ -341,6 +328,7 @@ export default function StudentDetails({
               type="email"
               value={form.email}
               onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))}
+              helper="Students can use their school GSuite email (@glendaleschool.edu). Verification codes will be sent here."
             />
             <TextField
               label="Student Contact Number"
@@ -403,7 +391,7 @@ export default function StudentDetails({
             </SelectField>
 
             <TextField
-              label="Student Quarter"
+              label="Student Semester"
               required
               value={form.semester}
               onChange={(e) => setForm((p) => ({ ...p, semester: e.target.value }))}
@@ -494,29 +482,6 @@ export default function StudentDetails({
                   <li className={checks.special ? 'text-green-700' : ''}>✓ At least one special character</li>
                 </ul>
               ) : null}
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-neutral-200 bg-white p-4">
-            <div className="flex items-start justify-between gap-2">
-              <div>
-                <div className="text-sm font-semibold text-neutral-900">Student App Password (Gmail)</div>
-                <div className="mt-1 text-xs text-neutral-500">
-                  {mode === 'edit'
-                    ? 'Optional when editing: leave blank to keep the stored app password. Enter a new value only if you are rotating it.'
-                    : 'Required. Store the Gmail App Password for email integration/OTP. This is not the login password.'}
-                </div>
-              </div>
-            </div>
-            <div className="mt-2">
-              <input
-                type="text"
-                className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm"
-                value={form.appPassword}
-                onChange={(e) => setForm((p) => ({ ...p, appPassword: e.target.value }))}
-                placeholder={mode === 'edit' ? 'Leave blank to keep current' : '16-character Gmail App Password'}
-                required={mode !== 'edit'}
-              />
             </div>
           </div>
 

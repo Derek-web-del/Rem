@@ -3,6 +3,7 @@ import BackButton from './components/BackButton.jsx'
 import SubjectDetails from './SubjectDetails.jsx'
 import SubjectProfile from './SubjectProfile.jsx'
 import { apiUrl } from './lib/lmsStateStorage.js'
+import { formatSemesterLabel, SEMESTER_LABELS } from './lib/quizQuestionTypes.js'
 import { subjectImageDisplaySrc } from './lib/subjectImages.js'
 
 function SearchIcon({ className }) {
@@ -32,9 +33,9 @@ export default function SubjectsPage({
   onBack,
 }) {
   const [filterGrade, setFilterGrade] = useState('')
-  const [filterQuarter, setFilterQuarter] = useState('')
+  const [filterSemester, setFilterSemester] = useState('')
   const [appliedGrade, setAppliedGrade] = useState('')
-  const [appliedQuarter, setAppliedQuarter] = useState('')
+  const [appliedSemester, setAppliedSemester] = useState('')
   const [query, setQuery] = useState('')
 
   const [screen, setScreen] = useState('list') // list | details | profile
@@ -46,14 +47,14 @@ export default function SubjectsPage({
 
   const [addPickerOpen, setAddPickerOpen] = useState(false)
   const [addPickerGrade, setAddPickerGrade] = useState('')
-  const [addPickerQuarter, setAddPickerQuarter] = useState('1')
+  const [addPickerSemester, setAddPickerSemester] = useState('1')
 
   const activeSubject = useMemo(() => subjects.find((s) => s.id === activeId) || null, [subjects, activeId])
 
   const filtered = useMemo(() => {
     return subjects
       .filter((s) => (appliedGrade ? s.grade === appliedGrade : true))
-      .filter((s) => (appliedQuarter ? String(s.quarter) === String(appliedQuarter) : true))
+      .filter((s) => (appliedSemester ? String(s.semester) === String(appliedSemester) : true))
       .filter((s) => {
         const q = query.trim().toLowerCase()
         if (!q) return true
@@ -63,11 +64,11 @@ export default function SubjectsPage({
           String(s.grade || '').toLowerCase().includes(q)
         )
       })
-  }, [subjects, appliedGrade, appliedQuarter, query])
+  }, [subjects, appliedGrade, appliedSemester, query])
 
   function openAdd() {
     setAddPickerGrade(appliedGrade || '')
-    setAddPickerQuarter(appliedQuarter || '1')
+    setAddPickerSemester(appliedSemester || '1')
     setAddPickerOpen(true)
   }
 
@@ -97,7 +98,7 @@ export default function SubjectsPage({
             subjectCode: '',
             subjectName: '',
             grade: addPickerGrade || '',
-            quarter: Number(addPickerQuarter || 1),
+            semester: Number(addPickerSemester || 1),
             semCode: '',
             assignedFacultyId: '',
             syllabusFileName: '',
@@ -163,12 +164,12 @@ export default function SubjectsPage({
           </label>
 
           <label className="text-sm font-medium text-neutral-700">
-            Quarter:
-            <select className="ml-2 rounded-lg border px-3 py-2 text-sm" value={filterQuarter} onChange={(e) => setFilterQuarter(e.target.value)}>
-              <option value="">All Quarters</option>
-              {[1, 2, 3, 4].map((q) => (
+            Semester:
+            <select className="ml-2 rounded-lg border px-3 py-2 text-sm" value={filterSemester} onChange={(e) => setFilterSemester(e.target.value)}>
+              <option value="">All Semesters</option>
+              {[1, 2, 3].map((q) => (
                 <option key={q} value={String(q)}>
-                  {q}
+                  {SEMESTER_LABELS[q]}
                 </option>
               ))}
             </select>
@@ -179,7 +180,7 @@ export default function SubjectsPage({
             className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:brightness-110"
             onClick={() => {
               setAppliedGrade(filterGrade)
-              setAppliedQuarter(filterQuarter)
+              setAppliedSemester(filterSemester)
               setQuery('')
             }}
           >
@@ -215,7 +216,7 @@ export default function SubjectsPage({
                   <th className="px-4 py-3 text-left">SUBJECT NAME</th>
                   <th className="px-4 py-3 text-left">SUBJECT CODE</th>
                   <th className="px-4 py-3 text-left">GRADE LEVEL</th>
-                  <th className="px-4 py-3 text-left">QUARTER</th>
+                  <th className="px-4 py-3 text-left">SEMESTER</th>
                   <th className="px-4 py-3 text-right">ACTION</th>
                 </tr>
               </thead>
@@ -239,7 +240,7 @@ export default function SubjectsPage({
                       <td className="px-4 py-3 font-medium text-neutral-700">{s.subjectName}</td>
                       <td className="px-4 py-3 font-medium text-neutral-700">{s.subjectCode}</td>
                       <td className="px-4 py-3 font-medium text-neutral-700">{s.grade}</td>
-                      <td className="px-4 py-3 font-medium text-neutral-700">{s.quarter}</td>
+                      <td className="px-4 py-3 font-medium text-neutral-700">{formatSemesterLabel(s.semester) || '—'}</td>
                       <td className="px-4 py-3 text-right">
                         <div className="inline-flex items-center gap-2">
                           <button type="button" className="rounded bg-amber-400 px-3 py-1.5 text-xs font-semibold text-neutral-900 hover:brightness-110" onClick={() => openEdit(s)}>
@@ -267,7 +268,7 @@ export default function SubjectsPage({
           <div className="w-full max-w-lg rounded-xl bg-white p-5 shadow-2xl">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <h3 className="text-lg font-bold text-neutral-900">Select Grade Level and Quarter</h3>
+                <h3 className="text-lg font-bold text-neutral-900">Select Grade Level and Semester</h3>
               </div>
               <button type="button" className="rounded bg-neutral-200 px-3 py-1.5 text-sm font-semibold text-neutral-700 hover:bg-neutral-300" onClick={() => setAddPickerOpen(false)}>
                 ✕
@@ -287,11 +288,11 @@ export default function SubjectsPage({
                 </select>
               </label>
               <label className="text-sm font-medium text-neutral-700">
-                Quarter:
-                <select className="mt-1 w-full rounded-lg border px-3 py-2 text-sm" value={addPickerQuarter} onChange={(e) => setAddPickerQuarter(e.target.value)}>
-                  {[1, 2, 3, 4].map((q) => (
+                Semester:
+                <select className="mt-1 w-full rounded-lg border px-3 py-2 text-sm" value={addPickerSemester} onChange={(e) => setAddPickerSemester(e.target.value)}>
+                  {[1, 2, 3].map((q) => (
                     <option key={q} value={String(q)}>
-                      {q}
+                      {SEMESTER_LABELS[q]}
                     </option>
                   ))}
                 </select>

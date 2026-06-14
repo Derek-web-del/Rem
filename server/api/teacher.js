@@ -1,9 +1,21 @@
 import { getPgPool, isPgConfigured } from '../pgPool.js'
+import {
+  decryptStudentPiiFields,
+  decryptStudentRows,
+  studentDisplayName,
+} from '../lib/studentPiiCrypto.js'
+import { ensureFacultyTermsColumns, facultyTermsAccepted } from '../lib/facultyTerms.js'
+import { isTermsExemptRequest, sendTermsNotAccepted } from '../lib/termsGate.js'
+import { customActivityLogger } from '../services/CustomActivityLogger.js'
 import fs from 'node:fs'
 import path from 'node:path'
 import { sendSafeServerError } from '../lib/safeApiError.js'
 import { logUnauthorizedAccessFromRequest } from '../lib/security.js'
 import { listPublishedCurriculumGuides } from '../lib/curriculumGuidesDb.js'
+import {
+  enrichSubjectDetailsFields,
+  resolveTeacherSubjectSectionName,
+} from '../lib/subjectDetailsEnrich.js'
 import {
   deleteStudyMaterialFileByUrl,
   guessMaterialFileType,
@@ -15,6 +27,7 @@ import {
   validateStudyMaterialUploadFile,
   validateDocumentStudyMaterialUploadFile,
   validateEditDocumentStudyMaterialUploadFile,
+  validateSubjectMaterialEditUploadFile,
 } from '../lib/studyMaterialStorage.js'
 import {
   deleteSyllabusFileByUrl,
@@ -49,11 +62,27 @@ import {
   fetchSubmissionsForAssignment,
   mapAssignmentRow,
   mapSubmissionRow,
+  refreshSubmissionStudentNames,
   resolveSubjectIdForAssignment,
   seedSubmissionsForGradeLevel,
 } from '../lib/assignmentsDb.js'
 import { mountTeacherActivitiesRoutes } from './teacherActivitiesRoutes.js'
-import { parseRequiredQuarter } from '../lib/quarterValidation.js'
+import { parseRequiredSemester } from '../lib/semesterValidation.js'
+import {
+  diffRecords,
+  logTeacherAuditEvent,
+  TEACHER_AUDIT_ACTIONS,
+  TEACHER_AUDIT_MODULES,
+} from '../lib/teacherAuditLog.js'
+import {
+  announcementAuditSnapshot,
+  assignmentAuditSnapshot,
+  buildTargetLabel,
+  materialAuditSnapshot,
+} from '../lib/teacherAuditSnapshots.js'
+import { isDeadlinePassed } from '../lib/studentWorkPortal.js'
+import { deleteSubmissionFileByUrl } from '../lib/submissionStorage.js'
+import { validateGradeComponentForWork } from '../lib/subjectGradeCriteriaDb.js'
 
 let facultyArchivedColumnMemo = null
 
@@ -112,6 +141,52 @@ function gradeOrdinalForSort(raw) {
   return Number.POSITIVE_INFINITY
 }
 
+let sectionsArchiveColumnsMemo = null
+async function sectionsHasArchiveColumns(pool) {
+  if (sectionsArchiveColumnsMemo != null) return sectionsArchiveColumnsMemo
+  try {
+    const { rows } = await pool.query(
+      `
+        SELECT column_name FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'sections'
+          AND column_name IN ('status', 'deleted_at')
+      `,
+    )
+    const cols = new Set((rows || []).map((r) => r.column_name))
+    sectionsArchiveColumnsMemo = {
+      status: cols.has('status'),
+      deleted_at: cols.has('deleted_at'),
+    }
+    return sectionsArchiveColumnsMemo
+  } catch {
+    sectionsArchiveColumnsMemo = { status: false, deleted_at: false }
+    return sectionsArchiveColumnsMemo
+  }
+}
+
+async function sectionsActiveFilter(pool, alias = 's') {
+  const cols = await sectionsHasArchiveColumns(pool)
+  const parts = []
+  if (cols.deleted_at) parts.push(`${alias}.deleted_at IS NULL`)
+  if (cols.status) parts.push(`(${alias}.status IS NULL OR ${alias}.status != 'archived')`)
+  return parts.length ? ` AND ${parts.join(' AND ')} ` : ''
+}
+
+async function isSectionActiveById(pool, sectionId) {
+  const id = Number(sectionId)
+  if (!Number.isFinite(id) || id <= 0) return false
+  const filter = await sectionsActiveFilter(pool, 's')
+  try {
+    const { rows } = await pool.query(
+      `SELECT 1 FROM sections s WHERE s.id = $1 ${filter} LIMIT 1`,
+      [id],
+    )
+    return rows?.length > 0
+  } catch {
+    return false
+  }
+}
+
 function normalizeAdvisoryDraft(obj) {
   if (!obj || typeof obj !== 'object') return null
   const pg = Number(obj.postgresSectionId ?? obj.section_id ?? obj.id)
@@ -132,12 +207,14 @@ function normalizeAdvisoryDraft(obj) {
 async function fetchAdvisoryFromJunction(pool, facultyNumericId) {
   if (!Number.isFinite(facultyNumericId) || facultyNumericId <= 0) return []
   try {
+    const activeFilter = await sectionsActiveFilter(pool, 's')
     const { rows } = await pool.query(
       `
       SELECT s.id AS id, s.section_name, s.grade_level
       FROM sections s
       INNER JOIN faculty_sections fs ON fs.section_id = s.id
       WHERE fs.faculty_id = $1
+      ${activeFilter}
       ORDER BY s.grade_level ASC NULLS LAST, s.section_name ASC
       `,
       [facultyNumericId],
@@ -201,12 +278,14 @@ async function countStudentsBySectionIds(pool, sectionIds) {
 
 async function fetchAdvisoryFromJunctionByText(pool, facultyIdStr) {
   try {
+    const activeFilter = await sectionsActiveFilter(pool, 's')
     const { rows } = await pool.query(
       `
       SELECT s.id AS id, s.section_name, s.grade_level
       FROM sections s
       INNER JOIN faculty_sections fs ON fs.section_id = s.id
       WHERE fs.faculty_id::text = $1
+      ${activeFilter}
       ORDER BY s.grade_level ASC NULLS LAST, s.section_name ASC
       `,
       [facultyIdStr],
@@ -252,7 +331,12 @@ async function collectAdvisorySectionDrafts(pool, facultyRow) {
   if (!drafts.length) {
     for (const item of parseAdvisorySectionsJson(facultyRow)) {
       const n = normalizeAdvisoryDraft(item)
-      if (n) drafts.push(n)
+      if (!n) continue
+      if (n.postgresSectionId != null) {
+        const active = await isSectionActiveById(pool, n.postgresSectionId)
+        if (!active) continue
+      }
+      drafts.push(n)
     }
   }
 
@@ -365,7 +449,7 @@ async function fetchStudentsRowsForSection(pool, sectionPgId) {
       )?.rows
   }
 
-  return Array.isArray(rows) ? rows : []
+  return Array.isArray(rows) ? decryptStudentRows(rows) : []
 }
 
 function pickStudentText(row, ...keys) {
@@ -398,15 +482,18 @@ function studentRowForTeacherUi(row, sectionMeta = {}) {
   const roll_no = pickStudentText(row, 'roll_no', 'rollNo') || undefined
   const contact_no =
     pickStudentText(row, 'contact_no', 'contact_number', 'contactNumber', 'contactNo') || undefined
-  const quarter = pickStudentText(row, 'quarter') || undefined
+  const semester = pickStudentText(row, 'semester') || undefined
   const sectionName =
     String(sectionMeta.section_name ?? sectionMeta.name ?? row.section_name ?? '').trim() || undefined
   const fullName = [row.first_name, row.middle_name, row.last_name]
     .map((p) => String(p ?? '').trim())
     .filter(Boolean)
     .join(' ')
-  const date_of_birth = pickStudentText(row, 'date_of_birth') || undefined
-  const apiFullName = pickStudentText(row, 'full_name', 'fullName') || fullName
+  const staleFullName = pickStudentText(row, 'full_name', 'fullName')
+  const safeFullName =
+    staleFullName && !staleFullName.includes('enc:v1:') ? staleFullName : ''
+  const apiFullName = studentDisplayName(row) || fullName || safeFullName || pickStudentText(row, 'name')
+  const date_of_birth = pickStudentText(row, 'dob', 'date_of_birth') || undefined
   return {
     id: idStr,
     first_name: String(row.first_name ?? '').trim(),
@@ -428,7 +515,7 @@ function studentRowForTeacherUi(row, sectionMeta = {}) {
       undefined,
     date_of_birth: date_of_birth || undefined,
     address: pickStudentText(row, 'address') || undefined,
-    quarter,
+    semester,
     section: sectionName,
     section_name: sectionName,
     gender: pickStudentText(row, 'gender') || null,
@@ -482,19 +569,15 @@ async function fetchStudentDetailForTeacher(pool, facultyRow, studentIdRaw) {
       st.first_name,
       st.middle_name,
       st.last_name,
-      trim(concat_ws(' ',
-        nullif(trim(st.first_name), ''),
-        nullif(trim(st.middle_name), ''),
-        nullif(trim(st.last_name), '')
-      )) AS full_name,
       st.enrollment_no,
       st.grade_level,
-      st.quarter,
+      st.semester,
       st.roll_no,
       st.email,
       st.contact_no,
       st.parent_contact,
-      TO_CHAR(st.dob, 'YYYY-MM-DD') AS date_of_birth,
+      st.dob,
+      st.dob AS date_of_birth,
       st.address,
       st.photo_url,
       st.section_id,
@@ -507,13 +590,13 @@ async function fetchStudentDetailForTeacher(pool, facultyRow, studentIdRaw) {
   sql += ' LIMIT 1'
 
   const { rows } = await pool.query(sql, [idText])
-  const row = rows?.[0]
+  const row = decryptStudentPiiFields(rows?.[0])
   if (!row) return null
 
   const mapped = studentRowForTeacherUi(row, { section_name: row.section_name })
   return {
     ...mapped,
-    date_of_birth: rawPgDateString(row.date_of_birth),
+    date_of_birth: rawPgDateString(pickStudentText(row, 'dob', 'date_of_birth')),
     section_id: row.section_id != null ? String(row.section_id) : undefined,
   }
 }
@@ -542,34 +625,25 @@ async function buildAdvisorySectionsPayloadWithStudents(pool, facultyRow) {
   if (sectionColSet.has('room_number')) sel.push(`s.room_number AS room_number`)
   else sel.push(`NULL::text AS room_number`)
 
+  const activeFilter = await sectionsActiveFilter(pool, 's')
   const out = []
   for (const d of drafts) {
     const pg = d.postgresSectionId
     if (!Number.isFinite(pg) || pg <= 0) {
-      out.push({
-        id: String(d.id),
-        name: d.name,
-        grade_level: d.grade_level,
-        school_year: null,
-        strand: null,
-        room_number: null,
-        total_students: 0,
-        students: [],
-      })
       continue
     }
 
     let sr = {}
     try {
       const { rows: srows } = await pool.query(
-        `SELECT ${sel.join(', ')} FROM sections s WHERE s.id = $1 LIMIT 1`,
+        `SELECT ${sel.join(', ')} FROM sections s WHERE s.id = $1 ${activeFilter} LIMIT 1`,
         [pg],
       )
       sr = srows?.[0] || {}
     } catch {
       try {
         const { rows: srows2 } = await pool.query(
-          `SELECT id, section_name, grade_level FROM sections WHERE id = $1 LIMIT 1`,
+          `SELECT id, section_name, grade_level FROM sections s WHERE s.id = $1 ${activeFilter} LIMIT 1`,
           [pg],
         )
         const r0 = srows2?.[0] || {}
@@ -578,6 +652,8 @@ async function buildAdvisorySectionsPayloadWithStudents(pool, facultyRow) {
         sr = {}
       }
     }
+
+    if (!sr?.id) continue
 
     const sectionName = String(sr.section_name ?? '').trim() || d.name
     const gradeLvl = String(sr.grade_level ?? '').trim() || d.grade_level
@@ -659,6 +735,17 @@ async function requireFacultyOrTeacherSession(req, res, auth) {
       })
       res.status(403).json({ error: 'FORBIDDEN', message: 'Access denied. Faculty only.' })
       return null
+    }
+    if (!isTermsExemptRequest(req)) {
+      const pool = getPgPool()
+      if (pool) {
+        await ensureFacultyTermsColumns(pool)
+        const facultyRow = await fetchFacultyRowForSession(pool, u)
+        if (facultyRow && !facultyTermsAccepted(facultyRow)) {
+          sendTermsNotAccepted(res, 'faculty portal')
+          return null
+        }
+      }
     }
     return session
   } catch (e) {
@@ -757,7 +844,7 @@ async function ensureSubjectMaterialColumns(pool) {
   try {
     await pool.query(`ALTER TABLE subject_materials ADD COLUMN IF NOT EXISTS unit_name VARCHAR(255)`)
     await pool.query(`ALTER TABLE subject_materials ADD COLUMN IF NOT EXISTS material_name VARCHAR(255)`)
-    await pool.query(`ALTER TABLE subject_materials ADD COLUMN IF NOT EXISTS subject_quarter VARCHAR(16)`)
+    await pool.query(`ALTER TABLE subject_materials ADD COLUMN IF NOT EXISTS subject_semester VARCHAR(16)`)
     await pool.query(`ALTER TABLE subject_materials ADD COLUMN IF NOT EXISTS subject_name VARCHAR(255)`)
     await pool.query(`ALTER TABLE subject_materials ADD COLUMN IF NOT EXISTS grade_level VARCHAR(128)`)
     await pool.query(`ALTER TABLE subject_materials ADD COLUMN IF NOT EXISTS file_path TEXT`)
@@ -784,7 +871,7 @@ async function ensureSubjectMaterialsTable(pool) {
         unit_no INT NOT NULL DEFAULT 1,
         unit_name VARCHAR(255),
         material_name VARCHAR(255),
-        subject_quarter VARCHAR(16),
+        subject_semester VARCHAR(16),
         subject_name VARCHAR(255),
         grade_level VARCHAR(128),
         file_path TEXT NOT NULL,
@@ -865,7 +952,7 @@ async function ensureStudyMaterialsTable(pool) {
         file_type VARCHAR(64),
         file_name VARCHAR(512),
         file_size BIGINT,
-        quarter VARCHAR(16),
+        semester VARCHAR(16),
         grade_level VARCHAR(128),
         subject VARCHAR(128),
         uploaded_by VARCHAR(64),
@@ -946,28 +1033,33 @@ function syllabusDisplayFileName(syllabusRaw, subjectCode) {
   return code ? `${code}.pdf` : 'syllabus.pdf'
 }
 
-function mapTeacherSubjectRow(row) {
+function mapTeacherSubjectRow(row, extras = {}) {
   if (!row) return null
   const syllabusRaw = String(row.syllabus_url ?? row.syllabus_pdf ?? '').trim()
   const code = String(row.subject_code ?? '').trim()
   const subjectName = String(row.subject_name ?? '').trim()
   const storedCover = String(row.cover_image_url ?? '').trim()
   const cover_image_url = storedCover || resolveSubjectImagePath(subjectName)
-  return {
+  const base = {
     id: row.id != null ? String(row.id) : '',
     subject_name: subjectName,
     subject_code: code,
     grade_level: String(row.grade_level ?? '').trim(),
-    quarter: row.quarter != null ? String(row.quarter).trim() : '',
+    semester: row.semester != null ? String(row.semester).trim() : '',
     cover_image_url,
     subject_photo: cover_image_url,
     faculty_name: String(row.faculty_name ?? '').trim(),
     assignedFacultyName: String(row.faculty_name ?? '').trim(),
+    faculty_code:
+      String(row.faculty_code ?? row.employee_id ?? '').trim() ||
+      String(extras.faculty_code ?? '').trim(),
     created_at: row.created_at ?? null,
     syllabus_url: syllabusRaw,
     syllabus_pdf: syllabusRaw,
     syllabus_file_name: syllabusDisplayFileName(syllabusRaw, code),
+    section_name: String(extras.section_name ?? '').trim() || '—',
   }
+  return enrichSubjectDetailsFields(base, extras)
 }
 
 function mapTeacherMaterialRow(row) {
@@ -989,7 +1081,7 @@ function mapTeacherMaterialRow(row) {
     file_type: String(row.file_type ?? '').trim() || 'application/pdf',
     file_size: row.file_size != null ? Number(row.file_size) : null,
     description: String(row.description ?? '').trim(),
-    quarter: String(row.quarter ?? row.subject_quarter ?? '').trim(),
+    semester: String(row.semester ?? row.subject_semester ?? '').trim(),
     created_at: row.created_at ?? null,
     is_admin_syllabus: Boolean(row.is_admin_syllabus),
     source_table: String(row.source_table ?? 'subject_materials').trim(),
@@ -1008,7 +1100,7 @@ const MATERIAL_SELECT_FIELDS = `
   ) AS material_name,
   file_path AS file_url,
   file_type,
-  subject_quarter AS quarter,
+  subject_semester AS semester,
   created_at,
   file_name,
   file_size,
@@ -1037,7 +1129,7 @@ const STUDY_MATERIAL_SELECT_FIELDS = `
   ) AS material_name,
   file_url,
   file_type,
-  quarter,
+  semester,
   created_at,
   file_name,
   file_size,
@@ -1163,7 +1255,7 @@ async function appendAdminSyllabusMaterial(pool, subjectId, out, seenUrls, pushM
       file_name: fileName,
       file_type: inferSyllabusFileType(syllabusRaw),
       file_size: null,
-      quarter: '',
+      semester: '',
       created_at: null,
       description: '',
       is_admin_syllabus: true,
@@ -1296,7 +1388,7 @@ async function fetchStudyMaterialById(pool, materialId) {
         m.file_type,
         m.file_name,
         m.file_size,
-        m.subject_quarter AS quarter,
+        m.subject_semester AS semester,
         m.created_at,
         COALESCE(NULLIF(TRIM(m.subject_name), ''), s.subject_name) AS subject_name,
         s.subject_code,
@@ -1346,7 +1438,7 @@ async function fetchStudyMaterialById(pool, materialId) {
         m.file_type,
         m.file_name,
         m.file_size,
-        m.quarter,
+        m.semester,
         m.created_at,
         COALESCE(NULLIF(TRIM(m.subject), ''), s.subject_name) AS subject_name,
         s.subject_code,
@@ -1393,18 +1485,18 @@ async function updateTeacherSubjectFields(pool, subjectId, facultyId, fields) {
   const fid = String(facultyId ?? '').trim()
   const subject_name = String(fields?.subject_name ?? '').trim()
   const grade_level = String(fields?.grade_level ?? fields?.gradeLevel ?? '').trim()
-  const quarter = String(fields?.quarter ?? '').trim()
-  if (!subject_name && !grade_level && !quarter) return
+  const semester = String(fields?.semester ?? '').trim()
+  if (!subject_name && !grade_level && !semester) return
   await pool.query(
     `
     UPDATE subjects
     SET
       subject_name = CASE WHEN $1 <> '' THEN $1 ELSE subject_name END,
       grade_level = CASE WHEN $2 <> '' THEN $2 ELSE grade_level END,
-      quarter = CASE WHEN $3 <> '' THEN $3 ELSE quarter END
+      semester = CASE WHEN $3 <> '' THEN $3 ELSE semester END
     WHERE id = $4 AND faculty_id::text = $5::text
     `,
-    [subject_name, grade_level, quarter, sid, fid],
+    [subject_name, grade_level, semester, sid, fid],
   )
 }
 
@@ -1429,7 +1521,7 @@ const TEACHER_SUBJECT_SELECT = `
   sub.subject_name,
   sub.subject_code,
   sub.grade_level,
-  sub.quarter,
+  sub.semester,
   sub.faculty_id,
   sub.subject_photo AS cover_image_url,
   sub.syllabus_pdf AS syllabus_url,
@@ -1442,6 +1534,7 @@ const TEACHER_SUBJECT_SELECT = `
     )), ''),
     NULLIF(trim(f.name), '')
   ) AS faculty_name,
+  COALESCE(NULLIF(trim(f.faculty_code), ''), NULLIF(trim(f.employee_id), '')) AS faculty_code,
   sub.created_at
 `
 
@@ -1763,7 +1856,8 @@ export function createTeacherApiRouter(express, auth) {
         res.status(404).json({ error: 'NOT_FOUND', message: 'Subject not found.' })
         return
       }
-      res.json(mapTeacherSubjectRow(row))
+      const section_name = await resolveTeacherSubjectSectionName(pool, facultyRow, row.grade_level)
+      res.json(mapTeacherSubjectRow(row, { section_name }))
     } catch (e) {
       sendSafeServerError(res, e, 'GET /api/teacher/subjects/:subjectId')
     }
@@ -1794,7 +1888,7 @@ export function createTeacherApiRouter(express, auth) {
       await updateTeacherSubjectFields(pool, subjectId, facultyRow.id, {
         subject_name: b.subject_name ?? b.subjectName,
         grade_level: b.grade_level ?? b.gradeLevel,
-        quarter: b.quarter,
+        semester: b.semester,
       })
       if (!file) {
         const { rows } = await pool.query(
@@ -1814,7 +1908,7 @@ export function createTeacherApiRouter(express, auth) {
         })
         return
       }
-      const fileErr = validateEditDocumentStudyMaterialUploadFile(file)
+      const fileErr = validateSyllabusUploadFile(file)
       if (fileErr) {
         res.status(400).json({ error: 'BAD_REQUEST', message: fileErr })
         return
@@ -1915,7 +2009,7 @@ export function createTeacherApiRouter(express, auth) {
       const unit_no = String(b.unit_no ?? b.unitNo ?? '1').trim() || '1'
       const unit_name = String(b.unit_name ?? b.unitName ?? '').trim()
       const material_name = String(b.material_name ?? b.materialName ?? unit_name).trim()
-      const quarter = String(b.quarter ?? '').trim()
+      const semester = String(b.semester ?? '').trim()
       const subject_name = String(b.subject_name ?? b.subjectName ?? '').trim()
       const grade_level = String(b.grade_level ?? b.gradeLevel ?? '').trim()
       if (!material_name) {
@@ -1939,13 +2033,13 @@ export function createTeacherApiRouter(express, auth) {
       await updateTeacherSubjectFields(pool, subjectId, facultyRow.id, {
         subject_name,
         grade_level,
-        quarter,
+        semester,
       })
       const { rows } = await pool.query(
         `
         INSERT INTO subject_materials (
           subject_id, unit_no, unit_name, material_name,
-          subject_quarter, subject_name, grade_level,
+          subject_semester, subject_name, grade_level,
           file_path, file_type, file_name, file_size, updated_at
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
         RETURNING
@@ -1957,7 +2051,7 @@ export function createTeacherApiRouter(express, auth) {
           file_type,
           file_name,
           file_size,
-          subject_quarter AS quarter,
+          subject_semester AS semester,
           created_at
         `,
         [
@@ -1965,7 +2059,7 @@ export function createTeacherApiRouter(express, auth) {
           Number.isFinite(unitNoInt) && unitNoInt > 0 ? unitNoInt : 1,
           unit_name || material_name,
           material_name || unit_name,
-          quarter || null,
+          semester || null,
           subject_name || null,
           grade_level || null,
           saved.file_url,
@@ -1975,6 +2069,16 @@ export function createTeacherApiRouter(express, auth) {
         ],
       )
       const mapped = mapTeacherMaterialRow(rows?.[0])
+      await logTeacherAuditEvent(req, {
+        event_type: 'material_created',
+        module: TEACHER_AUDIT_MODULES.STUDY_MATERIALS,
+        action: TEACHER_AUDIT_ACTIONS.CREATE,
+        user,
+        facultyRow,
+        target_id: mapped?.id,
+        target_label: buildTargetLabel(mapped?.material_name, subject_name),
+        new_values: materialAuditSnapshot(mapped),
+      })
       res.status(201).json({ success: true, material: mapped })
     } catch (e) {
       sendSafeServerError(res, e, 'POST /api/teacher/materials')
@@ -2037,11 +2141,12 @@ export function createTeacherApiRouter(express, auth) {
         res.status(404).json({ error: 'NOT_FOUND', message: 'Material not found.' })
         return
       }
+      const oldMaterialSnap = materialAuditSnapshot(existing)
       const b = req.body || {}
       const unit_no = String(b.unit_no ?? b.unitNo ?? existing.unit_no).trim() || '1'
       const unit_name = String(b.unit_name ?? b.unitName ?? existing.unit_name).trim()
       const material_name = String(b.material_name ?? b.materialName ?? existing.material_name).trim()
-      const quarter = String(b.quarter ?? existing.quarter ?? '').trim()
+      const semester = String(b.semester ?? existing.semester ?? '').trim()
       const subject_name = String(b.subject_name ?? b.subjectName ?? '').trim()
       const grade_level = String(b.grade_level ?? b.gradeLevel ?? '').trim()
       const file = getStudyMaterialUploadFile(req)
@@ -2050,7 +2155,7 @@ export function createTeacherApiRouter(express, auth) {
       let file_name = existing.file_name
       let file_size = existing.file_size
       if (file) {
-        const fileErr = validateEditDocumentStudyMaterialUploadFile(file)
+        const fileErr = validateSubjectMaterialEditUploadFile(file)
         if (fileErr) {
           res.status(400).json({ error: 'BAD_REQUEST', message: fileErr })
           return
@@ -2067,7 +2172,7 @@ export function createTeacherApiRouter(express, auth) {
         await updateTeacherSubjectFields(pool, subjectIdNum, facultyRow.id, {
           subject_name,
           grade_level,
-          quarter,
+          semester,
         })
       }
       const unitNoInt = Number.parseInt(unit_no, 10)
@@ -2078,7 +2183,7 @@ export function createTeacherApiRouter(express, auth) {
         const { rows } = await pool.query(
           `
           UPDATE study_materials
-          SET unit_no = $1, unit_name = $2, material_name = $3, quarter = $4,
+          SET unit_no = $1, unit_name = $2, material_name = $3, semester = $4,
               grade_level = COALESCE(NULLIF($5, ''), grade_level),
               file_url = $6, file_type = $7, file_name = $8, file_size = $9,
               updated_at = NOW()
@@ -2092,14 +2197,14 @@ export function createTeacherApiRouter(express, auth) {
             file_type,
             file_name,
             file_size,
-            quarter,
+            semester,
             created_at
           `,
           [
             String(Number.isFinite(unitNoInt) && unitNoInt > 0 ? unitNoInt : 1),
             unit_name || safeMaterialName,
             safeMaterialName,
-            quarter || null,
+            semester || null,
             grade_level || null,
             file_url,
             file_type,
@@ -2109,6 +2214,17 @@ export function createTeacherApiRouter(express, auth) {
           ],
         )
         const mapped = mapTeacherMaterialRow({ ...rows?.[0], source_table: 'study_materials' })
+        const diff = diffRecords(oldMaterialSnap, materialAuditSnapshot(mapped))
+        await logTeacherAuditEvent(req, {
+          event_type: 'material_updated',
+          module: TEACHER_AUDIT_MODULES.STUDY_MATERIALS,
+          action: TEACHER_AUDIT_ACTIONS.EDIT,
+          user,
+          facultyRow,
+          target_id: mapped?.id,
+          target_label: buildTargetLabel(mapped?.material_name),
+          ...diff,
+        })
         res.json({ success: true, material: mapped })
         return
       }
@@ -2117,7 +2233,7 @@ export function createTeacherApiRouter(express, auth) {
         `
         UPDATE subject_materials
         SET unit_no = $1, unit_name = $2, material_name = $3,
-            subject_quarter = $4, subject_name = $5, grade_level = $6,
+            subject_semester = $4, subject_name = $5, grade_level = $6,
             file_path = $7, file_type = $8, file_name = $9, file_size = $10,
             updated_at = NOW()
         WHERE id = $11
@@ -2130,14 +2246,14 @@ export function createTeacherApiRouter(express, auth) {
           file_type,
           file_name,
           file_size,
-          subject_quarter AS quarter,
+          subject_semester AS semester,
           created_at
         `,
         [
           Number.isFinite(unitNoInt) && unitNoInt > 0 ? unitNoInt : 1,
           unit_name || safeMaterialName,
           safeMaterialName,
-          quarter || null,
+          semester || null,
           subject_name || null,
           grade_level || null,
           file_url,
@@ -2148,6 +2264,17 @@ export function createTeacherApiRouter(express, auth) {
         ],
       )
       const mapped = mapTeacherMaterialRow(rows?.[0])
+      const diff = diffRecords(oldMaterialSnap, materialAuditSnapshot(mapped))
+      await logTeacherAuditEvent(req, {
+        event_type: 'material_updated',
+        module: TEACHER_AUDIT_MODULES.STUDY_MATERIALS,
+        action: TEACHER_AUDIT_ACTIONS.EDIT,
+        user,
+        facultyRow,
+        target_id: mapped?.id,
+        target_label: buildTargetLabel(mapped?.material_name),
+        ...diff,
+      })
       res.json({ success: true, material: mapped })
     } catch (e) {
       sendSafeServerError(res, e, 'PATCH /api/teacher/materials/:materialId')
@@ -2179,7 +2306,18 @@ export function createTeacherApiRouter(express, auth) {
         res.status(404).json({ error: 'NOT_FOUND', message: 'Material not found.' })
         return
       }
+      const deletedSnap = materialAuditSnapshot(existing)
       await deleteTeacherMaterialById(pool, materialId)
+      await logTeacherAuditEvent(req, {
+        event_type: 'material_deleted',
+        module: TEACHER_AUDIT_MODULES.STUDY_MATERIALS,
+        action: TEACHER_AUDIT_ACTIONS.DELETE,
+        user,
+        facultyRow,
+        target_id: materialId,
+        target_label: buildTargetLabel(existing.material_name ?? existing.title),
+        old_values: deletedSnap,
+      })
       res.json({ success: true })
     } catch (e) {
       sendSafeServerError(res, e, 'DELETE /api/teacher/materials/:materialId')
@@ -2296,7 +2434,18 @@ export function createTeacherApiRouter(express, auth) {
           uploadedBy,
         ],
       )
-      res.status(201).json({ ok: true, announcement: announcementRowToResponse(rows?.[0]) })
+      const created = announcementRowToResponse(rows?.[0])
+      await logTeacherAuditEvent(req, {
+        event_type: 'announcement_created',
+        module: TEACHER_AUDIT_MODULES.ANNOUNCEMENTS,
+        action: TEACHER_AUDIT_ACTIONS.CREATE,
+        user,
+        facultyRow,
+        target_id: created?.id,
+        target_label: buildTargetLabel(created?.title),
+        new_values: announcementAuditSnapshot(created),
+      })
+      res.status(201).json({ ok: true, announcement: created })
     } catch (e) {
       sendSafeServerError(res, e, 'POST /api/teacher/announcements')
     }
@@ -2328,6 +2477,7 @@ export function createTeacherApiRouter(express, auth) {
         res.status(404).json({ error: 'NOT_FOUND', message: 'Announcement not found.' })
         return
       }
+      const oldAnnouncementSnap = announcementAuditSnapshot(announcementRowToResponse(existing))
       const { title, type, message, announcement_image, image_name } = readAnnouncementBodyFields(req.body)
       if (!title || !type || !message) {
         res.status(400).json({
@@ -2367,7 +2517,19 @@ export function createTeacherApiRouter(express, auth) {
           id,
         ],
       )
-      res.json({ ok: true, announcement: announcementRowToResponse(rows?.[0]) })
+      const updated = announcementRowToResponse(rows?.[0])
+      const diff = diffRecords(oldAnnouncementSnap, announcementAuditSnapshot(updated))
+      await logTeacherAuditEvent(req, {
+        event_type: 'announcement_updated',
+        module: TEACHER_AUDIT_MODULES.ANNOUNCEMENTS,
+        action: TEACHER_AUDIT_ACTIONS.EDIT,
+        user,
+        facultyRow,
+        target_id: id,
+        target_label: buildTargetLabel(updated?.title),
+        ...diff,
+      })
+      res.json({ ok: true, announcement: updated })
     } catch (e) {
       sendSafeServerError(res, e, 'PUT /api/teacher/announcements/:id')
     }
@@ -2431,7 +2593,7 @@ export function createTeacherApiRouter(express, auth) {
         name: 'a.title',
         subject: 'COALESCE(a.subject_name, sub.subject_name)',
         grade_level: 'COALESCE(a.grade_level, sub.grade_level)',
-        quarter: 'a.quarter',
+        semester: 'a.semester',
         upload_date: 'a.created_at',
         submission_date: 'a.submission_deadline',
         created_at: 'a.created_at',
@@ -2447,7 +2609,7 @@ export function createTeacherApiRouter(express, auth) {
           lower(a.title) LIKE $${qi}
           OR lower(COALESCE(a.subject_name, sub.subject_name, '')) LIKE $${qi}
           OR lower(COALESCE(a.grade_level, sub.grade_level, '')) LIKE $${qi}
-          OR lower(COALESCE(a.quarter::text, '')) LIKE $${qi}
+          OR lower(COALESCE(a.semester::text, '')) LIKE $${qi}
         )`
       }
 
@@ -2470,6 +2632,7 @@ export function createTeacherApiRouter(express, auth) {
         SELECT ${ASSIGNMENT_SELECT}
         FROM assignments a
         LEFT JOIN subjects sub ON sub.id = a.subject_id
+        LEFT JOIN subject_grade_components sgc ON sgc.id = a.grade_component_id
         ${whereSql}
         ORDER BY ${orderBy} ${sortDir} NULLS LAST, a.id DESC
         LIMIT $${params.length + 1} OFFSET $${params.length + 2}
@@ -2547,14 +2710,18 @@ export function createTeacherApiRouter(express, auth) {
         return
       }
       await seedSubmissionsForAssignment(pool, id, gradeLevel)
+      await refreshSubmissionStudentNames(pool, id)
       const expiredCount = await expireUnsubmittedForAssignment(pool, id)
       const totalScore = Number(assignmentRow.total_score) || 100
       const rows = await fetchSubmissionsForAssignment(pool, id, gradeLevel)
+      const submissions = rows
+        .map((r) => mapSubmissionRow(r, totalScore))
+        .sort((a, b) => String(a.student_name || '').localeCompare(String(b.student_name || '')))
       res.json({
         ok: true,
         expiredUpdated: expiredCount > 0,
         assignment: mapAssignmentRow(assignmentRow),
-        submissions: rows.map((r) => mapSubmissionRow(r, totalScore)),
+        submissions,
       })
     } catch (e) {
       sendSafeServerError(res, e, 'GET /api/teacher/assignments/:id/submissions')
@@ -2579,6 +2746,11 @@ export function createTeacherApiRouter(express, auth) {
       const subjectName = String(b.subject_name ?? b.subjectName ?? '').trim()
       const gradeLevel = String(b.grade_level ?? b.gradeLevel ?? '').trim()
       const totalScore = Number(b.total_score ?? b.totalScore ?? 100)
+      const bodySubjectId = Number(b.subject_id)
+      const parsedGradeComponentId =
+        b.grade_component_id == null || String(b.grade_component_id).trim() === ''
+          ? null
+          : Number(b.grade_component_id)
       const deadline = parseAssignmentDeadline(b.submission_deadline ?? b.submissionDeadline)
       if (!title) {
         res.status(400).json({ error: 'BAD_REQUEST', message: 'Assignment title is required.' })
@@ -2592,9 +2764,9 @@ export function createTeacherApiRouter(express, auth) {
         res.status(400).json({ error: 'BAD_REQUEST', message: 'Please select a Grade Level.' })
         return
       }
-      const quarter = parseRequiredQuarter(b.quarter)
-      if (!quarter) {
-        res.status(400).json({ error: 'BAD_REQUEST', message: 'Please select a Quarter.' })
+      const semester = parseRequiredSemester(b.semester)
+      if (!semester) {
+        res.status(400).json({ error: 'BAD_REQUEST', message: 'Please select a Semester.' })
         return
       }
       if (!deadline) {
@@ -2606,7 +2778,26 @@ export function createTeacherApiRouter(express, auth) {
         return
       }
       const linked = await resolveSubjectIdForAssignment(pool, facultyRow.id, subjectName, gradeLevel)
-      const subjectId = linked?.subjectId ?? null
+      const subjectId =
+        Number.isFinite(bodySubjectId) && bodySubjectId > 0 ? bodySubjectId : linked?.subjectId ?? null
+      const gradeComponentId =
+        Number.isFinite(parsedGradeComponentId) && parsedGradeComponentId > 0
+          ? parsedGradeComponentId
+          : null
+      if (subjectId && !gradeComponentId) {
+        res.status(400).json({
+          error: 'BAD_REQUEST',
+          message: 'Grade component is required for subject-linked work.',
+        })
+        return
+      }
+      if (subjectId && gradeComponentId) {
+        const check = await validateGradeComponentForWork(pool, subjectId, gradeComponentId, 'assignment')
+        if (!check.ok) {
+          res.status(400).json({ error: 'BAD_REQUEST', message: check.message })
+          return
+        }
+      }
       const file = getAssignmentUploadFile(req)
       const fileErr = validateAssignmentUploadFile(file, { required: true })
       if (fileErr) {
@@ -2621,10 +2812,10 @@ export function createTeacherApiRouter(express, auth) {
       const { rows } = await pool.query(
         `
         INSERT INTO assignments (
-          faculty_id, title, description, subject_id, subject_name, grade_level, quarter,
-          file_path, file_name, file_size, total_score, submission_deadline,
+          faculty_id, title, description, subject_id, subject_name, grade_level, semester,
+          file_path, file_name, file_size, grade_component_id, total_score, submission_deadline,
           uploaded_by, updated_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW())
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW())
         RETURNING id
         `,
         [
@@ -2634,10 +2825,11 @@ export function createTeacherApiRouter(express, auth) {
           subjectId,
           subjectName,
           gradeLevel,
-          quarter,
+          semester,
           saved.file_path,
           saved.file_name,
           saved.file_size,
+          gradeComponentId,
           totalScore,
           deadline.toISOString(),
           uploadedBy,
@@ -2650,7 +2842,18 @@ export function createTeacherApiRouter(express, auth) {
       }
       await seedSubmissionsForAssignment(pool, inserted.id, gradeLevel)
       const full = await fetchAssignmentById(pool, inserted.id, facultyRow.id)
-      res.status(201).json({ ok: true, assignment: mapAssignmentRow(full || inserted) })
+      const mapped = mapAssignmentRow(full || inserted)
+      await logTeacherAuditEvent(req, {
+        event_type: 'assignment_created',
+        module: TEACHER_AUDIT_MODULES.ASSIGNMENTS,
+        action: TEACHER_AUDIT_ACTIONS.CREATE,
+        user,
+        facultyRow,
+        target_id: mapped?.id,
+        target_label: buildTargetLabel(mapped?.title, mapped?.subject_name),
+        new_values: assignmentAuditSnapshot(mapped),
+      })
+      res.status(201).json({ ok: true, assignment: mapped })
     } catch (e) {
       sendSafeServerError(res, e, 'POST /api/teacher/assignments')
     }
@@ -2678,12 +2881,18 @@ export function createTeacherApiRouter(express, auth) {
         res.status(404).json({ error: 'NOT_FOUND', message: 'Assignment not found.' })
         return
       }
+      const oldAssignmentSnap = assignmentAuditSnapshot(mapAssignmentRow(existing))
       const b = req.body || {}
       const title = String(b.title ?? '').trim()
       const description = String(b.description ?? '').trim()
       const subjectName = String(b.subject_name ?? b.subjectName ?? '').trim()
       const gradeLevel = String(b.grade_level ?? b.gradeLevel ?? '').trim()
       const totalScore = Number(b.total_score ?? b.totalScore ?? existing.total_score ?? 100)
+      const bodySubjectId = Number(b.subject_id)
+      const parsedGradeComponentId =
+        b.grade_component_id == null || String(b.grade_component_id).trim() === ''
+          ? null
+          : Number(b.grade_component_id)
       const deadline = parseAssignmentDeadline(b.submission_deadline ?? b.submissionDeadline)
       if (!title) {
         res.status(400).json({ error: 'BAD_REQUEST', message: 'Assignment title is required.' })
@@ -2697,9 +2906,9 @@ export function createTeacherApiRouter(express, auth) {
         res.status(400).json({ error: 'BAD_REQUEST', message: 'Please select a Grade Level.' })
         return
       }
-      const quarter = parseRequiredQuarter(b.quarter)
-      if (!quarter) {
-        res.status(400).json({ error: 'BAD_REQUEST', message: 'Please select a Quarter.' })
+      const semester = parseRequiredSemester(b.semester)
+      if (!semester) {
+        res.status(400).json({ error: 'BAD_REQUEST', message: 'Please select a Semester.' })
         return
       }
       if (!deadline) {
@@ -2711,7 +2920,31 @@ export function createTeacherApiRouter(express, auth) {
         return
       }
       const linked = await resolveSubjectIdForAssignment(pool, facultyRow.id, subjectName, gradeLevel)
-      const subjectId = linked?.subjectId ?? null
+      const subjectId =
+        Number.isFinite(bodySubjectId) && bodySubjectId > 0 ? bodySubjectId : linked?.subjectId ?? null
+      const gradeComponentId =
+        Number.isFinite(parsedGradeComponentId) && parsedGradeComponentId > 0
+          ? parsedGradeComponentId
+          : null
+      if (subjectId && !gradeComponentId) {
+        res.status(400).json({
+          error: 'BAD_REQUEST',
+          message: 'Grade component is required for subject-linked work.',
+        })
+        return
+      }
+      if (subjectId && gradeComponentId) {
+        const existingComponentId =
+          existing.grade_component_id != null ? Number(existing.grade_component_id) : null
+        const componentChanged = existingComponentId !== gradeComponentId
+        if (componentChanged) {
+          const check = await validateGradeComponentForWork(pool, subjectId, gradeComponentId, 'assignment')
+          if (!check.ok) {
+            res.status(400).json({ error: 'BAD_REQUEST', message: check.message })
+            return
+          }
+        }
+      }
       const file = getAssignmentUploadFile(req)
       const fileErr = validateAssignmentUploadFile(file, { required: false })
       if (fileErr) {
@@ -2731,10 +2964,10 @@ export function createTeacherApiRouter(express, auth) {
       await pool.query(
         `
         UPDATE assignments
-        SET title = $1, description = $2, subject_id = $3, subject_name = $4, grade_level = $5, quarter = $6,
-            file_path = $7, file_name = $8, file_size = $9,
-            total_score = $10, submission_deadline = $11, updated_at = NOW()
-        WHERE id = $12 AND faculty_id::text = $13::text
+        SET title = $1, description = $2, subject_id = $3, subject_name = $4, grade_level = $5, semester = $6,
+            file_path = $7, file_name = $8, file_size = $9, grade_component_id = $10,
+            total_score = $11, submission_deadline = $12, updated_at = NOW()
+        WHERE id = $13 AND faculty_id::text = $14::text
         `,
         [
           title,
@@ -2742,10 +2975,11 @@ export function createTeacherApiRouter(express, auth) {
           subjectId,
           subjectName,
           gradeLevel,
-          quarter,
+          semester,
           file_path,
           file_name,
           file_size,
+          gradeComponentId,
           totalScore,
           deadline.toISOString(),
           id,
@@ -2754,7 +2988,19 @@ export function createTeacherApiRouter(express, auth) {
       )
       await seedSubmissionsForAssignment(pool, id, gradeLevel)
       const full = await fetchAssignmentById(pool, id, facultyRow.id)
-      res.json({ ok: true, assignment: mapAssignmentRow(full) })
+      const mapped = mapAssignmentRow(full)
+      const diff = diffRecords(oldAssignmentSnap, assignmentAuditSnapshot(mapped))
+      await logTeacherAuditEvent(req, {
+        event_type: 'assignment_updated',
+        module: TEACHER_AUDIT_MODULES.ASSIGNMENTS,
+        action: TEACHER_AUDIT_ACTIONS.EDIT,
+        user,
+        facultyRow,
+        target_id: id,
+        target_label: buildTargetLabel(mapped?.title, mapped?.subject_name),
+        ...diff,
+      })
+      res.json({ ok: true, assignment: mapped })
     } catch (e) {
       sendSafeServerError(res, e, 'PUT /api/teacher/assignments/:id')
     }
@@ -2787,13 +3033,30 @@ export function createTeacherApiRouter(express, auth) {
         [id],
       )
       for (const sf of subFiles || []) {
-        if (sf?.file_path) deleteAssignmentFileByUrl(sf.file_path)
+        if (sf?.file_path) {
+          if (String(sf.file_path).startsWith('/uploads/submissions/')) {
+            deleteSubmissionFileByUrl(sf.file_path)
+          } else {
+            deleteAssignmentFileByUrl(sf.file_path)
+          }
+        }
       }
       deleteAssignmentFileByUrl(existing.file_path)
+      const deletedSnap = assignmentAuditSnapshot(mapAssignmentRow(existing))
       await pool.query(`DELETE FROM assignments WHERE id = $1 AND faculty_id::text = $2::text`, [
         id,
         String(facultyRow.id),
       ])
+      await logTeacherAuditEvent(req, {
+        event_type: 'assignment_deleted',
+        module: TEACHER_AUDIT_MODULES.ASSIGNMENTS,
+        action: TEACHER_AUDIT_ACTIONS.DELETE,
+        user,
+        facultyRow,
+        target_id: id,
+        target_label: buildTargetLabel(existing.title, existing.subject_name),
+        old_values: deletedSnap,
+      })
       res.json({ ok: true })
     } catch (e) {
       sendSafeServerError(res, e, 'DELETE /api/teacher/assignments/:id')
@@ -2823,8 +3086,16 @@ export function createTeacherApiRouter(express, auth) {
         res.status(404).json({ error: 'NOT_FOUND', message: 'Assignment not found.' })
         return
       }
+      if (isDeadlinePassed(assignmentRow.submission_deadline)) {
+        res.status(403).json({
+          error: 'SCORE_LOCKED',
+          message: 'Deadline has passed. Score is locked. Contact admin to request a grade correction.',
+        })
+        return
+      }
       const totalScore = Number(assignmentRow.total_score) || 100
       const score = Number(req.body?.score ?? req.body?.value)
+      const feedback = String(req.body?.feedback ?? '').trim()
       if (!Number.isFinite(score) || score < 0 || score > totalScore) {
         res.status(400).json({
           error: 'BAD_REQUEST',
@@ -2832,20 +3103,55 @@ export function createTeacherApiRouter(express, auth) {
         })
         return
       }
+      const { rows: priorRows } = await pool.query(
+        `SELECT score, feedback, student_id FROM assignment_submissions WHERE id = $1 AND assignment_id = $2 LIMIT 1`,
+        [submissionId, assignmentId],
+      )
+      const prior = priorRows?.[0]
       const { rows } = await pool.query(
         `
         UPDATE assignment_submissions s
-        SET score = $1, status = 'submitted', updated_at = NOW()
+        SET score = $1, feedback = $2, status = 'graded', updated_at = NOW()
         FROM assignments a
-        WHERE s.id = $2 AND s.assignment_id = $3 AND a.id = s.assignment_id
-          AND a.faculty_id::text = $4::text
+        WHERE s.id = $3 AND s.assignment_id = $4 AND a.id = s.assignment_id
+          AND a.faculty_id::text = $5::text
         RETURNING s.*
         `,
-        [Math.round(score), submissionId, assignmentId, String(facultyRow.id)],
+        [Math.round(score), feedback || null, submissionId, assignmentId, String(facultyRow.id)],
       )
       if (!rows?.length) {
         res.status(404).json({ error: 'NOT_FOUND', message: 'Submission not found.' })
         return
+      }
+      try {
+        await customActivityLogger.logAssignmentGraded(String(user.id), assignmentId, submissionId, {
+          userEmail: String(user.email || '').trim(),
+          userRole: 'teacher',
+        })
+        await logTeacherAuditEvent(req, {
+          event_type: 'grade_score_saved',
+          module: TEACHER_AUDIT_MODULES.GRADES,
+          action: TEACHER_AUDIT_ACTIONS.GRADE,
+          user,
+          facultyRow,
+          target_id: submissionId,
+          target_label: buildTargetLabel(assignmentRow.title, `Student ${prior?.student_id ?? ''}`),
+          old_values: {
+            score: prior?.score ?? null,
+            feedback: prior?.feedback ?? null,
+            student_id: prior?.student_id ?? null,
+            assignment_id: assignmentId,
+          },
+          new_values: {
+            score: Math.round(score),
+            feedback: feedback || null,
+            student_id: prior?.student_id ?? null,
+            assignment_id: assignmentId,
+          },
+          changed_fields: ['score', ...(String(prior?.feedback || '') !== String(feedback || '') ? ['feedback'] : [])],
+        })
+      } catch {
+        /* non-fatal */
       }
       res.json({ ok: true, submission: mapSubmissionRow(rows[0], totalScore) })
     } catch (e) {

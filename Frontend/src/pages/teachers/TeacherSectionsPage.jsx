@@ -1,7 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useOutletContext, useParams } from 'react-router-dom'
 import { apiUrl } from '../../lib/lmsStateStorage.js'
+import { fetchTeacherAdvisorySections } from '../../lib/teacherPortalOffline.js'
+import { isOnline } from '../../lib/offlineSync.js'
+import { formatSemesterLabel } from '../../lib/quizQuestionTypes.js'
 import { FACULTY_MSG, FACULTY_TOAST_ID, useFacultyNotify } from '../../lib/facultyNotify.js'
+import OfflineCacheIndicator from '../../components/OfflineCacheIndicator.jsx'
 import { facultyPhotoDisplaySrc } from '../../lib/facultyPhoto.js'
 import TeacherBackButton from './TeacherBackButton.jsx'
 import TeacherMainHeader from './TeacherMainHeader.jsx'
@@ -32,9 +36,8 @@ function displayPhone(st) {
   return phone || '—'
 }
 
-function displayQuarter(st) {
-  const q = String(st?.quarter ?? '').trim()
-  return q || '—'
+function displaySemester(st) {
+  return formatSemesterLabel(st?.semester) || '—'
 }
 
 function ViewPageHeading({ label, title, backTo }) {
@@ -86,7 +89,7 @@ function SectionsListView({ sections, loading, error, onViewStudents }) {
 
         {count === 0 ? (
           <div className="mt-4 rounded-lg border border-dashed border-neutral-200 bg-neutral-50 px-4 py-10 text-center text-sm text-neutral-600">
-            No advisory sections assigned yet.
+            No advisory sections currently assigned.
           </div>
         ) : (
           <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
@@ -231,7 +234,7 @@ function SectionStudentsView({ section, search, setSearch, sortRollAsc, setSortR
               <th className="px-3 py-3">Enrollment No.</th>
               <th className="px-3 py-3">Section</th>
               <th className="px-3 py-3">Phone</th>
-              <th className="px-3 py-3">Quarter</th>
+              <th className="px-3 py-3">Semester</th>
               <th className="px-3 py-3">Action</th>
             </tr>
           </thead>
@@ -265,7 +268,7 @@ function SectionStudentsView({ section, search, setSearch, sortRollAsc, setSortR
                     <td className="px-3 py-3">{displayEnrollment(st)}</td>
                     <td className="px-3 py-3">{st.section || st.section_name || sectionName}</td>
                     <td className="px-3 py-3">{displayPhone(st)}</td>
-                    <td className="px-3 py-3">{displayQuarter(st)}</td>
+                    <td className="px-3 py-3">{displaySemester(st)}</td>
                     <td className="px-3 py-3">
                       <button
                         type="button"
@@ -299,6 +302,7 @@ export default function TeacherSectionsPage() {
   const [sections, setSections] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [fromCache, setFromCache] = useState(false)
   const [search, setSearch] = useState('')
   const [sortRollAsc, setSortRollAsc] = useState(true)
 
@@ -314,16 +318,10 @@ export default function TeacherSectionsPage() {
       setLoading(true)
       setError(null)
       try {
-        const res = await fetch(apiUrl('/api/teacher/advisory-sections'), { credentials: 'include' })
-        const data = await res.json().catch(() => null)
-        if (!res.ok || !Array.isArray(data)) {
-          const msg =
-            data && typeof data === 'object'
-              ? String(data.message || data.error || '').trim()
-              : ''
-          throw new Error(msg || 'Failed to load sections.')
-        }
-        setSections(data)
+        const offline = !isOnline()
+        const list = await fetchTeacherAdvisorySections()
+        setSections(list)
+        setFromCache(offline)
       } catch (e) {
         const msg = String(e?.message || e)
         console.error('[TeacherSectionsPage] fetch error:', msg)
@@ -389,6 +387,7 @@ export default function TeacherSectionsPage() {
               title="Sections Management"
               backTo="/teacher/dashboard"
             />
+            <OfflineCacheIndicator fromCache={fromCache} className="mb-2" />
             <SectionsListView
               sections={sections}
               loading={loading}

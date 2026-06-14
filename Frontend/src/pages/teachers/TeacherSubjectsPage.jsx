@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useOutletContext } from 'react-router-dom'
 import { apiUrl } from '../../lib/lmsStateStorage.js'
+import { fetchTeacherSubjects } from '../../lib/teacherPortalOffline.js'
+import { isOnline } from '../../lib/offlineSync.js'
 import { FACULTY_MSG, FACULTY_TOAST_ID, useFacultyNotify } from '../../lib/facultyNotify.js'
+import OfflineCacheIndicator from '../../components/OfflineCacheIndicator.jsx'
 import { subjectImageDisplaySrc } from '../../lib/subjectImages.js'
 import TeacherBackButton from './TeacherBackButton.jsx'
 import TeacherMainHeader from './TeacherMainHeader.jsx'
@@ -44,6 +47,7 @@ export default function TeacherSubjectsPage() {
   const [subjects, setSubjects] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [fromCache, setFromCache] = useState(false)
 
   useEffect(() => {
     setSidebarNavLocked?.(false)
@@ -57,16 +61,10 @@ export default function TeacherSubjectsPage() {
       setLoading(true)
       setError(null)
       try {
-        const res = await fetch(apiUrl('/api/teacher/subjects'), { credentials: 'include' })
-        const data = await res.json().catch(() => [])
-        if (!res.ok) {
-          const msg =
-            (data && typeof data === 'object' && (data.message || data.error)) ||
-            `Failed to load subjects (${res.status}).`
-          throw new Error(String(msg))
-        }
-        const list = Array.isArray(data) ? data : Array.isArray(data?.subjects) ? data.subjects : []
+        const offline = !isOnline()
+        const list = await fetchTeacherSubjects()
         setSubjects(list)
+        setFromCache(offline)
       } catch (e) {
         const msg = String(e?.message || e)
         console.error('[TeacherSubjectsPage] fetch error:', msg)
@@ -94,6 +92,7 @@ export default function TeacherSubjectsPage() {
             <h2 className="text-xl font-bold text-neutral-900 md:text-2xl">Subject Management</h2>
           </div>
         </div>
+        <OfflineCacheIndicator fromCache={fromCache} className="mb-2" />
 
         {loading ? (
           <div className="py-16 text-center text-sm text-neutral-500">Loading subjects…</div>

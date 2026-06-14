@@ -2,12 +2,15 @@ import fs from 'node:fs'
 import path from 'node:path'
 import multer from 'multer'
 import { randomUUID } from 'node:crypto'
+import {
+  DEFAULT_UPLOAD_MAX_BYTES,
+  DEFAULT_UPLOAD_MAX_MSG,
+} from './uploadLimitsConfig.js'
 
 export const SYLLABUS_UPLOAD_REL = '/uploads/syllabus'
-export const SYLLABUS_MAX_BYTES = 50 * 1024 * 1024
+export const SYLLABUS_MAX_BYTES = DEFAULT_UPLOAD_MAX_BYTES
 
 const ALLOWED_EXT = new Set(['.pdf', '.doc', '.docx'])
-
 const ALLOWED_MIMES = new Set([
   'application/pdf',
   'application/msword',
@@ -65,7 +68,7 @@ function validateSyllabusFile(file) {
     return 'Only PDF, DOC, and DOCX files are allowed.'
   }
   if (file.size > SYLLABUS_MAX_BYTES) {
-    return 'File must be under 50 MB.'
+    return DEFAULT_UPLOAD_MAX_MSG
   }
   return ''
 }
@@ -94,10 +97,7 @@ export function syllabusUploadMiddleware(req, res, next) {
     if (!err) return next()
     res.status(400).json({
       success: false,
-      error:
-        err.code === 'LIMIT_FILE_SIZE'
-          ? 'File must be under 50 MB.'
-          : String(err.message || err),
+      error: err.code === 'LIMIT_FILE_SIZE' ? DEFAULT_UPLOAD_MAX_MSG : String(err.message || err),
     })
   })
 }

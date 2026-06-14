@@ -4,8 +4,9 @@ import { useNotify } from '../components/notifications.jsx'
 import { STRONG_PASSWORD_REGEX, passwordPolicyHint } from '../lib/auth-client.js'
 import { apiUrl } from '../lib/lmsStateStorage.js'
 import { dispatchAuditLogsRefresh } from '../lib/auditLogRefresh.js'
+import { PROFILE_PHOTO_MAX_BYTES, PROFILE_PHOTO_MAX_MSG, PHOTO_UPLOAD_LABEL } from '../lib/uploadLimits.js'
 
-const MAX_PHOTO_BYTES = 2 * 1024 * 1024
+const MAX_PHOTO_BYTES = PROFILE_PHOTO_MAX_BYTES
 const PHOTO_ACCEPT = 'image/png,image/jpeg,image/jpg'
 
 function shuffleString(s) {
@@ -62,7 +63,7 @@ function mapRowToForm(row) {
     enrollmentNo: row.enrollment_no || '',
     rollNo: row.roll_no || '',
     gradeLevel: row.grade_level || '',
-    quarter: row.quarter || '',
+    semester: row.semester || '',
     sectionId: row.section_id != null && row.section_id !== '' ? String(row.section_id) : '',
     loginId: row.login_id || '',
     password: '',
@@ -85,7 +86,7 @@ function emptyForm() {
     enrollmentNo: '',
     rollNo: '',
     gradeLevel: '',
-    quarter: '',
+    semester: '',
     sectionId: '',
     loginId: '',
     password: '',
@@ -147,7 +148,7 @@ function buildPayload(form, { includePassword }) {
     enrollmentNo: String(form.enrollmentNo || '').trim(),
     rollNo: String(form.rollNo || '').trim(),
     gradeLevel: String(form.gradeLevel || '').trim(),
-    quarter: String(form.quarter || '').trim(),
+    semester: String(form.semester || '').trim(),
     sectionId: sectionId != null && Number.isFinite(sectionId) && sectionId > 0 ? sectionId : null,
     loginId: String(form.loginId || '').trim(),
     appPasswordGmail: String(form.appPasswordGmail || '').trim() || null,
@@ -256,7 +257,7 @@ export default function StudentDetails() {
       return
     }
     if (file.size > MAX_PHOTO_BYTES) {
-      setPhotoError('Image must be smaller than 2 MB.')
+      setPhotoError(PROFILE_PHOTO_MAX_MSG)
       return
     }
     try {
@@ -356,7 +357,7 @@ export default function StudentDetails() {
         <form onSubmit={onSubmit} className="space-y-6 rounded-xl border border-neutral-200 bg-white p-5 shadow-sm md:p-8">
           <section>
             <h2 className="text-lg font-semibold text-neutral-900">Photo</h2>
-            <p className="mt-1 text-xs text-neutral-500">PNG or JPG, under 2 MB. Stored as Base64 in `photo_url`.</p>
+            <p className="mt-1 text-xs text-neutral-500">{PHOTO_UPLOAD_LABEL}. Stored as Base64 in `photo_url`.</p>
             <div className="mt-3 flex flex-wrap items-center gap-4">
               {form.studentPhotoUrl ? (
                 <img
@@ -424,7 +425,7 @@ export default function StudentDetails() {
             />
             <TextField label="Roll number" required value={form.rollNo} onChange={(e) => setForm((p) => ({ ...p, rollNo: e.target.value }))} />
             <TextField label="Grade level" required value={form.gradeLevel} onChange={(e) => setForm((p) => ({ ...p, gradeLevel: e.target.value }))} />
-            <TextField label="Quarter" required value={form.quarter} onChange={(e) => setForm((p) => ({ ...p, quarter: e.target.value }))} />
+            <TextField label="Semester" required value={form.semester} onChange={(e) => setForm((p) => ({ ...p, semester: e.target.value }))} />
           </div>
 
           <SelectField

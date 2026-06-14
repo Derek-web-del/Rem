@@ -28,6 +28,28 @@ const SCHEMA_STATEMENTS = [
     next_run TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT NOW()
   )`,
+  `CREATE TABLE IF NOT EXISTS public.google_oauth_tokens (
+    id BIGSERIAL PRIMARY KEY,
+    user_id VARCHAR(255) NOT NULL UNIQUE,
+    access_token TEXT NOT NULL,
+    refresh_token TEXT,
+    token_expiry TIMESTAMPTZ,
+    connected_email VARCHAR(255),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+  )`,
+  `ALTER TABLE public.backups ADD COLUMN IF NOT EXISTS gdrive_file_id VARCHAR(255)`,
+  `ALTER TABLE public.backups ADD COLUMN IF NOT EXISTS gdrive_link TEXT`,
+  `ALTER TABLE public.backups ADD COLUMN IF NOT EXISTS gdrive_uploaded_at TIMESTAMPTZ`,
+  `CREATE TABLE IF NOT EXISTS public.google_oauth_pending (
+    state VARCHAR(128) PRIMARY KEY,
+    user_id VARCHAR(255) NOT NULL,
+    expires_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_google_oauth_pending_expires ON public.google_oauth_pending (expires_at)`,
+  `ALTER TABLE public.google_oauth_tokens ADD COLUMN IF NOT EXISTS gdrive_folder_id VARCHAR(255)`,
+  `ALTER TABLE public.google_oauth_tokens ADD COLUMN IF NOT EXISTS granted_scopes TEXT`,
 ]
 
 const SEED_SCHEDULES_SQL = `

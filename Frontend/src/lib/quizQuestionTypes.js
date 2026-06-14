@@ -13,7 +13,36 @@ export const QUESTION_TYPE_LABELS = Object.fromEntries(
 
 export const BRANCH_OPTIONS = ['Main Campus', 'Annex', 'Senior High', 'Junior High']
 
-export const QUARTER_OPTIONS = ['1', '2', '3', '4']
+export const SEMESTER_OPTIONS = ['1', '2', '3']
+
+export const SEMESTER_LABELS = {
+  1: '1st Semester',
+  2: '2nd Semester',
+  3: '3rd Semester',
+}
+
+export function formatSemesterLabel(value) {
+  const v = String(value ?? '').trim()
+  if (!v) return ''
+  return SEMESTER_LABELS[v] ?? SEMESTER_LABELS[Number(v)] ?? `${v} Semester`
+}
+
+export const QUIZ_ACTIVITY_TYPE_OPTIONS = [
+  { value: 'Short Quiz', label: 'Short Quiz' },
+  { value: 'Quiz', label: 'Quiz' },
+  { value: 'Long Quiz', label: 'Long Quiz' },
+]
+
+export const DEFAULT_QUIZ_ACTIVITY_TYPE = 'Quiz'
+
+/** Map legacy activity_type values when loading edit form */
+export function normalizeQuizActivityType(value) {
+  const v = String(value || '').trim()
+  if (v === 'Exam') return 'Quiz'
+  if (v === 'Long Test') return 'Long Quiz'
+  if (QUIZ_ACTIVITY_TYPE_OPTIONS.some((o) => o.value === v)) return v
+  return DEFAULT_QUIZ_ACTIVITY_TYPE
+}
 
 export function typeBadgeClass(type) {
   const t = String(type || '').toLowerCase()

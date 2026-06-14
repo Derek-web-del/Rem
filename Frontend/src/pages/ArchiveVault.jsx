@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import BackButton from '../components/BackButton.jsx'
+import ArchivedStudentDetail from '../components/ArchivedStudentDetail.jsx'
+import ArchivedFacultyDetail from '../components/ArchivedFacultyDetail.jsx'
 import { useNotify } from '../components/notifications.jsx'
 import { apiUrl } from '../lib/lmsStateStorage.js'
 
@@ -85,6 +87,11 @@ export default function ArchiveVault() {
   const [purgePhrase, setPurgePhrase] = useState('')
   const [purgeSubmitting, setPurgeSubmitting] = useState(false)
   const [actionId, setActionId] = useState('')
+  const [selectedRecord, setSelectedRecord] = useState(null)
+  const [recordType, setRecordType] = useState('')
+  const [showArchivedDetail, setShowArchivedDetail] = useState(false)
+  const [detailLoading, setDetailLoading] = useState(false)
+  const [detailError, setDetailError] = useState('')
 
   const loadVault = useCallback(async (type) => {
     const res = await fetch(apiUrl(`/api/v1/admin/archive-vault/${encodeURIComponent(type)}`), {
@@ -116,6 +123,40 @@ export default function ArchiveVault() {
   useEffect(() => {
     loadAll()
   }, [loadAll])
+
+  const handleViewArchived = useCallback(async (record, type) => {
+    const id = String(record?.id ?? '').trim()
+    if (!id) return
+    const vaultType = type === 'students' ? 'students' : 'faculties'
+    setDetailLoading(true)
+    setDetailError('')
+    setSelectedRecord(null)
+    setRecordType(vaultType)
+    setShowArchivedDetail(true)
+    try {
+      const path =
+        vaultType === 'students'
+          ? `/api/v1/admin/archived-student/${encodeURIComponent(id)}/work`
+          : `/api/v1/admin/archived-faculty/${encodeURIComponent(id)}/work`
+      const res = await fetch(apiUrl(path), { credentials: 'include' })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        throw new Error(String(data?.message || data?.error || `Could not load record (${res.status}).`))
+      }
+      setSelectedRecord(data)
+    } catch (e) {
+      setDetailError(String(e?.message || e || 'Could not load archived record.'))
+    } finally {
+      setDetailLoading(false)
+    }
+  }, [])
+
+  const closeArchivedDetail = useCallback(() => {
+    setShowArchivedDetail(false)
+    setSelectedRecord(null)
+    setRecordType('')
+    setDetailError('')
+  }, [])
 
   const purgeUnlocked = useMemo(
     () => purgePhrase.trim() === PURGE_VERIFICATION_PHRASE,
@@ -188,10 +229,9 @@ export default function ArchiveVault() {
       }
       setPurgeTarget(null)
       setPurgePhrase('')
-      toast.deleted('Record permanently purged from the database.', {
-        title: 'Permanent purge complete',
-        durationMs: 6000,
-      })
+      const name = String(purgeTarget.name || 'Account').trim()
+      const label = purgeTarget.type === 'faculties' ? 'Faculty' : 'Student'
+      toast.deleted(`${label} ${name} account deleted.`, { durationMs: 6000 })
     } catch (e) {
       toast.error(String(e?.message || e || 'Network error during purge.'), { title: 'Purge failed' })
     } finally {
@@ -209,6 +249,14 @@ export default function ArchiveVault() {
 
     return (
       <div className="inline-flex flex-wrap items-center justify-end gap-2">
+        <button
+          type="button"
+          disabled={busy}
+          className="rounded border border-neutral-300 bg-white px-3 py-1.5 text-xs font-semibold text-neutral-700 hover:bg-neutral-50 disabled:opacity-60"
+          onClick={() => handleViewArchived(row, type)}
+        >
+          View
+        </button>
         <button
           type="button"
           disabled={busy}
@@ -486,6 +534,36 @@ export default function ArchiveVault() {
                 {purgeSubmitting ? 'Purging…' : 'Permanently purge'}
               </button>
             </div>
+          </div>
+        </div>
+      ) : null}
+
+      {showArchivedDetail ? (
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/60 p-4 pt-8">
+          <div className="mb-8 w-full max-w-5xl rounded-xl bg-neutral-50 p-5 shadow-2xl md:p-6">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+              <h3 className="text-lg font-bold text-neutral-900">
+                Archived {recordType === 'students' ? 'Student' : 'Faculty'} — Work History
+              </h3>
+              <button
+                type="button"
+                className="rounded-lg border border-neutral-200 bg-white px-4 py-2 text-sm font-semibold text-neutral-700 hover:bg-neutral-50"
+                onClick={closeArchivedDetail}
+              >
+                Close
+              </button>
+            </div>
+            {detailLoading ? (
+              <p className="py-10 text-center text-sm text-neutral-500">Loading work history…</p>
+            ) : detailError ? (
+              <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-800">
+                {detailError}
+              </p>
+            ) : recordType === 'students' && selectedRecord ? (
+              <ArchivedStudentDetail data={selectedRecord} />
+            ) : recordType === 'faculties' && selectedRecord ? (
+              <ArchivedFacultyDetail data={selectedRecord} />
+            ) : null}
           </div>
         </div>
       ) : null}

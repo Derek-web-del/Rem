@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import BackButton from './components/BackButton.jsx'
+import { isTermsAccepted, setTermsAccepted } from './lib/termsSession.js'
 
 const TERMS_ACCEPTED_KEY = 'lenlearn.termsAccepted'
 /** Faculty / teacher portal — separate from institute admin acceptance. */
@@ -71,23 +72,28 @@ export default function TermsAndConditions({
   const [justAgreed, setJustAgreed] = useState(false)
 
   useEffect(() => {
+    if (gateMode) return
     const at = readAcceptedAtForKey(acceptanceStorageKey)
     if (at) {
       setAcceptedAt(at)
       setAgreed(true)
     }
-  }, [acceptanceStorageKey])
+  }, [acceptanceStorageKey, gateMode])
 
   const handleAgree = useCallback(() => {
     const at = Date.now()
-    try {
-      localStorage.setItem(acceptanceStorageKey, JSON.stringify({ at }))
-    } catch {}
+    if (gateMode) {
+      setTermsAccepted()
+    } else {
+      try {
+        localStorage.setItem(acceptanceStorageKey, JSON.stringify({ at }))
+      } catch {}
+    }
     setAcceptedAt(at)
     setAgreed(true)
     setJustAgreed(true)
     onAccepted?.()
-  }, [acceptanceStorageKey, onAccepted])
+  }, [acceptanceStorageKey, gateMode, onAccepted])
 
   const showThanks = justAgreed || acceptedAt
 
@@ -226,7 +232,7 @@ export default function TermsAndConditions({
         </div>
       ) : null}
 
-      {showThanks ? (
+      {!gateMode && showThanks ? (
         <div
           className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-900"
           role="status"

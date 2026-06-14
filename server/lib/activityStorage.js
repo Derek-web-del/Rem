@@ -2,14 +2,17 @@ import fs from 'node:fs'
 import path from 'node:path'
 import multer from 'multer'
 import { randomUUID } from 'node:crypto'
+import {
+  DEFAULT_UPLOAD_MAX_BYTES,
+  DEFAULT_UPLOAD_MAX_MSG,
+} from './uploadLimitsConfig.js'
 
 export const ACTIVITY_UPLOAD_REL = '/uploads/activities'
-export const ACTIVITY_MAX_BYTES = 10 * 1024 * 1024
-export const ACTIVITY_FILE_SIZE_MSG = 'File size must not exceed 10MB.'
+export const ACTIVITY_MAX_BYTES = DEFAULT_UPLOAD_MAX_BYTES
+export const ACTIVITY_FILE_SIZE_MSG = DEFAULT_UPLOAD_MAX_MSG
 export const ACTIVITY_FILE_TYPE_MSG = 'Only PDF, DOC, and DOCX files are allowed.'
 
 const ALLOWED_EXT = new Set(['.pdf', '.doc', '.docx'])
-
 const ALLOWED_MIMES = new Set([
   'application/pdf',
   'application/msword',
@@ -110,7 +113,6 @@ export function getActivityUploadFile(req) {
   return req.file || null
 }
 
-export function validateActivityUploadFile(file, { required = true } = {}) {
-  if (!file) return required ? 'Activity file is required.' : ''
+export function validateActivityUploadFile(file) {
   return validateActivityFile(file)
 }
