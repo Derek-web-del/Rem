@@ -190,6 +190,43 @@ export async function requireFacultyRole(req, res, auth) {
 }
 
 /**
+ * Require an authenticated session whose role is in `allowedRoles`.
+ * @param {string[]} allowedRoles e.g. ['admin','faculty','student']
+ */
+export async function requireAnyRoleSession(req, res, auth, allowedRoles) {
+  if (!auth?.api?.getSession) {
+    res.status(503).json({ error: 'AUTH_UNAVAILABLE', message: 'Authentication unavailable.' })
+    return null
+  }
+  const allowed = new Set(
+    (allowedRoles || []).map((r) => String(r || '').trim().toLowerCase()).filter(Boolean),
+  )
+  if (allowed.has('faculty')) allowed.add('teacher')
+  try {
+    const session = await auth.api.getSession({ headers: req.headers })
+    const user = session?.user ?? session?.data?.user
+    if (!user?.id) {
+      res.status(401).json({ error: 'UNAUTHORIZED', message: 'Sign-in required.' })
+      return null
+    }
+    const role = String(user.role || '').trim().toLowerCase()
+    if (!allowed.has(role)) {
+      logUnauthorizedAccessFromRequest(req, {
+        reason: `Requires one of: ${[...allowed].join(', ')}`,
+        requiredRole: [...allowed].join('|'),
+      })
+      res.status(403).json({ error: 'FORBIDDEN', message: 'Access denied.' })
+      return null
+    }
+    return session
+  } catch (e) {
+    console.error('[security] requireAnyRoleSession:', e?.message || e)
+    res.status(500).json({ error: 'Internal server error' })
+    return null
+  }
+}
+
+/**
  * Destructive admin operations require explicit confirmation tokens (OWASP A08).
  * @param {import('express').Request} req
  * @param {string} expectedToken

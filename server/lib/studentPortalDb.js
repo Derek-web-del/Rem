@@ -10,14 +10,23 @@ const ANNOUNCEMENT_SELECT = `id, title, type, message, announcement_image, image
 export async function fetchStudentSubjects(pool, studentRow) {
   const grade = await resolveStudentGradeLevel(pool, studentRow)
   if (!grade) return []
+  const gradeCore = grade.replace(/^grade\s*/, '').trim()
+  const gradeVariants = new Set([grade])
+  if (gradeCore) {
+    gradeVariants.add(`grade ${gradeCore}`)
+    gradeVariants.add(gradeCore)
+  }
+  const params = [...gradeVariants]
+  const placeholders = params.map((_, i) => `$${i + 1}`).join(', ')
   const { rows } = await pool.query(
     `
       SELECT id, subject_code, subject_name, grade_level, semester, subject_photo, faculty_id, created_at
       FROM subjects
-      WHERE lower(trim(replace(coalesce(grade_level, ''), '  ', ' '))) = $1
+      WHERE archived_at IS NULL
+        AND lower(trim(replace(coalesce(grade_level, ''), '  ', ' '))) IN (${placeholders})
       ORDER BY subject_name ASC, id ASC
     `,
-    [grade],
+    params,
   )
   return (rows || []).map((row) => ({
     id: row.id != null ? String(row.id) : '',

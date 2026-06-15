@@ -955,7 +955,33 @@ export async function ensureSchema(pool) {
 
   await ensureArchivedAtColumns(pool)
 
+  await ensureOperationalArchivedAtColumns(pool)
+
   await ensureTeacherDashboardAggregateTables(pool)
+}
+
+/** Ensures `archived_at` on operational LMS tables (subjects, announcements, etc.). */
+export async function ensureOperationalArchivedAtColumns(pool) {
+  const tables = [
+    'subjects',
+    'announcements',
+    'curriculum_guides',
+    'quizzes',
+    'assignments',
+    'activities',
+    'study_materials',
+    'subject_materials',
+  ]
+  for (const table of tables) {
+    try {
+      await pool.query(
+        `ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ`,
+      )
+    } catch (e) {
+      logStatePostgresError(`ensureOperationalArchivedAtColumns ${table}`, e)
+    }
+  }
+  console.log('[DB] archived_at columns verified on all operational tables')
 }
 
 /** Rows for faculty-scoped LMS stats (assignments counts). */

@@ -1,0 +1,37 @@
+=== Frontend security controls ===
+Generated: 2026-06-09T13:00:30.452Z
+
+FRONTEND SECURITY CONTROLS — 2026-06-09T13:00:30.452Z
+─────────────────────────────────────────
+
+Upload Limits Configuration (shared/uploadLimits.js):
+  Profile photo max: 2 MB (Images only • Max 2MB)
+  Default upload max: 15 MB (PDF, DOC, DOCX • Max 15MB)
+  Study material max: 25 MB (PDF only • Max 25MB)
+  Student submission max: 10 MB
+  Multer / Express ceiling: 50 MB
+  Originality checker: TXT, DOCX, PDF • Max 15MB
+
+File Validation:
+  Client-side: shared/uploadLimits.js (validateFileSize, validateProfilePhotoPayload)
+  Server-side: multer fileFilter per domain (assignments, activities, materials, originality)
+  Oversize body → HTTP 413 (express.json limit 50mb)
+
+Terms Gate:
+  Frontend/src/routes/TermsGuard.jsx — all portal roles gated before dashboard
+  Student terms_accepted in DB: 2 record(s)
+
+Role Guards:
+  Frontend/src/routes/AdminDashboardRoute.jsx — admin only
+  Frontend/src/routes/TeacherProtectedRoute.jsx — faculty only
+  Frontend/src/routes/StudentProtectedRoute.jsx — student only
+  Frontend/src/lib/roleAccess.js — normalizeRole, redirectPathForWrongRole
+
+Error Boundary:
+  Frontend/src/components/ErrorBoundary.jsx wraps App in main.jsx
+  Friendly fallback UI on uncaught render errors
+
+Password management (admin provisioning):
+  Frontend/src/InstituteDashboard.jsx — /api/auth/admin/set-user-password
+  server/auth.js — bcrypt, lockout, assertStrongPassword
+  No self-service forgot/reset password flow

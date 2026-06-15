@@ -1,0 +1,39 @@
+=== Backend security controls ===
+Generated: 2026-06-09T13:00:30.455Z
+
+BACKEND SECURITY CONTROLS — 2026-06-09T13:00:30.455Z
+─────────────────────────────────────────
+
+CSRF Protection Method: SameSite Cookies + CORS allowlist
+  SameSite: lax (prevents cross-origin cookie on unsafe requests)
+  HttpOnly: true (prevents JS cookie theft)
+  Secure: false in local dev HTTP
+  CORS origin allowlist: http://localhost:5173, http://127.0.0.1:5173
+  credentials: true (server/index.js cors config)
+  Frontend fetch: credentials include (auth-client.js, apiClient.js)
+
+Note: SameSite=Lax + strict CORS origin allowlist is a recognized CSRF defense
+per OWASP CSRF Prevention Cheat Sheet. Explicit anti-CSRF tokens not required
+when session cookies are SameSite with a strict CORS policy.
+
+Helmet Security Headers (server/index.js):
+  X-Frame-Options: DENY (frameguard)
+  X-Content-Type-Options: nosniff
+  X-XSS-Protection: enabled (xssFilter)
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'
+  HSTS: disabled in development
+
+Rate Limiting:
+  Sign-in: max 10 per 900000ms
+  API GET/HEAD: max 1000 per 900000ms
+  API POST/PUT/PATCH/DELETE: max 500 per 900000ms
+
+Input Sanitization:
+  server/middleware/sanitizeInput.js on all /api routes
+  Parameterized SQL queries throughout server/api/
+
+Health check GET /health → HTTP 200
+
+Live probes:
+  CORS cross-origin probe: HTTP 200 (Origin http://evil.example — not on allowlist)
+  XSS reflection check: GET terms-status HTTP 401; script in body: NO (PASS)

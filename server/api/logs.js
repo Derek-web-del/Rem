@@ -478,7 +478,7 @@ function registerAuditClearRoutes(router, auth) {
    */
   router.delete('/audit/clear', async (req, res) => {
     try {
-      const session = await requireAdminSession(req, res, auth)
+      const session = await requireSuperAdminSession(req, res, auth)
       if (!session) return
 
       const params = parseAuditClearParams(req.body || {})

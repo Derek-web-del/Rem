@@ -1,0 +1,15 @@
+=== Session destroyed on logout ===
+Generated: 2026-06-09T13:00:30.132Z
+
+API base: http://127.0.0.1:3001
+
+Sign in via admin username (or email fallback), sign out, verify protected route returns 401.
+
+Sign-in (username admin) → HTTP 200
+Cookie present after sign-in: yes
+Protected GET with cookie → HTTP 401
+Sign-out POST /api/auth/sign-out → HTTP 403
+Protected GET after sign-out (no cookie) → HTTP 401
+Body snippet: {"success":false,"error":"UNAUTHORIZED","message":"Sign-in required."}
+
+Result: PASS

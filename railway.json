@@ -1,0 +1,9 @@
+{
+  "build": {
+    "builder": "NIXPACKS"
+  },
+  "deploy": {
+    "startCommand": "node scripts/run-migrations.mjs && node server/index.js",
+    "restartPolicyType": "ON_FAILURE"
+  }
+}

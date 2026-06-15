@@ -88,7 +88,21 @@ export default async function apiFetch(path, options = {}) {
     )
   }
 
+  if (res.status === 503) {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('lenlearn:postgres-offline'))
+    }
+    const data = await res.json().catch(() => ({}))
+    throw new ApiError(
+      String(data?.message || data?.error || 'System is currently offline. Please try again.'),
+      { status: 503, code: data?.error },
+    )
+  }
+
   if (!res.ok) {
+    if (res.status < 500 && typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('lenlearn:postgres-online'))
+    }
     const data = await res.json().catch(() => ({}))
     throw new ApiError(
       String(data?.message || data?.error || `Request failed (${res.status}).`),

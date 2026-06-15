@@ -5,6 +5,7 @@ import { useIdleSession } from '../hooks/useIdleSession.js'
 import { clearTermsAcceptance } from '../lib/termsSession.js'
 import TeacherSidebar from '../pages/teachers/TeacherSidebar.jsx'
 import OfflineBanner from '../components/OfflineBanner.jsx'
+import SystemOfflineBanner from '../components/SystemOfflineBanner.jsx'
 
 const IDLE_MS = 30 * 60 * 1000
 
@@ -44,6 +45,7 @@ export default function TeacherLayout() {
       <TeacherSidebar onLogout={logoutToPortal} navLocked={sidebarNavLocked} />
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-auto bg-neutral-100">
         <OfflineBanner />
+        <SystemOfflineBanner />
         <Suspense fallback={<TeacherOutletFallback />}>
           <Outlet context={{ logoutToPortal, setSidebarNavLocked }} />
         </Suspense>

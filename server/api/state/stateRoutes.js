@@ -12,8 +12,10 @@ import { GENERIC_SERVER_ERROR, sendSafeServerError } from '../../lib/safeApiErro
 /** @param {import('express').Router} router @param {{ pool: import('pg').Pool, auth: object }} ctx */
 export function registerStateRoutes(router, ctx) {
   const { pool, auth } = ctx
-  router.get('/v1/state', async (_req, res) => {
+  router.get('/v1/state', async (req, res) => {
     try {
+      const adminSession = await requireAdminSession(req, res, auth)
+      if (!adminSession) return
       const { rows } = await pool.query('SELECT json FROM app_state WHERE id = $1', [STATE_ID])
       const row = rows?.[0]
       if (!row?.json) {

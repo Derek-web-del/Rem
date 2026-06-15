@@ -3,43 +3,85 @@ import BackButton from '../../components/BackButton.jsx'
 import { useNotify } from '../../components/notifications.jsx'
 import { authClient } from '../../lib/auth-client.js'
 import { apiUrl } from '../../lib/lmsStateStorage.js'
+import {
+  mapCurriculumGuideList,
+  mapCurriculumGuideToDashboard,
+  normalizeCurriculumList,
+  normalizeCurriculumItem,
+} from './curriculumGuideMapping.js'
+
+export {
+  mapCurriculumGuideList,
+  mapCurriculumGuideToDashboard,
+  normalizeCurriculumList,
+  normalizeCurriculumItem,
+} from './curriculumGuideMapping.js'
 
 export const CURRICULUM_STORAGE_KEY = 'lenlearn.curriculums'
 
 const GRADE_LEVELS = ['Grade 7', 'Grade 8', 'Grade 9', 'Grade 10']
-const SUBJECTS_BY_GRADE = {
-  'Grade 7': ['ENGLISH_7', 'MATH_7', 'SCIENCE_7', 'FILIPINO_7'],
-  'Grade 8': ['ENGLISH_8', 'MATH_8', 'SCIENCE_8', 'FILIPINO_8'],
-  'Grade 9': ['ENGLISH_9', 'MATH_9', 'SCIENCE_9', 'FILIPINO_9'],
-  'Grade 10': ['ENGLISH_10', 'MATH_10', 'SCIENCE_10', 'FILIPINO_10'],
+
+/** Grades 7–8 use the junior-high catalog (9 subjects; no Journalism or Research). */
+const JUNIOR_HIGH_GRADES = new Set(['Grade 7', 'Grade 8'])
+/** Grades 9–10 use the full senior-high catalog (all 11 subjects). */
+const SENIOR_HIGH_GRADES = new Set(['Grade 9', 'Grade 10'])
+const JUNIOR_HIGH_EXCLUDED_SUBJECT_NAMES = new Set(['journalism', 'research'])
+
+function normalizeSubjectKey(name) {
+  return String(name || '').trim().toLowerCase()
 }
 
-/** Repair curriculum rows from server JSON or localStorage (snake_case, missing fields, literal "null"). */
-export function normalizeCurriculumList(list) {
-  if (!Array.isArray(list)) return []
-  return list.map((raw, index) => normalizeCurriculumItem(raw, index)).filter(Boolean)
+function subjectGradeLabel(subject) {
+  return String(subject?.grade ?? subject?.grade_level ?? '').trim()
 }
 
-export function normalizeCurriculumItem(raw, index) {
-  if (!raw || typeof raw !== 'object') return null
-  const nz = (v) => {
-    if (v == null) return ''
-    const s = String(v).trim()
-    if (!s || s === 'null' || s === 'undefined') return ''
-    return s
+function subjectOptionValue(subject) {
+  const name = String(subject?.subjectName ?? subject?.subject_name ?? '').trim()
+  if (name) return name
+  return String(subject?.subjectCode ?? subject?.subject_code ?? '').trim()
+}
+
+function subjectOptionLabel(subject) {
+  return subjectOptionValue(subject)
+}
+
+/** Unique institute subjects (deduped by name) for curriculum dropdowns. */
+function uniqueSubjectOptions(subjects) {
+  const list = Array.isArray(subjects) ? subjects : []
+  const byName = new Map()
+  for (const s of list) {
+    const value = subjectOptionValue(s)
+    if (!value) continue
+    const key = normalizeSubjectKey(value)
+    if (!byName.has(key)) {
+      byName.set(key, { value, label: subjectOptionLabel(s) })
+    }
   }
-  const id = nz(raw.id) || nz(raw.source_id) || `legacy-${index}`
-  const grade = nz(raw.grade) || nz(raw.grade_level)
-  const subject = nz(raw.subject) || nz(raw.title)
-  const fileName = nz(raw.fileName) || nz(raw.file_name)
-  return {
-    ...raw,
-    id,
-    grade: grade || '',
-    subject: subject || '(no subject)',
-    description: nz(raw.description),
-    fileName,
+  return [...byName.values()].sort((a, b) => a.label.localeCompare(b.label))
+}
+
+/**
+ * Subjects for curriculum by grade band:
+ * - Grade 7–8: 9 subjects (excludes Journalism and Research)
+ * - Grade 9–10: all 11 subjects from the Subjects module catalog
+ */
+function subjectsForGrade(subjects, grade) {
+  const catalog = uniqueSubjectOptions(subjects)
+  if (!grade) return catalog
+
+  if (JUNIOR_HIGH_GRADES.has(grade)) {
+    return catalog.filter((s) => !JUNIOR_HIGH_EXCLUDED_SUBJECT_NAMES.has(normalizeSubjectKey(s.value)))
   }
+
+  if (SENIOR_HIGH_GRADES.has(grade)) {
+    return catalog
+  }
+
+  return catalog.filter((s) =>
+    (Array.isArray(subjects) ? subjects : []).some(
+      (row) => subjectGradeLabel(row) === grade && normalizeSubjectKey(subjectOptionValue(row)) === normalizeSubjectKey(s.value),
+    ),
+  )
 }
 
 function curriculumCardTitle(item) {
@@ -62,21 +104,21 @@ function readFileAsDataUrl(file) {
 }
 
 async function resolveCurriculumPostgresId(item) {
-  const pg = Number(item?.postgresCurriculumId)
-  if (Number.isFinite(pg) && pg > 0) return pg
   const rawId = String(item?.id ?? '').trim()
-  if (/^\d+$/.test(rawId)) return Number(rawId)
-  if (!rawId) return null
-  const res = await fetch(apiUrl('/api/v1/curriculum'), { credentials: 'include' })
-  const data = await res.json().catch(() => ({}))
-  if (!res.ok) return null
-  const list = Array.isArray(data?.curriculum) ? data.curriculum : []
-  const match = list.find((row) => String(row?.source_id ?? '') === rawId)
-  return match?.id != null ? Number(match.id) : null
+  if (rawId) return rawId
+  return null
+}
+
+function curriculumFilePreviewSrc(item) {
+  const inline = String(item?.fileDataUrl ?? '').trim()
+  if (inline) return inline
+  const path = String(item?.fileUrl ?? '').trim()
+  if (path) return apiUrl(path)
+  return ''
 }
 
 const InstituteCurriculum = forwardRef(function InstituteCurriculum(
-  { curriculums, setCurriculums, persistenceMode, setActiveNav },
+  { curriculums, setCurriculums, subjects = [], persistenceMode, setActiveNav, onCurriculumRefresh },
   ref,
 ) {
   const toast = useNotify()
@@ -131,13 +173,9 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
     } catch {}
   }, [curriculums, persistenceMode])
 
-  const uploadSubjects = SUBJECTS_BY_GRADE[uploadForm.grade] || []
-  const editSubjects = SUBJECTS_BY_GRADE[editForm.grade] || []
-  const filterSubjects = useMemo(() => {
-    if (filterGrade) return SUBJECTS_BY_GRADE[filterGrade] || []
-    const all = Object.values(SUBJECTS_BY_GRADE).flat()
-    return [...new Set(all)]
-  }, [filterGrade])
+  const uploadSubjects = useMemo(() => subjectsForGrade(subjects, uploadForm.grade), [subjects, uploadForm.grade])
+  const editSubjects = useMemo(() => subjectsForGrade(subjects, editForm.grade), [subjects, editForm.grade])
+  const filterSubjects = useMemo(() => subjectsForGrade(subjects, filterGrade), [subjects, filterGrade])
 
   const filteredCurriculums = useMemo(() => {
     return curriculums.filter((item) => {
@@ -192,47 +230,48 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
     }
     setIsUploading(true)
     try {
-      const dataUrl = await readFileAsDataUrl(uploadForm.file)
-      const newId = crypto.randomUUID()
-      let postgresCurriculumId = null
-
       if (persistenceMode === 'server') {
-        const res = await fetch(apiUrl('/api/v1/curriculum'), {
+        const body = new FormData()
+        body.append('file', uploadForm.file)
+        body.append('title', uploadForm.subject)
+        body.append('subject', uploadForm.subject)
+        body.append('grade_level', uploadForm.grade)
+        body.append('description', uploadForm.description.trim())
+        body.append('is_published', 'true')
+        const res = await fetch(apiUrl('/api/admin/curriculum-guides'), {
           method: 'POST',
           credentials: 'include',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            title: uploadForm.subject,
-            description: uploadForm.description.trim(),
-            grade_level: uploadForm.grade,
-            file_name: uploadForm.file.name,
-            source_id: newId,
-          }),
+          body,
         })
         const data = await res.json().catch(() => ({}))
         if (!res.ok) {
           throw new Error(String(data?.message || data?.error || `Create failed (${res.status}).`))
         }
-        postgresCurriculumId = data?.id != null ? Number(data.id) : null
+        if (typeof onCurriculumRefresh === 'function') {
+          await onCurriculumRefresh()
+        } else if (data?.id) {
+          const mapped = mapCurriculumGuideToDashboard(data, (p) => apiUrl(p))
+          if (mapped) setCurriculums((prev) => [mapped, ...prev.filter((x) => x.id !== mapped.id)])
+        }
+      } else {
+        const dataUrl = await readFileAsDataUrl(uploadForm.file)
+        const newItem = {
+          id: crypto.randomUUID(),
+          grade: uploadForm.grade,
+          subject: uploadForm.subject,
+          description: uploadForm.description.trim(),
+          fileName: uploadForm.file.name,
+          fileType: uploadForm.file.type,
+          fileDataUrl: dataUrl,
+          uploadedAt: nowDateStamp(),
+          uploadedBy:
+            String(sessionUser?.name || sessionUser?.email || sessionUser?.id || '').trim() || 'Administrator',
+        }
+        setCurriculums((prev) => [newItem, ...prev])
       }
-
-      const newItem = {
-        id: newId,
-        postgresCurriculumId,
-        grade: uploadForm.grade,
-        subject: uploadForm.subject,
-        description: uploadForm.description.trim(),
-        fileName: uploadForm.file.name,
-        fileType: uploadForm.file.type,
-        fileDataUrl: dataUrl,
-        uploadedAt: nowDateStamp(),
-        uploadedBy:
-          String(sessionUser?.name || sessionUser?.email || sessionUser?.id || '').trim() || 'Administrator',
-      }
-      setCurriculums((prev) => [newItem, ...prev])
       setUploadForm({ grade: '', subject: '', description: '', file: null })
       setCurriculumPage('manage')
-      toast.created('You have created Curriculum Guide.')
+      toast.created('Curriculum guide saved and published for faculty.')
     } catch (err) {
       setFormError(err?.message || 'Could not upload curriculum file.')
       toast.error('Could not create Curriculum Guide.')
@@ -265,71 +304,87 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
       setEditingError('Please complete Grade Level, Subject, and Description.')
       return
     }
-    let nextFileDataUrl = target.fileDataUrl
-    let nextFileName = target.fileName
-    let nextFileType = target.fileType
-    if (editForm.file) {
-      if (!isAllowedCurriculumGuideFile(editForm.file)) {
-        setEditingError('File must be DOC, DOCX, or PDF.')
-        return
-      }
-      try {
-        nextFileDataUrl = await readFileAsDataUrl(editForm.file)
-        nextFileName = editForm.file.name
-        nextFileType = editForm.file.type
-      } catch (err) {
-        setEditingError(err?.message || 'Could not update file.')
-        return
-      }
+    if (editForm.file && !isAllowedCurriculumGuideFile(editForm.file)) {
+      setEditingError('File must be DOC, DOCX, or PDF.')
+      return
     }
-
-    let resolvedPgId = target.postgresCurriculumId ?? null
+    let resolvedGuideId = String(target?.id ?? '').trim()
     if (persistenceMode === 'server') {
-      resolvedPgId = await resolveCurriculumPostgresId(target)
-      if (!resolvedPgId) {
+      resolvedGuideId = String(await resolveCurriculumPostgresId(target) || target?.id || '').trim()
+      if (!resolvedGuideId) {
         setEditingError('Could not resolve curriculum record on the server.')
         return
       }
       try {
-        const res = await fetch(apiUrl(`/api/v1/curriculum/${encodeURIComponent(String(resolvedPgId))}`), {
-          method: 'PUT',
-          credentials: 'include',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            title: editForm.subject,
-            description: editForm.description.trim(),
-            grade_level: editForm.grade,
-            file_name: nextFileName,
-            source_id: String(target.id),
-          }),
-        })
+        let res
+        if (editForm.file) {
+          const body = new FormData()
+          body.append('title', editForm.subject)
+          body.append('subject', editForm.subject)
+          body.append('grade_level', editForm.grade)
+          body.append('description', editForm.description.trim())
+          body.append('file', editForm.file)
+          res = await fetch(apiUrl(`/api/admin/curriculum-guides/${encodeURIComponent(resolvedGuideId)}`), {
+            method: 'PUT',
+            credentials: 'include',
+            body,
+          })
+        } else {
+          res = await fetch(apiUrl(`/api/admin/curriculum-guides/${encodeURIComponent(resolvedGuideId)}`), {
+            method: 'PUT',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              title: editForm.subject,
+              subject: editForm.subject,
+              grade_level: editForm.grade,
+              description: editForm.description.trim(),
+            }),
+          })
+        }
         const data = await res.json().catch(() => ({}))
         if (!res.ok) {
           setEditingError(String(data?.message || data?.error || `Update failed (${res.status}).`))
           return
         }
+        if (typeof onCurriculumRefresh === 'function') {
+          await onCurriculumRefresh()
+        } else {
+          const mapped = mapCurriculumGuideToDashboard(data, (p) => apiUrl(p))
+          if (mapped) {
+            setCurriculums((prev) => prev.map((item) => (item.id === editId ? mapped : item)))
+          }
+        }
       } catch (e) {
         setEditingError(String(e?.message || e || 'Network error updating curriculum.'))
         return
       }
+    } else {
+      let nextFileDataUrl = target.fileDataUrl
+      let nextFileName = target.fileName
+      let nextFileType = target.fileType
+      if (editForm.file) {
+        nextFileDataUrl = await readFileAsDataUrl(editForm.file)
+        nextFileName = editForm.file.name
+        nextFileType = editForm.file.type
+      }
+      setCurriculums((prev) =>
+        prev.map((item) =>
+          item.id === editId
+            ? {
+                ...item,
+                grade: editForm.grade,
+                subject: editForm.subject,
+                description: editForm.description.trim(),
+                fileDataUrl: nextFileDataUrl,
+                fileName: nextFileName,
+                fileType: nextFileType,
+              }
+            : item,
+        ),
+      )
     }
 
-    setCurriculums((prev) =>
-      prev.map((item) =>
-        item.id === editId
-          ? {
-              ...item,
-              grade: editForm.grade,
-              subject: editForm.subject,
-              description: editForm.description.trim(),
-              fileDataUrl: nextFileDataUrl,
-              fileName: nextFileName,
-              fileType: nextFileType,
-              postgresCurriculumId: resolvedPgId ?? item.postgresCurriculumId ?? null,
-            }
-          : item,
-      ),
-    )
     setEditId('')
     setCurriculumPage('manage')
     setEditForm({ grade: '', subject: '', description: '', file: null })
@@ -345,10 +400,10 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
     const target = deleteTarget
 
     if (persistenceMode === 'server') {
-      const rawId = String(target?.id || '').trim()
-      if (rawId) {
+      const guideId = String(target?.id || '').trim()
+      if (guideId) {
         try {
-          const res = await fetch(apiUrl(`/api/v1/curriculum/${encodeURIComponent(rawId)}`), {
+          const res = await fetch(apiUrl(`/api/admin/curriculum-guides/${encodeURIComponent(guideId)}`), {
             method: 'DELETE',
             credentials: 'include',
           })
@@ -360,6 +415,11 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
             })
             return
           }
+          if (typeof onCurriculumRefresh === 'function') {
+            await onCurriculumRefresh()
+          } else {
+            setCurriculums((prev) => prev.filter((item) => item.id !== target.id))
+          }
         } catch (e) {
           toast.error(String(e?.message || e || 'Network error deleting curriculum.'), {
             title: 'Could not delete curriculum',
@@ -368,27 +428,39 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
           return
         }
       }
+    } else {
+      setCurriculums((prev) => prev.filter((item) => item.id !== target.id))
     }
-
-    setCurriculums((prev) => prev.filter((item) => item.id !== target.id))
     setDeleteTarget(null)
     toast.deleted('You have deleted Curriculum Guide.')
   }
 
   function previewCard(item) {
+    const src = curriculumFilePreviewSrc(item)
     if (String(item.fileType || '').startsWith('image/')) {
-      return <img src={item.fileDataUrl} alt={curriculumCardTitle(item)} className="h-44 w-full rounded-lg border object-cover" />
+      return <img src={src} alt={curriculumCardTitle(item)} className="h-44 w-full rounded-lg border object-cover" />
     }
-    if (!String(item.fileDataUrl || '').trim()) {
+    if (!src) {
       return (
         <div className="flex h-44 w-full items-center justify-center rounded-lg border bg-neutral-50 p-4 text-center text-sm text-neutral-600">
-          No file preview on this device — open View on a machine that has the file, or use another device with the same signed-in account after data has synced.
+          No file preview available.
+        </div>
+      )
+    }
+    const isPdf = String(item.fileType || src).includes('pdf') || String(item.fileName || src).toLowerCase().endsWith('.pdf')
+    if (!isPdf) {
+      return (
+        <div className="flex h-44 w-full flex-col items-center justify-center gap-2 rounded-lg border bg-neutral-50 p-4 text-center text-sm text-neutral-700">
+          <p>{curriculumCardTitle(item)}</p>
+          <a href={src} target="_blank" rel="noreferrer" className="font-semibold text-blue-700 underline">
+            Open file
+          </a>
         </div>
       )
     }
     return (
       <div className="h-44 w-full rounded-lg border bg-white p-2">
-        <iframe title={curriculumCardTitle(item)} src={item.fileDataUrl} className="h-full w-full rounded" />
+        <iframe title={curriculumCardTitle(item)} src={src} className="h-full w-full rounded" />
       </div>
     )
   }
@@ -415,6 +487,9 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
           </div>
           <section className="rounded-xl border border-neutral-200 bg-white p-5 shadow-md md:p-6">
             <h3 className="text-lg font-semibold text-neutral-900">Upload New Curriculum</h3>
+            <p className="mt-1 text-sm text-neutral-600">
+              Guides are saved to PostgreSQL and published for the Teacher Curriculum page (same as faculty curriculum guides).
+            </p>
             <form onSubmit={submitUpload} className="mt-5 grid gap-4">
               <label className="text-sm font-medium text-neutral-700">
                 Grade Level
@@ -441,8 +516,8 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
                 >
                   <option value="">Select Subject</option>
                   {uploadSubjects.map((subject) => (
-                    <option key={subject} value={subject}>
-                      {subject}
+                    <option key={subject.value} value={subject.value}>
+                      {subject.label}
                     </option>
                   ))}
                 </select>
@@ -523,8 +598,8 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
               >
                 <option value="">Select Subject</option>
                 {editSubjects.map((subject) => (
-                  <option key={subject} value={subject}>
-                    {subject}
+                  <option key={subject.value} value={subject.value}>
+                    {subject.label}
                   </option>
                 ))}
               </select>
@@ -623,8 +698,8 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
             >
               <option value="">All Subjects</option>
               {filterSubjects.map((subject) => (
-                <option key={subject} value={subject}>
-                  {subject}
+                <option key={subject.value} value={subject.value}>
+                  {subject.label}
                 </option>
               ))}
             </select>
@@ -719,9 +794,9 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
               </button>
             </div>
             {String(viewingItem.fileType || '').startsWith('image/') ? (
-              <img src={viewingItem.fileDataUrl} alt={curriculumCardTitle(viewingItem)} className="max-h-[75vh] w-full object-contain" />
+              <img src={curriculumFilePreviewSrc(viewingItem)} alt={curriculumCardTitle(viewingItem)} className="max-h-[75vh] w-full object-contain" />
             ) : (
-              <iframe title={curriculumCardTitle(viewingItem)} src={viewingItem.fileDataUrl} className="h-[75vh] w-full rounded border" />
+              <iframe title={curriculumCardTitle(viewingItem)} src={curriculumFilePreviewSrc(viewingItem)} className="h-[75vh] w-full rounded border" />
             )}
           </div>
         </div>

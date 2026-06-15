@@ -59,55 +59,21 @@ export async function enrichAuthIdentifiers(pool, user) {
 }
 
 export async function fetchStudentRowForSession(pool, user) {
-  const { email, username, userId } = await enrichAuthIdentifiers(pool, user)
-  if (!email && !username && !userId) return null
+  const { userId } = await enrichAuthIdentifiers(pool, user)
+  if (!userId) return null
 
   const { rows } = await pool.query(
     `
       SELECT s.*, sec.section_name AS section_name
       FROM public.students s
       LEFT JOIN public.sections sec ON sec.id = s.section_id
-      WHERE (
-        ($1 <> '' AND s.auth_user_id = $1)
-        OR (
-          $2 <> '' AND lower(trim(coalesce(s.email, ''))) = $2
-          AND (s.auth_user_id IS NULL OR trim(coalesce(s.auth_user_id, '')) = '' OR s.auth_user_id = $1)
-        )
-        OR ($3 <> '' AND lower(trim(coalesce(s.login_id, ''))) = $3)
-        OR ($2 <> '' AND lower(trim(coalesce(s.email, ''))) = $2)
-        OR (
-          $1 <> '' AND EXISTS (
-            SELECT 1 FROM "user" u
-            WHERE u.id = $1
-              AND (
-                lower(trim(coalesce(s.login_id, ''))) = lower(trim(coalesce(u.username, '')))
-                OR lower(trim(coalesce(s.email, ''))) = lower(trim(coalesce(u.email, '')))
-              )
-          )
-        )
-      )
-      AND (s.archived_at IS NULL)
-      ORDER BY
-        CASE WHEN $1 <> '' AND s.auth_user_id = $1 THEN 0 ELSE 1 END,
-        CASE WHEN $3 <> '' AND lower(trim(coalesce(s.login_id, ''))) = $3 THEN 0 ELSE 1 END,
-        CASE WHEN $2 <> '' AND lower(trim(coalesce(s.email, ''))) = $2 THEN 0 ELSE 1 END,
-        s.id DESC
+      WHERE s.auth_user_id = $1
+        AND (s.archived_at IS NULL)
       LIMIT 1
     `,
-    [userId, email, username],
+    [userId],
   )
   const row = rows?.[0] || null
-  if (row && userId && !String(row.auth_user_id || '').trim()) {
-    try {
-      await pool.query(
-        `UPDATE public.students SET auth_user_id = $1 WHERE id = $2 AND (auth_user_id IS NULL OR trim(coalesce(auth_user_id, '')) = '')`,
-        [userId, row.id],
-      )
-      row.auth_user_id = userId
-    } catch {
-      /* non-fatal */
-    }
-  }
   return row ? decryptStudentPiiFields(row) : null
 }
 

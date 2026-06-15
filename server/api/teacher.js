@@ -2354,6 +2354,7 @@ export function createTeacherApiRouter(express, auth) {
       const { rows } = await pool.query(`
         SELECT ${ANNOUNCEMENT_SELECT}
         FROM announcements
+        WHERE archived_at IS NULL
         ORDER BY created_at DESC
       `)
       res.json({ ok: true, announcements: (rows || []).map((r) => announcementRowToResponse(r)) })
@@ -2532,6 +2533,58 @@ export function createTeacherApiRouter(express, auth) {
       res.json({ ok: true, announcement: updated })
     } catch (e) {
       sendSafeServerError(res, e, 'PUT /api/teacher/announcements/:id')
+    }
+  })
+
+  router.delete('/teacher/announcements/:id', async (req, res) => {
+    try {
+      const session = await requireFacultyOrTeacherSession(req, res, auth)
+      if (!session) return
+      const user = session.user ?? session?.data?.user ?? session?.session?.user ?? session?.data?.session?.user
+      const pool = getPgPool()
+      const facultyRow = await fetchFacultyRowForSession(pool, user)
+      if (!facultyRow?.id) {
+        res.status(404).json({ error: 'FACULTY_NOT_FOUND', message: 'Faculty profile not linked.' })
+        return
+      }
+      const id = Number(req.params.id)
+      if (!Number.isFinite(id) || id <= 0) {
+        res.status(400).json({ error: 'BAD_REQUEST', message: 'Invalid announcement id.' })
+        return
+      }
+      await ensureAnnouncementsMetadataColumns(pool)
+      const { rows: existingRows } = await pool.query(
+        `SELECT ${ANNOUNCEMENT_SELECT} FROM announcements WHERE id = $1 AND archived_at IS NULL LIMIT 1`,
+        [id],
+      )
+      const existing = existingRows?.[0]
+      if (!existing) {
+        res.status(404).json({ error: 'NOT_FOUND', message: 'Announcement not found.' })
+        return
+      }
+      const ownerLabel = facultyUploadedByLabel(facultyRow)
+      if (String(existing.uploaded_by || '').trim() !== String(ownerLabel || '').trim()) {
+        res.status(403).json({ error: 'FORBIDDEN', message: 'You can only delete your own announcements.' })
+        return
+      }
+      const { rows } = await pool.query(
+        `UPDATE announcements SET archived_at = NOW(), updated_at = NOW() WHERE id = $1 RETURNING ${ANNOUNCEMENT_SELECT}`,
+        [id],
+      )
+      const removed = announcementRowToResponse(rows?.[0])
+      await logTeacherAuditEvent(req, {
+        event_type: 'announcement_deleted',
+        module: TEACHER_AUDIT_MODULES.ANNOUNCEMENTS,
+        action: TEACHER_AUDIT_ACTIONS.DELETE,
+        user,
+        facultyRow,
+        target_id: id,
+        target_label: buildTargetLabel(removed?.title),
+        old_values: announcementAuditSnapshot(removed),
+      })
+      res.json({ ok: true, id, announcement: removed })
+    } catch (e) {
+      sendSafeServerError(res, e, 'DELETE /api/teacher/announcements/:id')
     }
   })
 

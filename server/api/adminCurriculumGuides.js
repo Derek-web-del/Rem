@@ -4,8 +4,9 @@ import { sendSafeServerError } from '../lib/safeApiError.js'
 import {
   curriculumPdfUploadMiddleware,
   deleteCurriculumFileByUrl,
-  saveCurriculumPdf,
-  validateCurriculumPdfFile,
+  saveCurriculumGuideFile,
+  validateCurriculumGuideFile,
+  validateCurriculumGuideFileAsync,
 } from '../lib/curriculumGuideStorage.js'
 import {
   deleteCurriculumGuideById,
@@ -13,6 +14,7 @@ import {
   insertAdminCurriculumGuide,
   listAdminCurriculumGuides,
   setCurriculumGuidePublished,
+  updateAdminCurriculumGuide,
 } from '../lib/curriculumGuidesDb.js'
 import { requireAdminSession, auditInstituteRecord } from './state/shared.js'
 import {
@@ -40,6 +42,7 @@ export function createAdminCurriculumGuidesRouter(express, auth) {
     }
     router.get('/admin/curriculum-guides', svc503)
     router.post('/admin/curriculum-guides', svc503)
+    router.put('/admin/curriculum-guides/:id', svc503)
     router.patch('/admin/curriculum-guides/:id', svc503)
     router.delete('/admin/curriculum-guides/:id', svc503)
     return router
@@ -63,17 +66,18 @@ export function createAdminCurriculumGuidesRouter(express, auth) {
       if (!session) return
 
       const file = req.file
-      const fileErr = validateCurriculumPdfFile(file)
+      const fileErr = file ? await validateCurriculumGuideFileAsync(file) : ''
       if (fileErr) {
         res.status(400).json({ error: 'BAD_REQUEST', message: fileErr })
         return
       }
 
-      const title = String(req.body?.title || '').trim()
+      const title = String(req.body?.title || req.body?.subject || '').trim()
       const grade_level = String(req.body?.grade_level || req.body?.grade || '').trim()
-      const subject = String(req.body?.subject || '').trim()
+      const subject = String(req.body?.subject || title).trim()
+      const description = String(req.body?.description || title).trim()
       const publishNow =
-        String(req.body?.is_published || req.body?.publish || '').toLowerCase() === 'true'
+        String(req.body?.is_published ?? req.body?.publish ?? 'true').toLowerCase() !== 'false'
 
       if (!title) {
         res.status(400).json({ error: 'BAD_REQUEST', message: 'Title is required.' })
@@ -87,8 +91,12 @@ export function createAdminCurriculumGuidesRouter(express, auth) {
         res.status(400).json({ error: 'BAD_REQUEST', message: 'Subject is required.' })
         return
       }
+      if (!file) {
+        res.status(400).json({ error: 'BAD_REQUEST', message: 'Curriculum file is required.' })
+        return
+      }
 
-      const file_url = saveCurriculumPdf(file.buffer, file.originalname)
+      const file_url = saveCurriculumGuideFile(file.buffer, file.originalname)
       const file_name = String(file.originalname || 'guide.pdf').trim() || 'guide.pdf'
       const id = randomUUID()
       const pool = getPgPool()
@@ -99,6 +107,7 @@ export function createAdminCurriculumGuidesRouter(express, auth) {
         file_url,
         grade_level,
         subject,
+        description,
         uploaded_by: String(session.user?.id || ''),
         uploaded_by_name: adminDisplayName(session),
         is_published: publishNow,
@@ -117,6 +126,79 @@ export function createAdminCurriculumGuidesRouter(express, auth) {
       res.status(201).json(guide)
     } catch (e) {
       sendSafeServerError(res, e, 'POST /api/admin/curriculum-guides')
+    }
+  })
+
+  router.put('/admin/curriculum-guides/:id', curriculumPdfUploadMiddleware, async (req, res) => {
+    try {
+      const session = await requireAdminSession(req, res, auth)
+      if (!session) return
+      const id = String(req.params.id || '').trim()
+      if (!id) {
+        res.status(400).json({ error: 'BAD_REQUEST', message: 'Missing guide id.' })
+        return
+      }
+
+      const file = req.file
+      if (file) {
+        const fileErr = await validateCurriculumGuideFileAsync(file)
+        if (fileErr) {
+          res.status(400).json({ error: 'BAD_REQUEST', message: fileErr })
+          return
+        }
+      }
+
+      const pool = getPgPool()
+      const existing = await fetchCurriculumGuideById(pool, id)
+      if (!existing) {
+        res.status(404).json({ error: 'NOT_FOUND', message: 'Curriculum guide not found.' })
+        return
+      }
+
+      const title = String(req.body?.title || req.body?.subject || existing.title || '').trim()
+      const grade_level = String(req.body?.grade_level || req.body?.grade || existing.grade_level || '').trim()
+      const subject = String(req.body?.subject || title || existing.subject || '').trim()
+      const description = String(req.body?.description || existing.description || title).trim()
+
+      let file_url = existing.file_url
+      let file_name = existing.file_name
+      if (file) {
+        if (existing.file_url?.startsWith('/uploads/curriculum/')) {
+          deleteCurriculumFileByUrl(existing.file_url)
+        }
+        file_url = saveCurriculumGuideFile(file.buffer, file.originalname)
+        file_name = String(file.originalname || 'guide.pdf').trim() || 'guide.pdf'
+      }
+
+      const guide = await updateAdminCurriculumGuide(pool, id, {
+        title,
+        subject,
+        grade_level,
+        description,
+        file_name,
+        file_url,
+      })
+
+      const snap = curriculumGuideRowSnapshot(guide)
+      if (snap) {
+        await auditInstituteRecord(session, 'CURRICULUM_UPDATED', {
+          recordType: 'curriculum',
+          recordId: id,
+          description: curriculumAuditDescription('updated', snap),
+          details: curriculumAuditDetails(snap),
+        })
+      }
+
+      res.json(guide)
+    } catch (e) {
+      if (e?.code === 'APP_STATE_SYNCED') {
+        res.status(409).json({
+          error: 'SYNCED_GUIDE',
+          message: 'Guides synced from legacy app state cannot be edited here.',
+        })
+        return
+      }
+      sendSafeServerError(res, e, 'PUT /api/admin/curriculum-guides/:id')
     }
   })
 

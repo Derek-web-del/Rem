@@ -6,6 +6,7 @@ import {
   DEFAULT_UPLOAD_MAX_BYTES,
   DEFAULT_UPLOAD_MAX_MSG,
 } from './uploadLimitsConfig.js'
+import { PDF_MIMES, PDF_OR_DOC_MIMES, verifyUploadMagicBytes } from './uploadMagicBytes.js'
 
 export const ASSIGNMENT_UPLOAD_REL = '/uploads/assignments'
 export const ASSIGNMENT_MAX_BYTES = DEFAULT_UPLOAD_MAX_BYTES
@@ -115,4 +116,11 @@ export function getAssignmentUploadFile(req) {
 
 export function validateAssignmentUploadFile(file) {
   return validateAssignmentFile(file)
+}
+
+export async function validateAssignmentUploadFileAsync(file) {
+  const syncErr = validateAssignmentUploadFile(file)
+  if (syncErr) return syncErr
+  if (!file?.buffer?.length) return 'Assignment file is required.'
+  return verifyUploadMagicBytes(file.buffer, PDF_OR_DOC_MIMES)
 }

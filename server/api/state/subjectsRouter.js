@@ -1,4 +1,5 @@
 import { requireAdminSession, logStatePostgresError, auditInstituteRecord, subjectPgError, subjectRowToResponse, readSubjectBodyFields, readSubjectSyllabus, normalizeSubjectSemester } from './shared.js'
+import { requireAnyRoleSession } from '../../lib/security.js'
 import { GENERIC_SERVER_ERROR, sendSafeServerError } from '../../lib/safeApiError.js'
 import { resolveSubjectImagePath } from '../../lib/subjectImageStorage.js'
 import { extendUpdateSetWithIntegrity, stampRowLastModified } from '../../lib/recordIntegrity.js'
@@ -37,9 +38,10 @@ export function registerSubjectsRoutes(router, ctx) {
   const { pool, auth } = ctx
   router.get('/v1/subjects', async (req, res) => {
     try {
+      if (!(await requireAnyRoleSession(req, res, auth, ['admin', 'faculty', 'student']))) return
       const grade_level = String(req.query.grade_level || req.query.grade || '').trim()
       const semester = String(req.query.semester ?? '').trim()
-      const clauses = []
+      const clauses = ['s.archived_at IS NULL']
       const params = []
       if (grade_level) {
         params.push(grade_level)
@@ -224,8 +226,11 @@ export function registerSubjectsRoutes(router, ctx) {
         res.status(404).json({ error: 'Subject not found.' })
         return
       }
-      console.log(`Deleting ID ${id} from subjects in PostgreSQL`)
-      const r = await pool.query('DELETE FROM subjects WHERE id = $1', [id])
+      console.log(`Archiving ID ${id} in subjects (PostgreSQL)`)
+      const r = await pool.query(
+        'UPDATE subjects SET archived_at = NOW() WHERE id = $1 AND archived_at IS NULL',
+        [id],
+      )
       if (Number(r?.rowCount ?? 0) === 0) {
         res.status(404).json({ error: 'Subject not found.' })
         return

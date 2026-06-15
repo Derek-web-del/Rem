@@ -36,7 +36,7 @@ function TextField({ label, required, disabled, value, onChange, type = 'text', 
   )
 }
 
-function SelectField({ label, required, disabled, value, onChange, children }) {
+function SelectField({ label, required, disabled, value, onChange, children, helper }) {
   return (
     <label className="block text-sm font-medium text-neutral-700">
       {label}
@@ -50,6 +50,7 @@ function SelectField({ label, required, disabled, value, onChange, children }) {
       >
         {children}
       </select>
+      {helper ? <p className="mt-1 text-xs text-neutral-500">{helper}</p> : null}
     </label>
   )
 }
@@ -275,6 +276,7 @@ export default function SubjectDetails({
               value={form.grade}
               onChange={(e) => setForm((p) => ({ ...p, grade: e.target.value }))}
               disabled={submitting}
+              helper="Students only see subjects that match their enrolled grade level."
             >
               <option value="">Select Grade</option>
               {gradeOptions.map((g) => (
@@ -306,6 +308,7 @@ export default function SubjectDetails({
               value={form.assignedFacultyId}
               onChange={(e) => setForm((p) => ({ ...p, assignedFacultyId: e.target.value }))}
               disabled={facultyOptions.length === 0 || submitting}
+              helper="Teachers only see subjects assigned to them in the Teacher portal."
             >
               <option value="">{facultyOptions.length ? 'Select Faculty' : 'No faculty available'}</option>
               {facultyOptions.map((f) => (

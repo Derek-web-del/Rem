@@ -22,7 +22,7 @@ import { createGradesV1Router } from './api/gradesV1.js'
 import { createTeacherGradebookV1Router } from './api/teacherGradebookV1.js'
 import { createGradeOverrideV1Router } from './api/gradeOverrideV1.js'
 import { createAdminCurriculumGuidesRouter } from './api/adminCurriculumGuides.js'
-import { createFileDownloadRouter } from './api/fileDownload.js'
+import { createFileDownloadRouter, createLegacyUploadsRouter } from './api/fileDownload.js'
 import { createMonitoringRouter } from './routes/monitoring.js'
 import { createBackupRouter } from './routes/backup.js'
 import { startBackupScheduler, stopBackupScheduler } from './jobs/backupScheduler.js'
@@ -380,43 +380,47 @@ app.all('/api/auth/*', toNodeHandler(auth))
     }
   })
 
-  // Debug: call Better Auth Infra directly using current session userId.
-  // This helps diagnose "Failed to fetch user audit logs (HTTP 500)" by returning the Infra response body.
-  app.get('/api/debug/infra-user-events', async (req, res) => {
-    try {
-      const apiKey = String(process.env.BETTER_AUTH_API_KEY || '').trim()
-      const apiUrl = String(process.env.BETTER_AUTH_API_URL || 'https://dash.better-auth.com').trim()
-      if (!apiKey) {
-        res.status(500).json({ error: 'MISSING_BETTER_AUTH_API_KEY' })
-        return
+  // Debug (non-production only): Better Auth Infra events for current session user.
+  if (process.env.NODE_ENV !== 'production') {
+    app.get('/api/debug/infra-user-events', async (req, res) => {
+      try {
+        const { requireAdminRole } = await import('./lib/security.js')
+        const adminSession = await requireAdminRole(req, res, auth)
+        if (!adminSession) return
+        const apiKey = String(process.env.BETTER_AUTH_API_KEY || '').trim()
+        const apiUrl = String(process.env.BETTER_AUTH_API_URL || 'https://dash.better-auth.com').trim()
+        if (!apiKey) {
+          res.status(500).json({ error: 'MISSING_BETTER_AUTH_API_KEY' })
+          return
+        }
+
+        const userId = adminSession?.user?.id || adminSession?.data?.user?.id
+        if (!userId) {
+          res.status(401).json({ error: 'NO_SESSION' })
+          return
+        }
+
+        const url = new URL('/events/user', apiUrl)
+        url.searchParams.set('userId', String(userId))
+        url.searchParams.set('limit', '5')
+        url.searchParams.set('offset', '0')
+
+        const r = await fetch(url, {
+          headers: {
+            'x-api-key': apiKey,
+            'user-agent': req.headers['user-agent'] || 'lenlearn-auth-server',
+          },
+        })
+        const text = await r.text()
+        res.status(r.status).type('application/json').send(text)
+      } catch (e) {
+        sendSafeServerError(res, e, 'GET /api/debug/infra-user-events')
       }
-
-      const session = await auth.api.getSession({ headers: req.headers })
-      const userId = session?.user?.id || session?.data?.user?.id
-      if (!userId) {
-        res.status(401).json({ error: 'NO_SESSION' })
-        return
-      }
-
-      const url = new URL('/events/user', apiUrl)
-      url.searchParams.set('userId', String(userId))
-      url.searchParams.set('limit', '5')
-      url.searchParams.set('offset', '0')
-
-      const r = await fetch(url, {
-        headers: {
-          'x-api-key': apiKey,
-          'user-agent': req.headers['user-agent'] || 'lenlearn-auth-server',
-        },
-      })
-      const text = await r.text()
-      res.status(r.status).type('application/json').send(text)
-    } catch (e) {
-      sendSafeServerError(res, e, 'GET /api/debug/infra-user-events')
-    }
-  })
+    })
+  }
 
   app.use('/api/files', createFileDownloadRouter(express, { auth }))
+  app.use('/uploads', createLegacyUploadsRouter(express, { auth }))
 
   // Terms routes before state router — /v1/faculty/:id would otherwise capture terms-status
   app.use('/api', createTermsV1Router(express, auth))
@@ -486,10 +490,6 @@ app.all('/api/auth/*', toNodeHandler(auth))
   const spaIndexPath = path.join(distPath, 'index.html')
   const serveProductionSpa = fs.existsSync(spaIndexPath)
 
-  if (fs.existsSync(uploadsDir)) {
-    app.use('/uploads', express.static(uploadsDir))
-  }
-
   if (serveProductionSpa) {
     app.use(
       express.static(distPath, {
@@ -502,7 +502,6 @@ app.all('/api/auth/*', toNodeHandler(auth))
       if (req.path.startsWith('/api')) {
         return res.status(404).json({ error: 'API route not found' })
       }
-      if (req.path.startsWith('/uploads/')) return next()
       res.sendFile(spaIndexPath)
     })
     console.log(`[server] Serving Vite production UI from ${distPath}`)

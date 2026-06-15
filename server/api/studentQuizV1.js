@@ -282,7 +282,7 @@ export function registerStudentQuizRoutes(router, { requireStudentSession, resol
         res.status(400).json({
           success: false,
           error: 'INVALID_STATE',
-          message: 'Violations can only be saved for an active or recently submitted quiz.',
+          message: result.message || 'Violations can only be saved for an active or recently submitted quiz.',
         })
         return
       }

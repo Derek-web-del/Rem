@@ -1,0 +1,18 @@
+=== Terms consent in database ===
+Generated: 2026-06-09T13:00:30.408Z
+
+Table: students (migration 031_student_terms_accepted.sql)
+
+id=8 login_id=202611616 accepted=true at=Wed Jun 03 2026 16:20:31 GMT+0800 (Singapore Standard Time)
+id=7 login_id=SUENRIQUEZ accepted=true at=Sat May 30 2026 15:35:27 GMT+0800 (Singapore Standard Time)
+
+Table: faculties (migration 037_faculty_terms_accepted.sql)
+
+id=2c9ae350-063b-47d0-a067-18b28d9af87a username=FADEREK accepted=true at=Fri Jun 05 2026 11:55:03 GMT+0800 (Singapore Standard Time)
+
+Table: user admin (migration 038_user_terms_accepted.sql)
+
+id=ZnI29ivNbZaIL3x4JNkdFgbsdXkCWLbn email=adminterms_mq0hbs14_9f9qno@example.com accepted=true at=Fri Jun 05 2026 13:24:14 GMT+0800 (Singapore Standard Time)
+id=Zk1vu15WhrHDVSSSkUzM96uw8ypgTEMr email=adminterms_mq0hamxy_mnjpuz@example.com accepted=true at=Fri Jun 05 2026 13:23:21 GMT+0800 (Singapore Standard Time)
+
+PASS: consent flags present in DB for at least one role.

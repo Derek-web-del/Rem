@@ -4,6 +4,7 @@ import {
   auditInstituteRecord,
   purgeCurriculumFromAppStateJson,
 } from './shared.js'
+import { requireAnyRoleSession } from '../../lib/security.js'
 import { GENERIC_SERVER_ERROR } from '../../lib/safeApiError.js'
 import {
   curriculumAuditDescription,
@@ -18,11 +19,13 @@ import {
 } from '../../lib/sectionAudit.js'
 import { removeFacultyAdvisoryLinksForSection } from '../../lib/sectionAdvisoryCleanup.js'
 
-/** @param {import('express').Router} router @param {{ pool: import('pg').Pool, auth: object }} ctx */
+/** @deprecated Legacy curriculum manifest — admin UI uses /api/admin/curriculum-guides. Table retained for backup compatibility. */
 export function registerCurriculumRoutes(router, ctx) {
   const { pool, auth } = ctx
-  router.get('/v1/curriculum', async (_req, res) => {
+  // DEPRECATED: legacy curriculum manifest table. Admin UI uses /api/admin/curriculum-guides instead.
+  router.get('/v1/curriculum', async (req, res) => {
     try {
+      if (!(await requireAdminSession(req, res, auth))) return
       const { rows } = await pool.query(
         'SELECT id, title, description, grade_level, file_name, source_id, created_at FROM curriculum ORDER BY id DESC',
       )
@@ -232,6 +235,7 @@ export function registerCurriculumRoutes(router, ctx) {
 
   router.get('/v1/sections', async (req, res) => {
     try {
+      if (!(await requireAnyRoleSession(req, res, auth, ['admin', 'faculty']))) return
       const grade = String(req.query.grade_level || req.query.grade || '').trim()
       let sql = 'SELECT id, section_name, grade_level, created_at FROM sections'
       const params = []

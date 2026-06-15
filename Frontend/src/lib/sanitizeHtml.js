@@ -24,7 +24,7 @@ const ALLOWED_TAGS = [
   'mark',
 ]
 
-const ALLOWED_ATTR = ['class', 'style', 'href', 'target', 'rel']
+const ALLOWED_ATTR = ['class', 'href', 'target', 'rel']
 
 /**
  * Sanitize rich HTML before dangerouslySetInnerHTML or contentEditable innerHTML.

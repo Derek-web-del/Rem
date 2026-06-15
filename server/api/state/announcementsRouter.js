@@ -1,4 +1,5 @@
 import { requireAdminSession, logStatePostgresError, auditInstituteRecord, announcementPgError, ANNOUNCEMENT_TYPES } from './shared.js'
+import { requireAnyRoleSession } from '../../lib/security.js'
 import { announcementRowToResponse, ensureAnnouncementsMetadataColumns, maybeDeleteOldAnnouncementFile, readAnnouncementBodyFields, resolveAnnouncementImageForSave, resolveSessionUploadedByLabel } from '../../lib/announcementsDb.js'
 import { GENERIC_SERVER_ERROR } from '../../lib/safeApiError.js'
 import {
@@ -13,6 +14,7 @@ export function registerAnnouncementsRoutes(router, ctx) {
   const { pool, auth } = ctx
   router.get('/v1/announcements', async (req, res) => {
     try {
+      if (!(await requireAnyRoleSession(req, res, auth, ['admin', 'faculty', 'student']))) return
       const rawLimit = Number(req.query?.limit)
       const hasLimit = Number.isFinite(rawLimit) && rawLimit > 0
       const limit = hasLimit ? Math.min(Math.max(1, Math.floor(rawLimit)), 20) : null
@@ -20,6 +22,7 @@ export function registerAnnouncementsRoutes(router, ctx) {
         SELECT id, announcement_image, image_path, image_name, uploaded_by,
                title, type, message, created_at, updated_at
         FROM announcements
+        WHERE archived_at IS NULL
         ORDER BY created_at DESC
         ${limit != null ? 'LIMIT $1' : ''}
       `

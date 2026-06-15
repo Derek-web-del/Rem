@@ -5,11 +5,13 @@ import StudentMainHeader from './StudentMainHeader.jsx'
 import StudentViewHeader from './StudentViewHeader.jsx'
 import SubjectDetailsCard from '../teachers/subject-detail/SubjectDetailsCard.jsx'
 import StudentSubjectModulesTab from './StudentSubjectModulesTab.jsx'
+import StudentSubjectMaterialsTab from './StudentSubjectMaterialsTab.jsx'
 import StudentSubjectGradesTab from './StudentSubjectGradesTab.jsx'
 
 function SubjectTabBar({ activeTab, onTabChange }) {
   const tabs = [
     { id: 'modules', label: 'Modules' },
+    { id: 'materials', label: 'Materials' },
     { id: 'grades', label: 'Grades' },
   ]
   return (
@@ -45,7 +47,11 @@ export default function StudentSubjectProfile() {
   const [subjectNotFound, setSubjectNotFound] = useState(false)
 
   const tabParam = searchParams.get('tab')
-  const resolveTab = (tab) => (tab === 'grades' ? 'grades' : 'modules')
+  const resolveTab = (tab) => {
+    if (tab === 'grades') return 'grades'
+    if (tab === 'materials') return 'materials'
+    return 'modules'
+  }
   const [activeTab, setActiveTab] = useState(resolveTab(tabParam))
 
   useEffect(() => {
@@ -118,6 +124,8 @@ export default function StudentSubjectProfile() {
               <SubjectTabBar activeTab={activeTab} onTabChange={handleTabChange} />
               {activeTab === 'modules' ? (
                 <StudentSubjectModulesTab subjectId={subjectId} subject={subject} />
+              ) : activeTab === 'materials' ? (
+                <StudentSubjectMaterialsTab subjectId={subjectId} />
               ) : (
                 <StudentSubjectGradesTab subjectId={subjectId} />
               )}

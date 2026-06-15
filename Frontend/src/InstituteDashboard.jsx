@@ -8,14 +8,16 @@ import SubjectsPage from './modules/subjects/SubjectModule.jsx'
 import UpdatesPage from './modules/updates/UpdatesModule.jsx'
 import InstituteCurriculum, {
   CURRICULUM_STORAGE_KEY,
-  normalizeCurriculumList,
 } from './modules/curriculum/InstituteCurriculum.jsx'
+import { mapCurriculumGuideList } from './modules/curriculum/curriculumGuideMapping.js'
 import { useNotify } from './components/notifications.jsx'
+import { authClient } from './lib/auth-client.js'
 import { getLmsStateEndpointUrl, apiUrl } from './lib/lmsStateStorage.js'
 import { saveListSnapshot, getListSnapshot } from './lib/indexedDB.js'
 import { isOnline } from './lib/offlineSync.js'
 import { warmAdminOfflineCache } from './lib/adminPortalOffline.js'
 import OfflineBanner from './components/OfflineBanner.jsx'
+import SystemOfflineBanner from './components/SystemOfflineBanner.jsx'
 import AdminAuditBanner from './components/AdminAuditBanner.jsx'
 import { resolveSubjectImageFromMap } from './lib/subjectImages.js'
 import MonitoringRecords from './pages/MonitoringRecords.jsx'
@@ -40,22 +42,59 @@ const ADMIN_AVATAR_STORAGE_KEY = 'lenlearn.adminAvatarDataUrl'
 
 const GRADE_LEVELS = ['Grade 7', 'Grade 8', 'Grade 9', 'Grade 10']
 
-/** Match dashboard sections to `/api/v1/sections` rows so `postgresSectionId` is available for FK inserts. */
+/** Map `GET /api/v1/sections` row into dashboard section shape. */
+function mapPgSectionRow(row, existing = null) {
+  const pgId = row?.id != null ? Number(row.id) : NaN
+  const grade = String(row?.grade_level ?? row?.grade ?? '').trim()
+  const name = String(row?.section_name ?? row?.name ?? '').trim()
+  const postgresSectionId = Number.isFinite(pgId) && pgId > 0 ? pgId : undefined
+  const id =
+    String(existing?.id || '').trim() ||
+    (postgresSectionId != null ? String(postgresSectionId) : crypto.randomUUID())
+  return {
+    id,
+    postgresSectionId,
+    grade: grade || String(existing?.grade || '').trim(),
+    name: name || String(existing?.name || '').trim(),
+    students: Number.isFinite(Number(existing?.students)) ? Number(existing.students) : 0,
+  }
+}
+
+/** Hydrate dashboard sections from PostgreSQL API rows; preserve local ids and student counts. */
 function mergePostgresSectionIdsIntoSections(currentSections, apiRows) {
-  if (!Array.isArray(currentSections)) return []
-  if (!Array.isArray(apiRows) || apiRows.length === 0) return currentSections
-  return currentSections.map((s) => {
-    const match = apiRows.find(
-      (r) =>
-        String(r.section_name || '').trim().toLowerCase() === String(s.name || '').trim().toLowerCase() &&
-        String(r.grade_level || '').trim() === String(s.grade || '').trim(),
-    )
-    const pid = match?.id != null ? Number(match.id) : NaN
-    if (Number.isFinite(pid) && pid > 0) {
-      return { ...s, postgresSectionId: s.postgresSectionId ?? pid }
-    }
-    return s
-  })
+  const current = Array.isArray(currentSections) ? currentSections : []
+  const api = Array.isArray(apiRows) ? apiRows : []
+  if (api.length === 0) return current
+
+  const byPgId = new Map()
+  const byNameGrade = new Map()
+  for (const s of current) {
+    const pg = Number(s?.postgresSectionId)
+    if (Number.isFinite(pg) && pg > 0) byPgId.set(pg, s)
+    const nameKey = `${String(s?.name || '').trim().toLowerCase()}|${String(s?.grade || '').trim()}`
+    if (nameKey !== '|') byNameGrade.set(nameKey, s)
+  }
+
+  const merged = []
+  const consumedLocalIds = new Set()
+
+  for (const row of api) {
+    const pgId = row?.id != null ? Number(row.id) : NaN
+    const nameKey = `${String(row?.section_name || '').trim().toLowerCase()}|${String(row?.grade_level || '').trim()}`
+    const existing =
+      (Number.isFinite(pgId) && pgId > 0 ? byPgId.get(pgId) : null) || byNameGrade.get(nameKey) || null
+    if (existing?.id) consumedLocalIds.add(existing.id)
+    merged.push(mapPgSectionRow(row, existing))
+  }
+
+  for (const s of current) {
+    if (consumedLocalIds.has(s.id)) continue
+    const pg = Number(s?.postgresSectionId)
+    const syncedInApi = Number.isFinite(pg) && pg > 0 && api.some((r) => Number(r?.id) === pg)
+    if (!syncedInApi) merged.push(s)
+  }
+
+  return merged
 }
 
 /** Map a `GET /api/v1/students` row (snake_case + joined `section_name`) into the dashboard student shape. */
@@ -638,6 +677,12 @@ function Avatar({ seed, size = 40 }) {
 
 export default function InstituteDashboard({ onLogout, schoolName = 'Glendale School, Inc.' }) {
   const toast = useNotify()
+  const { data: adminSession } = authClient.useSession()
+  const adminDisplayName = useMemo(() => {
+    const u = adminSession?.user
+    const name = String(u?.name || u?.email || '').trim()
+    return name || 'Administrator'
+  }, [adminSession])
   const location = useLocation()
   const navigate = useNavigate()
   const { collapsed: sidebarCollapsed, toggleCollapsed: toggleSidebarCollapsed } = useSidebarCollapsed(
@@ -669,6 +714,8 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
   const [persistenceMode, setPersistenceMode] = useState('loading')
   const [stateBootstrapDone, setStateBootstrapDone] = useState(false)
   const postgresStudentsBootstrapped = useRef(false)
+  const postgresSectionsBootstrapped = useRef(false)
+  const postgresCurriculumBootstrapped = useRef(false)
   const postgresFacultyBootstrapped = useRef(false)
   const postgresSubjectsBootstrapped = useRef(false)
   const postgresAnnouncementsBootstrapped = useRef(false)
@@ -693,8 +740,8 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
         if (payload?.state) {
           const s = payload.state
           setAdminAvatarDataUrl(String(s.adminAvatarDataUrl || ''))
-          setCurriculums(normalizeCurriculumList(s.curriculums))
-          setSections(Array.isArray(s.sections) ? s.sections : [])
+          setCurriculums([])
+          setSections([])
           setStudents(Array.isArray(s.students) ? s.students : [])
           // Faculty roster is loaded from PostgreSQL `faculty` via GET /api/v1/faculty (not app_state blob).
           setFaculties([])
@@ -764,8 +811,8 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
               durationMs: 12000,
             })
           } else {
-            toast.success('Data saved successfully.', {
-              title: 'Saved to database',
+            toast.success('Profile photo saved.', {
+              title: 'Admin profile',
               durationMs: 4500,
             })
           }
@@ -1642,7 +1689,14 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
           return { error: subjectApiErrorMessage(data, 'Could not create subject.') }
         }
         await refreshSubjectsFromPostgres()
+        const facultyAssigned = String(payload.assignedFacultyId || '').trim()
         toast.created('You have created Subject.')
+        if (!facultyAssigned) {
+          toast.info('Assign a faculty member to this subject so it appears on the Teacher portal.', {
+            title: 'Teacher visibility',
+            durationMs: 9000,
+          })
+        }
         return { ok: true }
       } catch (e) {
         return { error: String(e?.message || e) }
@@ -1706,6 +1760,13 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
         }
         await refreshSubjectsFromPostgres()
         toast.updated('You have updated Subject.')
+        const facultyAssigned = String(merged.assignedFacultyId || merged.faculty_id || '').trim()
+        if (!facultyAssigned) {
+          toast.info('Assign a faculty member to this subject so it appears on the Teacher portal.', {
+            title: 'Teacher visibility',
+            durationMs: 9000,
+          })
+        }
         return { ok: true }
       } catch (e) {
         return { error: String(e?.message || e) }
@@ -2011,6 +2072,9 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
     setActiveSectionGrade(grade)
     setSectionForm({ grade: '', name: '' })
     setSectionPage('manage')
+    if (persistenceMode === 'server') {
+      await refreshSectionsFromPostgres()
+    }
     toast.created('You have created Section.', { title: 'Section created', durationMs: 4500 })
   }
 
@@ -2077,6 +2141,9 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
     )
     setSectionEditTarget(null)
     setSectionEditName('')
+    if (persistenceMode === 'server') {
+      await refreshSectionsFromPostgres()
+    }
     toast.updated('You have updated Section.')
   }
 
@@ -2117,6 +2184,9 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
     }
     setStudents((prev) => prev.filter((s) => s.sectionId !== item.id))
     setSectionDeleteTarget(null)
+    if (persistenceMode === 'server') {
+      await refreshSectionsFromPostgres()
+    }
     toast.deleted('You have deleted Section.')
   }
 
@@ -2137,6 +2207,59 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
       })),
     )
   }
+
+  const refreshCurriculumFromPostgres = useCallback(async () => {
+    try {
+      if (!isOnline()) throw new Error('offline')
+      const res = await fetchStateApi(apiUrl('/api/admin/curriculum-guides'), { credentials: 'include' })
+      const data = await res.json().catch(() => ([]))
+      if (!res.ok) {
+        const msg = String(data?.message || data?.error || `Curriculum list failed (${res.status}).`)
+        console.warn('[curriculum] GET /api/admin/curriculum-guides failed:', msg)
+        return { ok: false, error: msg }
+      }
+      const list = Array.isArray(data) ? data : []
+      const mapped = mapCurriculumGuideList(list, (path) => apiUrl(path))
+      setCurriculums(mapped)
+      return { ok: true, count: mapped.length }
+    } catch (e) {
+      const msg = String(e?.message || e || 'Could not load curriculum from PostgreSQL.')
+      console.warn('[curriculum] refreshCurriculumFromPostgres:', msg)
+      return { ok: false, error: msg }
+    }
+  }, [])
+
+  const refreshSectionsFromPostgres = useCallback(async () => {
+    try {
+      if (!isOnline()) throw new Error('offline')
+      const res = await fetchStateApi(apiUrl('/api/v1/sections'), { credentials: 'include' })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        const msg = String(data?.message || data?.error || `Sections list failed (${res.status}).`)
+        console.warn('[sections] GET /api/v1/sections failed:', msg)
+        return { ok: false, error: msg }
+      }
+      const apiSec = Array.isArray(data.sections) ? data.sections : []
+      await saveListSnapshot('admin_sections', apiSec)
+      const merged = mergePostgresSectionIdsIntoSections(sectionsRef.current, apiSec)
+      setSections(merged)
+      return { ok: true, count: merged.length }
+    } catch (e) {
+      try {
+        const apiSec = await getListSnapshot('admin_sections')
+        if (apiSec.length) {
+          const merged = mergePostgresSectionIdsIntoSections(sectionsRef.current, apiSec)
+          setSections(merged)
+          return { ok: true, count: merged.length, fromCache: true }
+        }
+      } catch {
+        void 0
+      }
+      const msg = String(e?.message || e || 'Could not load sections from PostgreSQL.')
+      console.warn('[sections] refreshSectionsFromPostgres:', msg)
+      return { ok: false, error: msg }
+    }
+  }, [])
 
   async function refreshStudentsFromPostgres() {
     try {
@@ -2178,6 +2301,20 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
     if (persistenceMode !== 'server' || !stateBootstrapDone) return
     void warmAdminOfflineCache()
   }, [persistenceMode, stateBootstrapDone])
+
+  useEffect(() => {
+    if (persistenceMode !== 'server' || !stateBootstrapDone) return
+    if (postgresCurriculumBootstrapped.current) return
+    postgresCurriculumBootstrapped.current = true
+    void refreshCurriculumFromPostgres()
+  }, [persistenceMode, stateBootstrapDone, refreshCurriculumFromPostgres])
+
+  useEffect(() => {
+    if (persistenceMode !== 'server' || !stateBootstrapDone) return
+    if (postgresSectionsBootstrapped.current) return
+    postgresSectionsBootstrapped.current = true
+    void refreshSectionsFromPostgres()
+  }, [persistenceMode, stateBootstrapDone, refreshSectionsFromPostgres])
 
   useEffect(() => {
     if (persistenceMode !== 'server' || !stateBootstrapDone) return
@@ -2255,16 +2392,19 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
       const payload = await res.json()
       if (!payload?.state) return
       const s = payload.state
-      setCurriculums(normalizeCurriculumList(s.curriculums))
-      setSections(Array.isArray(s.sections) ? s.sections : [])
+      setAdminAvatarDataUrl(String(s.adminAvatarDataUrl || ''))
+      void refreshCurriculumFromPostgres()
+      void refreshSectionsFromPostgres()
     } catch (e) {
       console.warn('[state] refresh after backup restore:', e?.message || e)
     }
-  }, [])
+  }, [refreshCurriculumFromPostgres, refreshSectionsFromPostgres])
 
   useEffect(() => {
     if (persistenceMode !== 'server' || !stateBootstrapDone) return
     const onBackupRestored = () => {
+      void refreshCurriculumFromPostgres()
+      void refreshSectionsFromPostgres()
       void refreshFacultiesFromPostgres()
       void refreshSubjectsFromPostgres()
       void refreshStudentsFromPostgres()
@@ -2276,6 +2416,8 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
   }, [
     persistenceMode,
     stateBootstrapDone,
+    refreshCurriculumFromPostgres,
+    refreshSectionsFromPostgres,
     refreshFacultiesFromPostgres,
     refreshSubjectsFromPostgres,
     refreshStudentsFromPostgres,
@@ -2967,6 +3109,7 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
         </header>
 
         <OfflineBanner />
+        <SystemOfflineBanner />
         <AdminAuditBanner persistenceMode={persistenceMode} />
 
         <main className="min-h-0 flex-1 space-y-6 overflow-y-auto overflow-x-hidden p-4 md:space-y-8 md:p-8">
@@ -2984,7 +3127,7 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
                   <Avatar seed="admin" size={72} />
                 )}
                 <div className="min-w-0 text-left">
-                  <h2 className="text-xl font-bold text-neutral-900 md:text-2xl">Derek John Bantad</h2>
+                  <h2 className="text-xl font-bold text-neutral-900 md:text-2xl">{adminDisplayName}</h2>
                   <p className="mt-1 text-sm text-neutral-600">
                     Admin |{' '}
                     <button
@@ -3012,8 +3155,10 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
               ref={curriculumRef}
               curriculums={curriculums}
               setCurriculums={setCurriculums}
+              subjects={subjects}
               persistenceMode={persistenceMode}
               setActiveNav={navigateToNav}
+              onCurriculumRefresh={refreshCurriculumFromPostgres}
             />
           </div>
 

@@ -1,3 +1,5 @@
+import { curriculumMimeForFileName } from './curriculumGuideStorage.js'
+
 let publishColumnsMemo = null
 
 const PUBLISH_COLUMN_SPECS = [
@@ -58,6 +60,7 @@ function mapGuideRow(row) {
     file_url: fileUrl,
     grade_level: gradeLevel || null,
     subject: String(row.subject ?? '').trim() || null,
+    description: String(row.description ?? '').trim() || null,
     uploaded_by_name: String(row.uploaded_by_name ?? row.uploaded_by ?? '').trim() || null,
     is_published: row.is_published === true,
     source: String(row.source ?? 'app_state').trim(),
@@ -101,6 +104,7 @@ export async function listAdminCurriculumGuides(pool) {
     `
     SELECT *
     FROM curriculum_guides
+    WHERE archived_at IS NULL
     ORDER BY COALESCE(created_at, updated_at) DESC NULLS LAST, id DESC
     `,
   )
@@ -116,10 +120,12 @@ export async function insertAdminCurriculumGuide(pool, payload) {
     file_url,
     grade_level,
     subject,
+    description,
     uploaded_by,
     uploaded_by_name,
     is_published,
   } = payload
+  const descriptionText = String(description ?? title ?? subject ?? file_name ?? '').trim()
   await pool.query(
     `
     INSERT INTO curriculum_guides (
@@ -136,9 +142,9 @@ export async function insertAdminCurriculumGuide(pool, payload) {
       id,
       grade_level || '',
       subject || '',
-      String(title || subject || file_name || '').trim(),
+      descriptionText,
       file_name,
-      'application/pdf',
+      curriculumMimeForFileName(file_name),
       file_url,
       new Date().toISOString(),
       uploaded_by || null,
@@ -156,11 +162,50 @@ export async function insertAdminCurriculumGuide(pool, payload) {
     file_url,
     grade_level,
     subject,
+    description: descriptionText,
     uploaded_by_name,
     is_published,
     source: 'admin_upload',
     created_at: new Date(),
   })
+}
+
+export async function updateAdminCurriculumGuide(pool, id, payload) {
+  await ensureCurriculumGuidesPublishColumns(pool)
+  const existing = await fetchCurriculumGuideById(pool, id)
+  if (!existing) return null
+  if (existing.source === 'app_state') {
+    const err = new Error('APP_STATE_SYNCED')
+    err.code = 'APP_STATE_SYNCED'
+    throw err
+  }
+
+  const title = String(payload.title ?? payload.subject ?? existing.title ?? '').trim()
+  const subject = String(payload.subject ?? existing.subject ?? title).trim()
+  const grade_level = String(payload.grade_level ?? payload.grade ?? existing.grade_level ?? '').trim()
+  const description = String(payload.description ?? existing.description ?? title).trim()
+  const file_name = String(payload.file_name ?? existing.file_name ?? '').trim()
+  const file_url = String(payload.file_url ?? existing.file_url ?? '').trim()
+  const file_type = String(payload.file_type ?? curriculumMimeForFileName(file_name)).trim()
+
+  await pool.query(
+    `
+    UPDATE curriculum_guides
+    SET grade = $2,
+        subject = $3,
+        description = $4,
+        file_name = $5,
+        file_type = $6,
+        file_data_url = $7,
+        title = $8,
+        file_url = $9,
+        grade_level = $10,
+        updated_at = NOW()
+    WHERE id = $1
+    `,
+    [String(id), grade_level, subject, description, file_name, file_type, file_url, title, file_url, grade_level],
+  )
+  return fetchCurriculumGuideById(pool, id)
 }
 
 export async function setCurriculumGuidePublished(pool, id, isPublished) {

@@ -783,14 +783,10 @@ function normalizeViolationsPayload(raw) {
   for (const item of raw) {
     const type = String(item?.type || '').trim()
     if (!ALLOWED_VIOLATION_TYPES.has(type)) continue
-    const ts = item?.timestamp
-    const parsed = ts ? new Date(ts) : null
-    if (!parsed || Number.isNaN(parsed.getTime())) continue
     const questionNumber = Number(item?.question_number)
     if (!Number.isFinite(questionNumber) || questionNumber <= 0) continue
     out.push({
       type,
-      timestamp: parsed.toISOString(),
       question_number: Math.floor(questionNumber),
     })
   }
@@ -832,16 +828,39 @@ export async function saveQuizViolations(pool, quizId, studentId, violations = [
     return { error: 'INVALID_STATE' }
   }
 
+  const existing = parseViolationsColumn(submission.violations)
+  if (normalized.length < existing.length) {
+    return { error: 'INVALID_STATE', message: 'Violation log is append-only and cannot be shortened.' }
+  }
+
+  const serverNow = new Date().toISOString()
+  const stamped = normalized.map((item) => ({
+    ...item,
+    timestamp: serverNow,
+  }))
+
+  const merged = [...existing]
+  for (const item of stamped) {
+    const key = `${item.type}:${item.question_number}:${item.timestamp}`
+    const dup = merged.some(
+      (v) =>
+        v.type === item.type &&
+        v.question_number === item.question_number &&
+        v.timestamp === item.timestamp,
+    )
+    if (!dup) merged.push(item)
+  }
+
   await pool.query(
     `
       UPDATE quiz_submissions
       SET violations = $1::jsonb, updated_at = NOW()
       WHERE quiz_id = $2 AND student_id = $3
     `,
-    [JSON.stringify(normalized), quizId, studentId],
+    [JSON.stringify(merged), quizId, studentId],
   )
 
-  return { violation_count: normalized.length }
+  return { violation_count: merged.length }
 }
 
 /** Teacher roster: students in quiz grade (+ optional section) with submission scores. */

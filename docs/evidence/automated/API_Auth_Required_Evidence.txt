@@ -1,0 +1,13 @@
+=== API authentication required (no session cookie) ===
+Generated: 2026-06-09T13:00:29.859Z
+
+Request: GET http://127.0.0.1:3001/api/v1/student/terms-status
+Headers: (no Cookie)
+
+HTTP status: 401
+Response body: {"success":false,"error":"UNAUTHORIZED","message":"Sign-in required."}
+
+Expected: 401 with sign-in required message
+Result: PASS
+
+Code reference: server/api/studentV1.js requireStudentSession

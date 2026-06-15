@@ -1,0 +1,16 @@
+=== Rate limiting and account lockout ===
+Generated: 2026-06-09T13:00:30.427Z
+
+Automated integration tests: npm run test:auth (auth-rate-limit.test.js)
+
+Key files:
+  tests/auth-rate-limit.test.js — 429 on 11th sign-in attempt
+  tests/auth-flows.test.js — lockout after 5 failed attempts
+  server/index.js — express-rate-limit on sign-in endpoints
+
+Live probe (requires npm run dev):
+  Attempt 9: HTTP 429 — rate limit triggered
+  PASS: 429 Too Many Requests observed on rapid sign-in.
+
+CAPTCHA alternative: CAPTCHA not in approved FRS; rate limiting is approved DoS mitigation.
+Manual screenshot: docs/evidence/CAPTURE_GUIDE.md Screenshot 10

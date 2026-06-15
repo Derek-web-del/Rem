@@ -338,6 +338,43 @@ async function testLocalStoragePolicy() {
   record(8, 'Centralized Storage (no roster localStorage)', noRoster, 'code review: roster not in localStorage')
 }
 
+async function testAdminPersistenceLists() {
+  const admin = await signInAdmin()
+  if (!admin.ok) {
+    record(14, 'Admin persistence (sections list)', false, admin.error || 'admin login failed')
+    record(15, 'Admin persistence (subjects list)', false, admin.error || 'admin login failed')
+    record(16, 'Admin persistence (curriculum guides list)', false, admin.error || 'admin login failed')
+    return
+  }
+  const headers = { Cookie: admin.cookies }
+
+  const sections = await getJson(`${API}/api/v1/sections`, headers)
+  const sectionRows = sections.json?.sections
+  record(
+    14,
+    'Admin persistence (sections list)',
+    sections.res.ok && Array.isArray(sectionRows),
+    sections.res.ok ? `count=${sectionRows.length}` : sections.text?.slice(0, 80),
+  )
+
+  const subjects = await getJson(`${API}/api/v1/subjects`, headers)
+  const subjectRows = subjects.json?.subjects
+  record(
+    15,
+    'Admin persistence (subjects list)',
+    subjects.res.ok && Array.isArray(subjectRows),
+    subjects.res.ok ? `count=${subjectRows.length}` : subjects.text?.slice(0, 80),
+  )
+
+  const guides = await getJson(`${API}/api/admin/curriculum-guides`, headers)
+  record(
+    16,
+    'Admin persistence (curriculum guides list)',
+    guides.res.ok && Array.isArray(guides.json),
+    guides.res.ok ? `count=${guides.json.length}` : guides.text?.slice(0, 80),
+  )
+}
+
 async function main() {
   console.log(`[live-api] API=${API}`)
   console.log('[live-api] Waiting 3s for any prior rate-limit window…')
@@ -352,6 +389,7 @@ async function main() {
   await testTermsDb()
   await testSessionLogout(facultyCookies)
   await testLocalStoragePolicy()
+  await testAdminPersistenceLists()
 
   const out = path.join(ROOT, 'docs', 'live-api-flows-results.json')
   fs.writeFileSync(out, JSON.stringify({ generatedAt: new Date().toISOString(), results }, null, 2))

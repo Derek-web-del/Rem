@@ -5,6 +5,7 @@ import {
   STUDENT_SUBMISSION_MAX_BYTES,
   STUDENT_SUBMISSION_MAX_MSG,
 } from '../../shared/uploadLimits.js'
+import { PDF_MIMES, verifyUploadMagicBytes } from './uploadMagicBytes.js'
 
 export const ASSIGNMENT_SUBMISSION_REL = '/uploads/submissions/assignments'
 export const ACTIVITY_SUBMISSION_REL = '/uploads/submissions/activities'
@@ -120,6 +121,13 @@ export function getStudentSubmissionUploadFile(req) {
 
 export function validateStudentSubmissionUploadFile(file) {
   return validateStudentSubmissionFile(file)
+}
+
+export async function validateStudentSubmissionUploadFileAsync(file) {
+  const syncErr = validateStudentSubmissionUploadFile(file)
+  if (syncErr) return syncErr
+  if (!file?.buffer?.length) return STUDENT_SUBMISSION_TYPE_REJECT_MSG
+  return verifyUploadMagicBytes(file.buffer, PDF_MIMES)
 }
 
 export function streamSubmissionDownload(res, filePath, downloadName) {

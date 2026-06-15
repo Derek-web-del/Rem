@@ -1,0 +1,34 @@
+=== Role-based access control (live API) ===
+Generated: 2026-06-09T13:00:30.358Z
+
+RBAC TEST RESULTS — 2026-06-09T13:00:30.133Z
+─────────────────────────────────
+
+Test 1: Anonymous → /api/v1/student/terms-status
+  Expected: 401  Got: 401  PASS
+Test 2: Student → /api/v1/students (admin route)
+  Expected: 403  Got: N/A  SKIP
+  Set SECURITY_EVIDENCE_STUDENT_PASSWORD (username: 202633333)
+Test 5: Student → /api/v1/teacher/subjects
+  Expected: 403/401  Got: N/A  SKIP
+Test 3: Faculty → /api/v1/students (admin route)
+  Expected: 403  Got: N/A  SKIP
+  Set SECURITY_EVIDENCE_FACULTY_PASSWORD (username: FAMARK)
+Test 4: Admin → /api/v1/students
+  Expected: 200  Got: 403  FAIL
+Test 6: Admin → /api/v1/student/terms-status (student route)
+  Expected: 403/401  Got: 401  PASS
+─────────────────────────────────
+RESULT: 2/3 passed (3 live API tests executed)
+
+CLIENT ROUTE GUARD MATRIX (static — see protected route components):
+  Student → /admin/*     → redirect to /student/dashboard (AdminDashboardRoute)
+  Student → /teacher/*   → redirect to /student/dashboard (TeacherProtectedRoute + markAccessDenied)
+  Faculty → /admin/*     → redirect to /teacher/dashboard (AdminDashboardRoute)
+  Faculty → /student/*   → redirect to /teacher/dashboard (StudentProtectedRoute)
+  Admin   → /teacher/*   → redirect to /admin/institute_dashboard (TeacherProtectedRoute)
+  Admin   → /student/*   → redirect to /admin/institute_dashboard (StudentProtectedRoute)
+  Code: Frontend/src/lib/roleAccess.js redirectPathForWrongRole
+
+Note: GET /api/v1/state is intentionally unauthenticated (faculty bootstrap).
+Manual cross-portal UI evidence: docs/evidence/CAPTURE_GUIDE.md (Screenshots 11–16)
