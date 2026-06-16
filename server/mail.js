@@ -78,6 +78,78 @@ export function getMailer() {
   return transporter
 }
 
+/** Railway Trial/Hobby blocks outbound SMTP (25/465/587). HTTPS email APIs work on all plans. */
+function useResendApi() {
+  return Boolean(String(process.env.RESEND_API_KEY || '').trim())
+}
+
+function isRailwayHosted() {
+  return Boolean(
+    process.env.RAILWAY_ENVIRONMENT ||
+      process.env.RAILWAY_PROJECT_ID ||
+      process.env.RAILWAY_SERVICE_ID,
+  )
+}
+
+function resolveFromAddress() {
+  if (useResendApi()) {
+    const resendFrom = String(process.env.RESEND_FROM || '').trim()
+    if (resendFrom) return resendFrom
+    // Resend test sender — only delivers to your Resend account email until a domain is verified.
+    return 'onboarding@resend.dev'
+  }
+
+  const user = (process.env.SMTP_USER || '').trim()
+  let from = String(process.env.SMTP_FROM || user).trim()
+  if (!from.includes('@')) from = user
+  return from
+}
+
+async function sendEmailViaResend({ to, subject, text, html }) {
+  const apiKey = String(process.env.RESEND_API_KEY || '').trim()
+  const from = resolveFromAddress()
+  if (!from) {
+    throw new Error('Set RESEND_FROM or SMTP_FROM (verified sender in Resend).')
+  }
+
+  const res = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ from, to, subject, text, html }),
+  })
+
+  const bodyText = await res.text()
+  if (!res.ok) {
+    throw new Error(`Resend API ${res.status}: ${bodyText}`)
+  }
+
+  try {
+    return JSON.parse(bodyText)
+  } catch {
+    return { id: null, raw: bodyText }
+  }
+}
+
+async function sendMailMessage({ to, subject, text, html }) {
+  if (useResendApi()) {
+    const info = await sendEmailViaResend({ to, subject, text, html })
+    return { messageId: info?.id || 'resend', provider: 'resend' }
+  }
+
+  const mailer = getMailer()
+  if (!mailer) {
+    throw new Error('SMTP is not configured (SMTP_USER and SMTP_PASS).')
+  }
+
+  const user = (process.env.SMTP_USER || '').trim()
+  const from = resolveFromAddress()
+  const info = await mailer.sendMail({ from, to, replyTo: user, subject, text, html })
+  return { messageId: info.messageId || 'smtp', provider: 'smtp' }
+}
+
 /** Human-readable SMTP / Gmail error for logs. */
 function formatSmtpError(err) {
   if (!err) return 'Unknown error'
@@ -102,13 +174,26 @@ function formatSmtpError(err) {
  * Set `SMTP_VERIFY_STRICT=1` to throw and stop the server if verify fails.
  */
 export async function verifySmtpTransporter() {
+  if (useResendApi()) {
+    console.info(
+      '[smtp] RESEND_API_KEY set — email via Resend HTTPS API (SMTP verify skipped).',
+    )
+    return
+  }
+
   const user = (process.env.SMTP_USER || '').trim()
   const pass = (process.env.SMTP_PASS || '').replace(/\s/g, '')
   if (!user || !pass) {
     console.warn(
-      '[smtp] SMTP_USER or SMTP_PASS missing — skipping transporter.verify() (configure both to send real 2FA email).',
+      '[smtp] SMTP_USER or SMTP_PASS missing — skipping transporter.verify() (set RESEND_API_KEY or SMTP credentials to send email).',
     )
     return
+  }
+
+  if (isRailwayHosted()) {
+    console.warn(
+      '[smtp] Railway Trial/Hobby blocks outbound SMTP (ports 25/465/587). Set RESEND_API_KEY on Railway, or upgrade to Pro for Gmail SMTP.',
+    )
   }
 
   try {
@@ -139,39 +224,44 @@ export async function sendTwoFactorOtpEmail(to, otp) {
     captureOtp(to, otp)
     return
   }
-  const mailer = getMailer()
-  if (!mailer) {
-    console.warn('[auth] SMTP_USER/SMTP_PASS missing — configure .env to send 2FA email.')
+
+  const hasSmtp = Boolean(
+    (process.env.SMTP_USER || '').trim() && (process.env.SMTP_PASS || '').trim(),
+  )
+  if (!useResendApi() && !hasSmtp) {
+    console.warn(
+      '[auth] No email provider — set RESEND_API_KEY or SMTP_USER/SMTP_PASS to send 2FA email.',
+    )
     console.info(`[auth] 2FA OTP for ${to} (console only): ${otp}`)
     if (process.env.NODE_ENV === 'production') {
       throw new Error(
-        'Email is not configured. Set SMTP_USER and SMTP_PASS in your .env file (use a Gmail App Password for Gmail), then restart the auth server.',
+        'Email is not configured. Set RESEND_API_KEY (recommended on Railway) or SMTP_USER and SMTP_PASS, then restart.',
       )
     }
     return
   }
 
-  const user = (process.env.SMTP_USER || '').trim()
-  let from = (process.env.SMTP_FROM || user).trim()
-  if (!from.includes('@')) from = user
+  const subject = 'Your sign-in verification code'
+  const text = `Your verification code is: ${otp}\n\nIt expires in a few minutes. If you did not try to sign in, ignore this email.`
+  const html = `<p>Your verification code is:</p><p style="font-size:24px;font-weight:bold;letter-spacing:4px">${otp}</p><p>This code expires shortly. If you did not try to sign in, you can ignore this message.</p>`
 
   try {
-    const info = await mailer.sendMail({
-      from,
-      to,
-      replyTo: user,
-      subject: 'Your sign-in verification code',
-      text: `Your verification code is: ${otp}\n\nIt expires in a few minutes. If you did not try to sign in, ignore this email.`,
-      html: `<p>Your verification code is:</p><p style="font-size:24px;font-weight:bold;letter-spacing:4px">${otp}</p><p>This code expires shortly. If you did not try to sign in, you can ignore this message.</p>`,
-    })
+    const info = await sendMailMessage({ to, subject, text, html })
     console.info(
-      `[auth] 2FA email sent to ${to} (messageId: ${info.messageId || 'n/a'})`,
+      `[auth] 2FA email sent to ${to} via ${info.provider} (messageId: ${info.messageId})`,
     )
   } catch (err) {
-    const gmailHint = isLikelyGmail()
-      ? ' Gmail: enable 2-Step Verification, create an App Password at https://myaccount.google.com/apppasswords , and put it in SMTP_PASS. SMTP_USER must be that Gmail address.'
+    const gmailHint =
+      !useResendApi() && isLikelyGmail()
+        ? ' Gmail: enable 2-Step Verification, create an App Password at https://myaccount.google.com/apppasswords , and put it in SMTP_PASS. SMTP_USER must be that Gmail address.'
+        : ''
+    const resendHint = isRailwayHosted() && !useResendApi()
+      ? ' On Railway Hobby/Trial, SMTP is blocked — add RESEND_API_KEY instead.'
       : ''
-    console.error(`[auth] SMTP send failed.${gmailHint}`, formatSmtpError(err))
+    console.error(
+      `[auth] Email send failed.${gmailHint}${resendHint}`,
+      useResendApi() ? err.message || String(err) : formatSmtpError(err),
+    )
 
     const allowConsoleFallback =
       process.env.NODE_ENV !== 'production' &&
@@ -199,7 +289,6 @@ export async function sendPasswordResetEmail({ to, name, resetUrl }) {
     return
   }
 
-  const mailer = getMailer()
   const displayName = String(name || to || 'User').trim() || 'User'
   const subject = 'LenLearn LMS — Password Reset'
   const text = [
@@ -236,26 +325,29 @@ export async function sendPasswordResetEmail({ to, name, resetUrl }) {
     </div>
   `.trim()
 
-  if (!mailer) {
-    console.warn('[auth] SMTP_USER/SMTP_PASS missing — configure .env to send password reset email.')
+  if (!useResendApi() && !getMailer()) {
+    console.warn(
+      '[auth] No email provider — set RESEND_API_KEY or SMTP_USER/SMTP_PASS to send password reset email.',
+    )
     console.info(`[auth] Password reset link for ${to} (console only): ${resetUrl}`)
     if (process.env.NODE_ENV === 'production') {
       throw new Error(
-        'Email is not configured. Set SMTP_USER and SMTP_PASS in your .env file, then restart the auth server.',
+        'Email is not configured. Set RESEND_API_KEY (recommended on Railway) or SMTP_USER and SMTP_PASS, then restart.',
       )
     }
     return
   }
 
-  const user = (process.env.SMTP_USER || '').trim()
-  let from = (process.env.SMTP_FROM || user).trim()
-  if (!from.includes('@')) from = user
-
   try {
-    const info = await mailer.sendMail({ from, to, replyTo: user, subject, text, html })
-    console.info(`[auth] Password reset email sent to ${to} (messageId: ${info.messageId || 'n/a'})`)
+    const info = await sendMailMessage({ to, subject, text, html })
+    console.info(
+      `[auth] Password reset email sent to ${to} via ${info.provider} (messageId: ${info.messageId})`,
+    )
   } catch (err) {
-    console.error('[auth] Password reset SMTP send failed:', formatSmtpError(err))
+    console.error(
+      '[auth] Password reset email send failed:',
+      useResendApi() ? err.message || String(err) : formatSmtpError(err),
+    )
     const allowConsoleFallback =
       process.env.NODE_ENV !== 'production' &&
       (String(process.env.AUTH_SMTP_DEV_FALLBACK || '').toLowerCase() === 'true' ||
