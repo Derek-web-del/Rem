@@ -134,10 +134,16 @@ export async function createApp() {
       contentSecurityPolicy: {
         directives: {
           defaultSrc: ["'self'"],
-          scriptSrc: ["'self'"],
+          scriptSrc: ["'self'", 'https://static.cloudflareinsights.com'],
           styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
           imgSrc: ["'self'", 'data:', 'blob:'],
-          connectSrc: ["'self'", 'https://*.better-auth.com', 'https://*.better-auth.dev'],
+          connectSrc: [
+            "'self'",
+            'https://*.better-auth.com',
+            'https://*.better-auth.dev',
+            'https://cloudflareinsights.com',
+            'https://*.cloudflareinsights.com',
+          ],
           fontSrc: ["'self'", 'https:', 'data:'],
         },
       },

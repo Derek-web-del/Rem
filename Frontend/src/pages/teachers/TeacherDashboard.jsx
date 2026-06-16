@@ -9,12 +9,10 @@ import TeacherStatCards from './TeacherStatCards.jsx'
 import TeacherAdvisorySections from './TeacherAdvisorySections.jsx'
 import {
   buildSessionFallbackFaculty,
-  findFacultyForUser,
-  findLocalFacultyExclusiveMatch,
   mergeFacultyWithSessionUser,
 } from './findFacultyForUser.js'
 import { canAccessTeacherDashboard } from './teacherDashboardAccess.js'
-import { fetchInstituteAppState, apiUrl, normalizeFacultyShape } from '../../lib/lmsStateStorage.js'
+import { apiUrl, normalizeFacultyShape } from '../../lib/lmsStateStorage.js'
 import { facultyPhotoDisplaySrc } from '../../lib/facultyPhoto.js'
 import { isOnline } from '../../lib/offlineSync.js'
 import { warmFacultyOfflineCache } from '../../lib/teacherPortalOffline.js'
@@ -121,16 +119,6 @@ export default function TeacherDashboard() {
   const session = sessionData?.session
   const sessionUser = sessionData?.user
 
-  const [state, setState] = useState(null)
-  const [stateLoading, setStateLoading] = useState(true)
-  const [instituteFetch, setInstituteFetch] = useState({
-    loading: true,
-    status: 0,
-    ok: true,
-    source: 'remote',
-    message: '',
-    detail: '',
-  })
   /** GET /api/teacher/profile — `undefined`: not fetched yet; `null`: error / unlinked */
   const [apiProfile, setApiProfile] = useState(undefined)
   const [dashboardStats, setDashboardStats] = useState({
@@ -148,7 +136,6 @@ export default function TeacherDashboard() {
   toastRef.current = toast
 
   const sessionUserId = sessionUser?.id ?? sessionUser?.email ?? ''
-  const sessionId = session?.id ?? ''
 
   const logoutToPortal = useCallback(async () => {
     clearTermsAcceptance()
@@ -157,48 +144,6 @@ export default function TeacherDashboard() {
   }, [navigate])
 
   const logout = logoutFromLayout || logoutToPortal
-
-  useEffect(() => {
-    if (!sessionId) {
-      setStateLoading(false)
-      return
-    }
-    let cancelled = false
-    let timedOut = false
-    const timeoutId = setTimeout(() => {
-      if (cancelled) return
-      timedOut = true
-      setStateLoading(false)
-      setInstituteFetch((prev) => ({
-        ...prev,
-        loading: false,
-        ok: false,
-        message: 'Failed to load institute roster.',
-      }))
-    }, DASHBOARD_FETCH_TIMEOUT_MS)
-
-    async function load() {
-      setStateLoading(true)
-      setInstituteFetch((prev) => ({ ...prev, loading: true }))
-      const result = await fetchInstituteAppState()
-      if (cancelled || timedOut) return
-      setState(result.state)
-      setInstituteFetch({
-        loading: false,
-        status: result.status,
-        ok: result.ok,
-        source: result.source,
-        message: result.message || '',
-        detail: result.detail || '',
-      })
-      setStateLoading(false)
-    }
-    load()
-    return () => {
-      cancelled = true
-      clearTimeout(timeoutId)
-    }
-  }, [sessionId])
 
   useEffect(() => {
     if (!sessionUserId) {
@@ -361,24 +306,16 @@ export default function TeacherDashboard() {
     return () => document.removeEventListener('visibilitychange', onVisible)
   }, [sessionUserId])
 
-  const faculties = useMemo(() => (Array.isArray(state?.faculties) ? state.faculties : []), [state])
-
-  const instituteFaculty = useMemo(() => {
-    const offline =
-      instituteFetch.source === 'unavailable' ||
-      instituteFetch.source === 'error' ||
-      instituteFetch.source === 'network'
-    let f = findFacultyForUser(faculties, sessionUser)
-    if (!f) f = findLocalFacultyExclusiveMatch(faculties, sessionUser)
-    if (!f && offline) f = buildSessionFallbackFaculty(sessionUser)
-    return mergeFacultyWithSessionUser(f, sessionUser)
-  }, [faculties, sessionUser, instituteFetch.source])
+  const sessionFallbackFaculty = useMemo(
+    () => mergeFacultyWithSessionUser(buildSessionFallbackFaculty(sessionUser), sessionUser),
+    [sessionUser],
+  )
 
   /** Prefer PostgreSQL-linked profile from `/api/teacher/profile` when present (object after fetch). */
   const effectiveFaculty = useMemo(() => {
     const id = apiProfile?.faculty_row_id ?? apiProfile?.id
     const hasApi = apiProfile != null && !!String(id || '').trim()
-    if (!hasApi) return instituteFaculty
+    if (!hasApi) return sessionFallbackFaculty
     const hydrated = normalizeFacultyShape({
       id: String(id).trim(),
       name: apiProfile?.name ?? '',
@@ -402,7 +339,7 @@ export default function TeacherDashboard() {
       advisory_sections: apiProfile.advisory_sections,
     })
     return mergeFacultyWithSessionUser(hydrated, sessionUser)
-  }, [apiProfile, instituteFaculty, sessionUser])
+  }, [apiProfile, sessionFallbackFaculty, sessionUser])
 
   const allowed = useMemo(() => canAccessTeacherDashboard(sessionUser), [sessionUser])
 
@@ -500,10 +437,6 @@ export default function TeacherDashboard() {
     <>
       <TeacherMainHeader onLogout={logout} pageTitle="Dashboard" />
       <main className="min-h-0 flex-1 space-y-6 overflow-y-auto overflow-x-hidden p-4 md:space-y-8 md:p-8">
-        {stateLoading ? (
-          <p className="text-sm font-medium text-neutral-600">Loading institute roster from `/api/v1/state`…</p>
-        ) : null}
-
         <section className="rounded-xl border border-neutral-100 bg-white p-5 shadow-md md:p-6">
           <div className="space-y-6">
             <TeacherProfileCard
