@@ -1,7 +1,20 @@
 -- Backfill null quarter and subject_id on assignments and activities.
 
-UPDATE public.activities SET quarter = 1 WHERE quarter IS NULL;
-UPDATE public.assignments SET quarter = 1 WHERE quarter IS NULL;
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'activities' AND column_name = 'quarter'
+  ) THEN
+    UPDATE public.activities SET quarter = 1 WHERE quarter IS NULL;
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'assignments' AND column_name = 'quarter'
+  ) THEN
+    UPDATE public.assignments SET quarter = 1 WHERE quarter IS NULL;
+  END IF;
+END $$;
 
 UPDATE public.activities a
 SET subject_id = s.id

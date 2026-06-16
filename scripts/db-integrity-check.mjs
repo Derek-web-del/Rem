@@ -1,6 +1,10 @@
 import pg from 'pg'
 
-const connectionString = process.env.DATABASE_URL || 'postgres://postgres:Derekent45@localhost:5432/lenlearn_db'
+const connectionString = process.env.DATABASE_URL
+if (!connectionString) {
+  console.error('[db-integrity-check] DATABASE_URL is not set')
+  process.exit(1)
+}
 const pool = new pg.Pool({ connectionString })
 
 try {

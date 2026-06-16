@@ -66,7 +66,7 @@ const infraKvUrl = (process.env.BETTER_AUTH_KV_URL || '').trim()
 const infraSecurityEnabled =
   process.env.INFRA_SECURITY_ENABLED != null
     ? String(process.env.INFRA_SECURITY_ENABLED).toLowerCase() === 'true'
-    : (process.env.NODE_ENV || 'development') === 'production'
+    : (process.env.NODE_ENV || 'development') === 'production' && !!infraApiKey
 
 const envSecret = (process.env.BETTER_AUTH_SECRET || '').trim()
 const DEV_DEFAULT_SECRET = 'lenlearn-local-dev-only-min-32-char-secret!'
@@ -144,13 +144,19 @@ const devOriginPatterns = isProduction
       'https://*.ngrok.io',
     ]
 
+const localDevOrigins = isProduction
+  ? []
+  : [
+      'http://localhost:5173',
+      'http://127.0.0.1:5173',
+      'http://localhost:3001',
+      'http://127.0.0.1:3001',
+    ]
+
 const trustedOrigins = [
   ...new Set([
     baseURL,
-    'http://localhost:5173',
-    'http://127.0.0.1:5173',
-    'http://localhost:3001',
-    'http://127.0.0.1:3001',
+    ...localDevOrigins,
     ...extraOrigins.map((o) => toWebOrigin(o)).filter(Boolean),
     ...devOriginPatterns,
   ]),

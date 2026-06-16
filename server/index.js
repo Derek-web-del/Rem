@@ -181,6 +181,7 @@ export async function createApp() {
   }
 
 function parseCorsOrigins() {
+  const isProd = (process.env.NODE_ENV || 'development') === 'production'
   const out = new Set()
   const base = String(process.env.BETTER_AUTH_URL || '').trim()
   if (base) out.add(new URL(base).origin)
@@ -189,9 +190,10 @@ function parseCorsOrigins() {
     .map((s) => s.trim())
     .filter(Boolean)
   for (const o of extra) out.add(new URL(o).origin)
-  // Local dev defaults
-  out.add('http://localhost:5173')
-  out.add('http://127.0.0.1:5173')
+  if (!isProd) {
+    out.add('http://localhost:5173')
+    out.add('http://127.0.0.1:5173')
+  }
   return [...out]
 }
 
@@ -597,8 +599,9 @@ export async function startServer() {
   )
   const app = await createApp()
   await assertPortalMfaOnStartup()
-  const server = app.listen(port, () => {
-    console.log(`Better Auth server listening on http://localhost:${port}`)
+  const host = process.env.HOST || '0.0.0.0'
+  const server = app.listen(port, host, () => {
+    console.log(`Better Auth server listening on http://${host}:${port}`)
   })
 
   server.on('clientError', (err, socket) => {

@@ -28,7 +28,9 @@ CREATE TABLE IF NOT EXISTS subjects (
 
 );
 
-
+-- Legacy tables created before quarter existed (CREATE TABLE IF NOT EXISTS skips new columns).
+ALTER TABLE public.subjects ADD COLUMN IF NOT EXISTS quarter VARCHAR(16);
+UPDATE public.subjects SET quarter = '1' WHERE quarter IS NULL OR trim(quarter) = '';
 
 CREATE INDEX IF NOT EXISTS idx_subjects_grade_level ON subjects (grade_level);
 
