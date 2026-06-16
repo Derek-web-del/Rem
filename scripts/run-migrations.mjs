@@ -54,7 +54,10 @@ async function runSqlMigration(pool, filename, sql) {
 async function seedAdminIfNeeded(pool) {
   const isProduction = (process.env.NODE_ENV || '') === 'production'
   const password = String(process.env.SEED_ADMIN_PASSWORD || '').trim()
-  if (!isProduction || !password || password === 'Admin123@') return
+  if (!isProduction || !password) return
+  if (password === 'Admin123@') {
+    console.warn('[db:migrate] SEED_ADMIN_PASSWORD is the dev default — seeding anyway.')
+  }
 
   const { rows } = await pool.query(
     `SELECT 1 FROM "user" WHERE LOWER(role) = 'admin' LIMIT 1`,
