@@ -32,11 +32,13 @@ export function getMailer() {
   }
 
   const debug = process.env.SMTP_DEBUG === '1'
+  const family = Number(process.env.SMTP_IP_FAMILY || 4)
   const common = {
     auth: { user, pass },
     connectionTimeout: Number(process.env.SMTP_CONNECTION_TIMEOUT_MS || 30_000),
     greetingTimeout: Number(process.env.SMTP_GREETING_TIMEOUT_MS || 30_000),
     socketTimeout: Number(process.env.SMTP_SOCKET_TIMEOUT_MS || 45_000),
+    family: Number.isFinite(family) ? family : 4,
     debug,
     logger: debug,
   }
