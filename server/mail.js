@@ -43,8 +43,12 @@ export function getMailer() {
     logger: debug,
   }
 
-  // Gmail: prefer built-in service (smtp.gmail.com + correct TLS); override with SMTP_USE_HOST_TRANSPORT=1
-  if (isLikelyGmail() && !useHostTransportForGmail()) {
+  // Gmail `service: 'gmail'` ignores IPv4 family on Railway; use host/port in production.
+  const preferHostTransport =
+    useHostTransportForGmail() ||
+    (process.env.NODE_ENV === 'production' && isLikelyGmail())
+
+  if (isLikelyGmail() && !preferHostTransport) {
     transporter = nodemailer.createTransport({
       service: 'gmail',
       ...common,

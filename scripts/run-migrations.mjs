@@ -51,6 +51,26 @@ async function runSqlMigration(pool, filename, sql) {
   }
 }
 
+async function seedAdminIfNeeded(pool) {
+  const isProduction = (process.env.NODE_ENV || '') === 'production'
+  const password = String(process.env.SEED_ADMIN_PASSWORD || '').trim()
+  if (!isProduction || !password || password === 'Admin123@') return
+
+  const { rows } = await pool.query(
+    `SELECT 1 FROM "user" WHERE LOWER(role) = 'admin' LIMIT 1`,
+  )
+  if (rows.length > 0) {
+    console.log('[db:migrate] Admin user already exists — skip seed.')
+    return
+  }
+
+  console.log('[db:migrate] No admin user — running seed from SEED_ADMIN_* env…')
+  execSync('node scripts/seed-admin.mjs', {
+    stdio: 'inherit',
+    env: { ...process.env, AUTH_DISABLE_SIGNUP: 'false' },
+  })
+}
+
 async function main() {
   const pool = getPgPool()
   if (!pool) {
@@ -79,6 +99,7 @@ async function main() {
   }
 
   console.log('[db:migrate] Done.')
+  await seedAdminIfNeeded(pool)
   await pool.end()
 }
 
