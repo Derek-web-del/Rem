@@ -135,8 +135,10 @@ export async function createApp() {
         directives: {
           defaultSrc: ["'self'"],
           scriptSrc: ["'self'"],
-          styleSrc: ["'self'", "'unsafe-inline'"],
+          styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
           imgSrc: ["'self'", 'data:', 'blob:'],
+          connectSrc: ["'self'", 'https://*.better-auth.com', 'https://*.better-auth.dev'],
+          fontSrc: ["'self'", 'https:', 'data:'],
         },
       },
       hsts:
@@ -500,13 +502,22 @@ app.all('/api/auth/*', toNodeHandler(auth))
     app.use(
       express.static(distPath, {
         index: false,
-        maxAge: isProduction ? '1d' : 0,
+        maxAge: isProduction ? '1y' : 0,
+        immutable: isProduction,
+        setHeaders(res, filePath) {
+          if (filePath.endsWith('index.html') || filePath.endsWith('sw.js')) {
+            res.setHeader('Cache-Control', 'no-cache')
+          }
+        },
       }),
     )
     app.get('*', (req, res, next) => {
       if (req.method !== 'GET' && req.method !== 'HEAD') return next()
       if (req.path.startsWith('/api')) {
         return res.status(404).json({ error: 'API route not found' })
+      }
+      if (req.path.startsWith('/assets/')) {
+        return res.status(404).send('Not found')
       }
       res.sendFile(spaIndexPath)
     })

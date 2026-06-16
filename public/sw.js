@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'lenlearn-v2'
+const CACHE_VERSION = 'lenlearn-v3'
 const STATIC_CACHE = `${CACHE_VERSION}-static`
 const DYNAMIC_CACHE = `${CACHE_VERSION}-dynamic`
 const PDF_CACHE = `${CACHE_VERSION}-pdf`
@@ -179,17 +179,18 @@ self.addEventListener('fetch', (event) => {
   }
 
   event.respondWith(
-    caches.match(request).then((cached) => {
-      if (cached) return cached
-      return fetch(request)
-        .then((res) => {
-          if (res.ok) {
-            caches.open(STATIC_CACHE).then((c) => c.put(request, res.clone()))
-          }
-          return res
-        })
-        .catch(() => caches.match('/offline.html'))
-    }),
+    fetch(request)
+      .then((res) => {
+        if (res.ok && request.mode === 'navigate') {
+          caches.open(STATIC_CACHE).then((c) => c.put(request, res.clone()))
+        }
+        return res
+      })
+      .catch(async () => {
+        const cached = await caches.match(request)
+        if (cached) return cached
+        return caches.match('/offline.html')
+      }),
   )
 })
 

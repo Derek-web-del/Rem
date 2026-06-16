@@ -16,7 +16,6 @@ import {
  * Enable explicitly in dev with `VITE_BETTER_AUTH_INFRA_CLIENT=1` if you need Sentinel challenges locally.
  */
 const enableInfraAuthPlugins =
-  import.meta.env.PROD ||
   String(import.meta.env.VITE_BETTER_AUTH_INFRA_CLIENT || '').trim() === '1'
 
 export const authClient = createAuthClient({
