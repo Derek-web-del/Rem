@@ -16,6 +16,11 @@ import { maskEmail } from './lib/maskEmail.js'
 import ForgotPassword from './pages/ForgotPassword.jsx'
 import GlendaleLogo from './assets/GlendaleLogo.png'
 import LoginSceneBackground from './components/LoginSceneBackground.jsx'
+import {
+  SCHOOL_DOCUMENT_TITLE,
+  SCHOOL_SIGN_IN_TITLE,
+  setDocumentTitle,
+} from './lib/documentTitle.js'
 
 const PRIMARY_BLUE = '#3182ce'
 const OTP_SENDER_EMAIL =
@@ -153,6 +158,12 @@ export default function App() {
       void authClient.signOut()
     }
   }, [location.search])
+
+  useEffect(() => {
+    const onSignInScreen =
+      view === 'select' || view === 'forgot' || (view === 'login' && loginStep === 'credentials')
+    setDocumentTitle(onSignInScreen ? SCHOOL_SIGN_IN_TITLE : SCHOOL_DOCUMENT_TITLE)
+  }, [view, loginStep])
 
   useEffect(() => {
     setShowPassword(false)

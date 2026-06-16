@@ -1,6 +1,6 @@
-import { lazy, StrictMode, Suspense } from 'react'
+import { lazy, StrictMode, Suspense, useEffect } from 'react'
 import { createRoot } from 'react-dom/client'
-import { BrowserRouter, Navigate, Route, Routes, useParams } from 'react-router-dom'
+import { BrowserRouter, Navigate, Route, Routes, useLocation, useParams } from 'react-router-dom'
 import '@tabler/icons-webfont/dist/tabler-icons.min.css'
 import './index.css'
 import App from './App.jsx'
@@ -13,6 +13,11 @@ import TeacherLayout from './layouts/TeacherLayout.jsx'
 import StudentLayout from './layouts/StudentLayout.jsx'
 import TermsGuard from './routes/TermsGuard.jsx'
 import ErrorBoundary from './components/ErrorBoundary.jsx'
+import {
+  SCHOOL_DOCUMENT_TITLE,
+  SCHOOL_SIGN_IN_TITLE,
+  setDocumentTitle,
+} from './lib/documentTitle.js'
 
 const TeacherDashboard = lazy(() => import('./pages/teachers/TeacherDashboard.jsx'))
 const TeacherCurriculumPage = lazy(() => import('./pages/teachers/TeacherCurriculumPage.jsx'))
@@ -75,10 +80,27 @@ function LegacyStudyQueriesEditRedirect() {
   return <Navigate to={`/teacher/study-materials/${id}/edit`} replace />
 }
 
+/** Tab title for routes outside the login flow (login sets its own title). */
+function AppDocumentTitle() {
+  const { pathname } = useLocation()
+
+  useEffect(() => {
+    if (pathname.startsWith('/login')) return
+    if (pathname === '/reset-password') {
+      setDocumentTitle(SCHOOL_SIGN_IN_TITLE)
+      return
+    }
+    setDocumentTitle(SCHOOL_DOCUMENT_TITLE)
+  }, [pathname])
+
+  return null
+}
+
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <ErrorBoundary>
     <BrowserRouter>
+      <AppDocumentTitle />
       <NotificationsProvider>
         <Routes>
           <Route path="/" element={<Navigate to="/login" replace />} />

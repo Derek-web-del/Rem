@@ -1,12 +1,17 @@
 {
-  "name": "LenLearn LMS",
-  "short_name": "LenLearn",
+  "name": "Glendale High School",
+  "short_name": "Glendale",
   "description": "Glendale School LMS",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#185FA5",
   "theme_color": "#185FA5",
   "icons": [
+    {
+      "src": "/glendale-favicon.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
     {
       "src": "/icons/icon-192.png",
       "sizes": "192x192",
