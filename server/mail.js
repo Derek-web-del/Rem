@@ -1,3 +1,4 @@
+import dns from 'node:dns'
 import nodemailer from 'nodemailer'
 import { captureOtp } from './test-otp.mjs'
 import { captureResetUrl } from './test-reset.mjs'
@@ -32,13 +33,18 @@ export function getMailer() {
   }
 
   const debug = process.env.SMTP_DEBUG === '1'
-  const family = Number(process.env.SMTP_IP_FAMILY || 4)
+  const ipFamily = Number(process.env.SMTP_IP_FAMILY || 4)
+  const family = Number.isFinite(ipFamily) ? ipFamily : 4
+  const lookup = (hostname, _options, callback) => {
+    dns.lookup(hostname, { family }, callback)
+  }
   const common = {
     auth: { user, pass },
     connectionTimeout: Number(process.env.SMTP_CONNECTION_TIMEOUT_MS || 30_000),
     greetingTimeout: Number(process.env.SMTP_GREETING_TIMEOUT_MS || 30_000),
     socketTimeout: Number(process.env.SMTP_SOCKET_TIMEOUT_MS || 45_000),
-    family: Number.isFinite(family) ? family : 4,
+    family,
+    lookup,
     debug,
     logger: debug,
   }
