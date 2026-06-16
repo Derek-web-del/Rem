@@ -30,6 +30,7 @@ import {
 import { clearPortalTermsOnLogout } from './lib/portalTermsReset.js'
 import { hashPasswordBcrypt, verifyPasswordCompat } from './password.js'
 import { getPgPool, isPgConfigured } from './pgPool.js'
+import { toWebOrigin } from './lib/webOrigin.js'
 import {
   STRONG_PASSWORD_REGEX,
   sanitizeSelfUpdateBody,
@@ -113,19 +114,6 @@ if (!envSecret && isDevelopment) {
 }
 
 /** Browser Origin is scheme+host+port only; env URLs with paths or trailing slashes must match that. */
-function toWebOrigin(raw) {
-  if (!raw || typeof raw !== 'string') return null
-  const s = raw.trim()
-  if (!s) return null
-  try {
-    const u = new URL(s)
-    if (u.protocol !== 'http:' && u.protocol !== 'https:') return null
-    return u.origin
-  } catch {
-    return null
-  }
-}
-
 const baseURL =
   toWebOrigin(process.env.BETTER_AUTH_URL || '') || 'http://localhost:5173'
 const extraOrigins = (process.env.BETTER_AUTH_TRUSTED_ORIGINS || '')

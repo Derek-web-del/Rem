@@ -28,6 +28,7 @@ import { createBackupRouter } from './routes/backup.js'
 import { startBackupScheduler, stopBackupScheduler } from './jobs/backupScheduler.js'
 import { ensureBackupSchema, isBackupDbConfigured } from './lib/backupSchema.js'
 import { getPgPool } from './pgPool.js'
+import { toWebOrigin } from './lib/webOrigin.js'
 import { assertAesConfiguredForProduction } from './lib/aes256.js'
 import { verifySmtpTransporter } from './mail.js'
 import sanitizeInput from './middleware/sanitizeInput.js'
@@ -183,13 +184,16 @@ export async function createApp() {
 function parseCorsOrigins() {
   const isProd = (process.env.NODE_ENV || 'development') === 'production'
   const out = new Set()
-  const base = String(process.env.BETTER_AUTH_URL || '').trim()
-  if (base) out.add(new URL(base).origin)
+  const base = toWebOrigin(process.env.BETTER_AUTH_URL || '')
+  if (base) out.add(base)
   const extra = String(process.env.BETTER_AUTH_TRUSTED_ORIGINS || '')
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean)
-  for (const o of extra) out.add(new URL(o).origin)
+  for (const o of extra) {
+    const origin = toWebOrigin(o)
+    if (origin) out.add(origin)
+  }
   if (!isProd) {
     out.add('http://localhost:5173')
     out.add('http://127.0.0.1:5173')
