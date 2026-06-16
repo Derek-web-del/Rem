@@ -105,6 +105,19 @@ function resolveFromAddress() {
   return from
 }
 
+function formatResendError(status, bodyText) {
+  try {
+    const body = JSON.parse(bodyText)
+    const msg = String(body.message || bodyText)
+    if (status === 403 && msg.includes('testing emails')) {
+      return `${msg} Verify a domain at https://resend.com/domains and set RESEND_FROM to an address on that domain (e.g. noreply@yourdomain.com).`
+    }
+    return `Resend API ${status}: ${msg}`
+  } catch {
+    return `Resend API ${status}: ${bodyText}`
+  }
+}
+
 async function sendEmailViaResend({ to, subject, text, html }) {
   const apiKey = String(process.env.RESEND_API_KEY || '').trim()
   const from = resolveFromAddress()
@@ -123,7 +136,7 @@ async function sendEmailViaResend({ to, subject, text, html }) {
 
   const bodyText = await res.text()
   if (!res.ok) {
-    throw new Error(`Resend API ${res.status}: ${bodyText}`)
+    throw new Error(formatResendError(res.status, bodyText))
   }
 
   try {

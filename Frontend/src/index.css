@@ -411,6 +411,11 @@ button:active:not(:disabled) {
   object-fit: cover;
 }
 
+.login-card__seal-wrap--worm img {
+  object-fit: contain;
+  padding: 10px;
+}
+
 .login-card__name {
   margin-bottom: 3px;
   font-size: 22px;
