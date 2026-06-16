@@ -59,8 +59,10 @@ async function seedAdminIfNeeded(pool) {
     console.warn('[db:migrate] SEED_ADMIN_PASSWORD is the dev default — seeding anyway.')
   }
 
+  const adminUsername = String(process.env.SEED_ADMIN_USERNAME || 'admin').trim()
   const { rows } = await pool.query(
-    `SELECT 1 FROM "user" WHERE LOWER(role) = 'admin' LIMIT 1`,
+    `SELECT 1 FROM "user" WHERE LOWER(role) = 'admin' OR username = $1 LIMIT 1`,
+    [adminUsername],
   )
   if (rows.length > 0) {
     console.log('[db:migrate] Admin user already exists — skip seed.')
@@ -68,10 +70,17 @@ async function seedAdminIfNeeded(pool) {
   }
 
   console.log('[db:migrate] No admin user — running seed from SEED_ADMIN_* env…')
-  execSync('node scripts/seed-admin.mjs', {
-    stdio: 'inherit',
-    env: { ...process.env, AUTH_DISABLE_SIGNUP: 'false' },
-  })
+  try {
+    execSync('node scripts/seed-admin.mjs', {
+      stdio: 'inherit',
+      env: { ...process.env, AUTH_DISABLE_SIGNUP: 'false' },
+    })
+  } catch (err) {
+    console.error(
+      '[db:migrate] Admin seed failed — server will still start:',
+      err?.message || err,
+    )
+  }
 }
 
 async function main() {

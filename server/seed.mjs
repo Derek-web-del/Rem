@@ -5,8 +5,9 @@
  *
  * Faculty demo accounts are not created here. Use `npm run ensure:teacher` with your own email/password.
  *
- * Requires DATABASE_URL and migrated auth tables (`npx auth@latest migrate --yes --config server/auth.js`).
+ * Uses direct DB inserts (not auth.api.signUp) so deploy-time seed is not blocked by Sentinel rate limits.
  */
+import { randomUUID } from 'node:crypto'
 import './env-bootstrap.js'
 import { INSTITUTE_ADMIN_EMAIL } from '../shared/constants.js'
 import { hashPasswordBcrypt } from './password.js'
@@ -21,6 +22,7 @@ if (!process.env.BETTER_AUTH_SECRET || process.env.BETTER_AUTH_SECRET.length < 3
 const ADMIN_EMAIL = process.env.SEED_ADMIN_EMAIL || INSTITUTE_ADMIN_EMAIL
 const ADMIN_USER = process.env.SEED_ADMIN_USERNAME || 'admin'
 const ADMIN_PASS = process.env.SEED_ADMIN_PASSWORD || 'Admin123@'
+const ADMIN_NAME = String(process.env.SEED_ADMIN_NAME || 'Derek John Bantad').trim()
 
 async function resetPasswordAndUnlock(pool, username, plainPassword) {
   const r1 = await pool.query('SELECT id FROM "user" WHERE username = $1', [username])
@@ -39,56 +41,84 @@ async function resetPasswordAndUnlock(pool, username, plainPassword) {
   console.log(`Reset password + cleared lockout for "${username}"`)
 }
 
-async function trySignUp(auth, body) {
-  try {
-    await auth.api.signUpEmail({ body })
-    return true
-  } catch (e) {
-    const msg = String(e?.message || e)
-    if (msg.includes('already') || msg.includes('UNPROCESSABLE') || msg.includes('exists')) {
-      return false
-    }
-    throw e
+async function ensureCredentialAccount(pool, userId, email, plainPassword) {
+  const hash = await hashPasswordBcrypt(plainPassword)
+  const now = new Date().toISOString()
+  const { rows } = await pool.query(
+    `SELECT id FROM account WHERE "userId" = $1 AND "providerId" = 'credential'`,
+    [userId],
+  )
+  if (rows[0]?.id) {
+    await pool.query(
+      `UPDATE account SET password = $1, "accountId" = $2, "updatedAt" = $3 WHERE id = $4`,
+      [hash, email, now, rows[0].id],
+    )
+    return
   }
+  await pool.query(
+    `
+      INSERT INTO account (id, "accountId", "providerId", "userId", password, "createdAt", "updatedAt")
+      VALUES ($1, $2, 'credential', $3, $4, $5, $5)
+    `,
+    [randomUUID(), email, userId, hash, now],
+  )
+}
+
+async function ensureAdminUserDirect(pool) {
+  const now = new Date().toISOString()
+  const { rows } = await pool.query(
+    `SELECT id, username FROM "user" WHERE username = $1 OR LOWER(email) = LOWER($2) LIMIT 1`,
+    [ADMIN_USER, ADMIN_EMAIL],
+  )
+  let userId = rows[0]?.id
+
+  if (!userId) {
+    userId = randomUUID()
+    await pool.query(
+      `
+        INSERT INTO "user" (
+          id, name, email, "emailVerified", role, username, "displayUsername",
+          "twoFactorEnabled", "failedLoginAttempts", "lockedUntil", "createdAt", "updatedAt"
+        )
+        VALUES ($1, $2, $3, true, 'admin', $4, $4, true, 0, NULL, $5, $5)
+      `,
+      [userId, ADMIN_NAME, ADMIN_EMAIL, ADMIN_USER, now],
+    )
+    console.log(`Created admin user "${ADMIN_USER}" (${ADMIN_EMAIL})`)
+  } else {
+    await pool.query(
+      `
+        UPDATE "user"
+        SET name = $1, email = $2, role = 'admin', "emailVerified" = true,
+            "twoFactorEnabled" = true, username = $3, "displayUsername" = $3, "updatedAt" = $4
+        WHERE id = $5
+      `,
+      [ADMIN_NAME, ADMIN_EMAIL, ADMIN_USER, now, userId],
+    )
+    console.log(`Updated admin user "${ADMIN_USER}" (${ADMIN_EMAIL})`)
+  }
+
+  await ensureCredentialAccount(pool, userId, ADMIN_EMAIL, ADMIN_PASS)
+  await resetPasswordAndUnlock(pool, ADMIN_USER, ADMIN_PASS)
 }
 
 async function main() {
   console.log('Seeding institute admin (Better Auth PostgreSQL)…')
 
-  const { auth } = await import('./auth.js')
   const pool = getPgPool()
   if (!pool) {
     throw new Error('DATABASE_URL is not set; cannot connect to PostgreSQL.')
   }
 
-  const { rows: adminExisting } = await pool.query('SELECT id FROM "user" WHERE username = $1', [ADMIN_USER])
-  if (adminExisting[0]?.id) {
-    const now = new Date().toISOString()
-    await pool.query(
-      'UPDATE "user" SET email = $1, name = $2, "emailVerified" = true, "updatedAt" = $3 WHERE username = $4',
-      [ADMIN_EMAIL, 'Derek John Bantad', now, ADMIN_USER],
-    )
-    console.log(`Updated admin email → ${ADMIN_EMAIL} (username "${ADMIN_USER}")`)
-  }
-
-  await trySignUp(auth, {
-    email: ADMIN_EMAIL,
-    password: ADMIN_PASS,
-    name: 'Derek John Bantad',
-    username: ADMIN_USER,
-  })
-
-  const now = new Date().toISOString()
-  await pool.query(
-    'UPDATE "user" SET role = $1, "twoFactorEnabled" = true, "emailVerified" = true, "updatedAt" = $2 WHERE LOWER(email) = LOWER($3)',
-    ['admin', now, ADMIN_EMAIL],
-  )
-
-  await resetPasswordAndUnlock(pool, ADMIN_USER, ADMIN_PASS)
+  await ensureAdminUserDirect(pool)
 
   console.log('Done.')
-  console.log(`Admin (email OTP 2FA): ${ADMIN_EMAIL} or username "${ADMIN_USER}" / (password from SEED_ADMIN_PASSWORD or default in script)`)
-  console.log('To add a faculty account: npm run ensure:teacher -- your@email.com (set TEACHER_PASSWORD in env)')
+  console.log(
+    `Admin (email OTP 2FA): ${ADMIN_EMAIL} or username "${ADMIN_USER}" / (password from SEED_ADMIN_PASSWORD or default in script)`,
+  )
+  console.log(
+    'To add a faculty account: npm run ensure:teacher -- your@email.com (set TEACHER_PASSWORD in env)',
+  )
 }
 
 main().catch((e) => {
