@@ -9,6 +9,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import '../server/env-bootstrap.js'
 import { getPgPool } from '../server/pgPool.js'
+import { ensureSchema } from '../server/api/state/shared.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const migrationsDir = path.join(__dirname, '..', 'Database', 'migrations')
@@ -77,6 +78,9 @@ async function main() {
   })
 
   await ensureMigrationTable(pool)
+
+  console.log('[db:migrate] Ensuring base LMS schema (faculties, students, …)…')
+  await ensureSchema(pool)
 
   const files = (await fs.readdir(migrationsDir))
     .filter((name) => name.endsWith('.sql'))
