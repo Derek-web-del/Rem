@@ -38,6 +38,8 @@ import {
 
 } from '../lib/googleDriveUpload.js'
 
+import { toWebOrigin } from '../lib/webOrigin.js'
+
 
 
 const OAUTH_STATE_COOKIE = 'lenlearn_gdrive_oauth_state'
@@ -70,9 +72,10 @@ function successRedirectUrl() {
 
   if (custom) return custom
 
-  const base = String(process.env.BETTER_AUTH_URL || 'http://localhost:5173').replace(/\/$/, '')
+  const origin =
+    toWebOrigin(process.env.BETTER_AUTH_URL || '') || 'http://localhost:5173'
 
-  return `${base}/admin/backup`
+  return `${origin}/admin/backup`
 
 }
 

@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import { google } from 'googleapis'
 import { getPgPool } from '../pgPool.js'
+import { toWebOrigin } from './webOrigin.js'
 
 const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file'
 const FULL_DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive'
@@ -16,8 +17,9 @@ let redirectUriLogged = false
 export function resolveGoogleRedirectUri() {
   const explicit = String(process.env.GOOGLE_REDIRECT_URI || '').trim()
   if (explicit) return explicit
-  const base = String(process.env.BETTER_AUTH_URL || 'http://localhost:5173').replace(/\/$/, '')
-  return `${base}${OAUTH_CALLBACK_PATH}`
+  const origin =
+    toWebOrigin(process.env.BETTER_AUTH_URL || '') || 'http://localhost:5173'
+  return `${origin}${OAUTH_CALLBACK_PATH}`
 }
 
 export function getGoogleOAuthScopes() {
