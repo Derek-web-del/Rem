@@ -29,6 +29,7 @@ import {
   TEACHER_AUDIT_MODULES,
 } from '../lib/teacherAuditLog.js'
 import { buildTargetLabel } from '../lib/teacherAuditSnapshots.js'
+import { ORIGINALITY_CONTENT_MAX_BYTES } from '../lib/uploadLimitsConfig.js'
 
 async function getSessionUser(req, auth) {
   if (!auth?.api?.getSession) return null
