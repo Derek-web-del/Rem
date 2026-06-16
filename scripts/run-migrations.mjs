@@ -14,12 +14,6 @@ import { ensureSchema } from '../server/api/state/shared.js'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const migrationsDir = path.join(__dirname, '..', 'Database', 'migrations')
 
-const IGNORABLE_PG_CODES = new Set([
-  '42P07', // duplicate_table
-  '42710', // duplicate_object
-  '42701', // duplicate_column
-])
-
 async function ensureMigrationTable(pool) {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -51,14 +45,6 @@ async function runSqlMigration(pool, filename, sql) {
     console.log(`[db:migrate] applied: ${filename}`)
   } catch (err) {
     await client.query('ROLLBACK')
-    if (IGNORABLE_PG_CODES.has(err?.code)) {
-      await pool.query(
-        'INSERT INTO schema_migrations (filename) VALUES ($1) ON CONFLICT DO NOTHING',
-        [filename],
-      )
-      console.log(`[db:migrate] skip (already exists): ${filename}`)
-      return
-    }
     throw err
   } finally {
     client.release()
