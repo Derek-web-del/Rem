@@ -585,7 +585,7 @@ export default function TeacherStudyMaterialForm({
   if (mode === 'add') {
     return (
       <>
-        <TeacherMainHeader pageTitle="Subjects" onLogout={logoutToPortal} />
+        <TeacherMainHeader pageTitle="Subjects" />
         <main className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-8">
           <div className="mb-6 space-y-0.5 border-b border-neutral-200 pb-4">
             <TeacherBackButton
@@ -621,7 +621,7 @@ export default function TeacherStudyMaterialForm({
   if (mode === 'edit') {
     return (
       <>
-        <TeacherMainHeader pageTitle="Subjects" onLogout={logoutToPortal} />
+        <TeacherMainHeader pageTitle="Subjects" />
         <main className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-8">
           <div className="mb-6 space-y-0.5 border-b border-neutral-200 pb-4">
             <TeacherBackButton

@@ -598,7 +598,7 @@ export default function StudentQuizTakePage() {
 
   return (
     <div className="flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden">
-      <StudentMainHeader pageTitle="Quizzes" onLogout={logoutToPortal} />
+      <StudentMainHeader pageTitle="Quizzes" />
 
       <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
         <div

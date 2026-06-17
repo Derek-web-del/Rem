@@ -10,7 +10,7 @@ const SCHOOL_NAME = import.meta.env.VITE_SCHOOL_DISPLAY_NAME || 'Glendale School
 
 export default function TeacherTermsPage() {
   const navigate = useNavigate()
-  const { logoutToPortal, setSidebarNavLocked } = useOutletContext() || {}
+  const { setSidebarNavLocked } = useOutletContext() || {}
   const gateMode = !isTermsAccepted()
 
   const goDashboard = useCallback(() => {
@@ -30,7 +30,7 @@ export default function TeacherTermsPage() {
 
   return (
     <>
-      <TeacherMainHeader pageTitle="Terms and Policy" onLogout={logoutToPortal} />
+      <TeacherMainHeader pageTitle="Terms and Policy" />
       <PortalTermsMain>
         <TermsAndConditions
           schoolName={SCHOOL_NAME}

@@ -127,7 +127,7 @@ export default function GradesOverview() {
 
   return (
     <>
-      <TeacherMainHeader pageTitle="Grades Overview" onLogout={logoutToPortal} />
+      <TeacherMainHeader pageTitle="Grades Overview" />
       <main className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-8">
         <div className="space-y-6">
           <div>

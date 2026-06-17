@@ -72,7 +72,7 @@ export default function StudentSubjectsPage() {
 
   return (
     <>
-      <StudentMainHeader pageTitle="Subjects" onLogout={logoutToPortal} />
+      <StudentMainHeader pageTitle="Subjects" />
       <main className="min-h-0 flex-1 space-y-6 overflow-y-auto overflow-x-hidden p-4 md:space-y-8 md:p-8">
         <StudentViewHeader title="Subject Management" backTo="/student/dashboard" />
         <OfflineCacheIndicator fromCache={fromCache} className="mb-2" />

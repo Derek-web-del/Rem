@@ -158,7 +158,7 @@ export default function AdminDashboardRoute() {
         }
       >
         <AdminLayout onLogout={handleDashboardLogout}>
-          <AdminTermsPage onLogout={handleDashboardLogout} />
+          <AdminTermsPage />
         </AdminLayout>
       </Suspense>
     )

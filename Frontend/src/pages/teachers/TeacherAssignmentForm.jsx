@@ -625,7 +625,7 @@ export default function TeacherAssignmentForm({ mode = 'add' }) {
 
     <>
 
-      <TeacherMainHeader pageTitle="Assignments" onLogout={logoutToPortal} />
+      <TeacherMainHeader pageTitle="Assignments" />
 
       <main className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-8">
 

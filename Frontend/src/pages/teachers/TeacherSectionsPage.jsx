@@ -347,7 +347,7 @@ export default function TeacherSectionsPage() {
 
   return (
     <>
-      <TeacherMainHeader pageTitle="Sections" onLogout={logoutToPortal} />
+      <TeacherMainHeader pageTitle="Sections" />
       <main
         className={
           isStudentListView

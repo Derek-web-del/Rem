@@ -153,6 +153,7 @@ export function createGradesV1Router(express, auth) {
         return
       }
 
+      let gradeOptions = {}
       if (gate.kind === 'faculty') {
         const facultyRow = await fetchFacultyRowForSession(pool, gate.user)
         if (!facultyRow) {
@@ -164,6 +165,7 @@ export function createGradesV1Router(express, auth) {
           res.status(403).json({ success: false, error: 'FORBIDDEN', message: 'Student is not in your assigned sections.' })
           return
         }
+        gradeOptions = { facultyId: facultyRow.id }
       }
 
       const studentRow = await fetchStudentRowById(pool, studentId)
@@ -172,7 +174,7 @@ export function createGradesV1Router(express, auth) {
         return
       }
 
-      const result = await fetchStudentGradesBySubject(pool, studentId, studentRow)
+      const result = await fetchStudentGradesBySubject(pool, studentId, studentRow, gradeOptions)
       res.json({
         success: true,
         subjects: result.subjects || [],

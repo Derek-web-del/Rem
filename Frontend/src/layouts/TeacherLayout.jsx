@@ -3,6 +3,7 @@ import { Outlet, useNavigate } from 'react-router-dom'
 import { authClient } from '../lib/auth-client.js'
 import { useIdleSession } from '../hooks/useIdleSession.js'
 import { clearTermsAcceptance } from '../lib/termsSession.js'
+import { loginPathWithPortalId } from '../lib/loginRoutes.js'
 import TeacherSidebar from '../pages/teachers/TeacherSidebar.jsx'
 import OfflineBanner from '../components/OfflineBanner.jsx'
 import SystemOfflineBanner from '../components/SystemOfflineBanner.jsx'
@@ -28,7 +29,7 @@ export default function TeacherLayout() {
   const logoutToPortal = useCallback(async () => {
     clearTermsAcceptance()
     await authClient.signOut()
-    navigate('/login', { replace: true })
+    navigate(loginPathWithPortalId('FACULTY'), { replace: true })
   }, [navigate])
 
   useIdleSession({

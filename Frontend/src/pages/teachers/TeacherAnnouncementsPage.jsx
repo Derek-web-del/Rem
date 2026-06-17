@@ -104,7 +104,7 @@ export default function TeacherAnnouncementsPage() {
 
   return (
     <>
-      <TeacherMainHeader pageTitle="Announcements" onLogout={logoutToPortal} />
+      <TeacherMainHeader pageTitle="Announcements" />
       <main className="min-h-0 flex-1 space-y-6 overflow-y-auto overflow-x-hidden p-4 md:p-8">
         <TeacherBackButton to="/teacher/dashboard" />
         <OfflineCacheIndicator fromCache={fromCache} className="mb-2" />

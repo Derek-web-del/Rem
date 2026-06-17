@@ -1,8 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Navigate, useNavigate, useOutletContext } from 'react-router-dom'
 import { authClient } from '../../lib/auth-client.js'
 import { FACULTY_MSG, FACULTY_TOAST_ID, useFacultyNotify } from '../../lib/facultyNotify.js'
-import { clearTermsAcceptance } from '../../lib/termsSession.js'
 import TeacherMainHeader from './TeacherMainHeader.jsx'
 import TeacherProfileCard from './TeacherProfileCard.jsx'
 import TeacherStatCards from './TeacherStatCards.jsx'
@@ -112,7 +111,7 @@ function bannerSubtitleFromAdvisory(apiProfile, effectiveFaculty) {
 export default function TeacherDashboard() {
   const navigate = useNavigate()
   const outlet = useOutletContext() || {}
-  const { logoutToPortal: logoutFromLayout, setSidebarNavLocked } = outlet
+  const { setSidebarNavLocked } = outlet
 
   const sessionState = authClient.useSession()
   const sessionData = sessionState.data
@@ -136,14 +135,6 @@ export default function TeacherDashboard() {
   toastRef.current = toast
 
   const sessionUserId = sessionUser?.id ?? sessionUser?.email ?? ''
-
-  const logoutToPortal = useCallback(async () => {
-    clearTermsAcceptance()
-    await authClient.signOut()
-    navigate('/login', { replace: true })
-  }, [navigate])
-
-  const logout = logoutFromLayout || logoutToPortal
 
   useEffect(() => {
     if (!sessionUserId) {
@@ -435,7 +426,7 @@ export default function TeacherDashboard() {
 
   return (
     <>
-      <TeacherMainHeader onLogout={logout} pageTitle="Dashboard" />
+      <TeacherMainHeader pageTitle="Dashboard" />
       <main className="min-h-0 flex-1 space-y-6 overflow-y-auto overflow-x-hidden p-4 md:space-y-8 md:p-8">
         <section className="rounded-xl border border-neutral-100 bg-white p-5 shadow-md md:p-6">
           <div className="space-y-6">

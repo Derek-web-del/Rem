@@ -218,7 +218,7 @@ export default function StudentDashboard() {
 
     <>
 
-      <StudentMainHeader pageTitle="Student Dashboard" onLogout={logoutToPortal} />
+      <StudentMainHeader pageTitle="Student Dashboard" />
 
       <main className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-8">
         <OfflineCacheIndicator fromCache={fromCache} className="mb-3" />

@@ -8,7 +8,7 @@ import AdminMainHeader from './AdminMainHeader.jsx'
 
 const SCHOOL_NAME = import.meta.env.VITE_SCHOOL_DISPLAY_NAME || 'Glendale School, Inc.'
 
-export default function AdminTermsPage({ onLogout }) {
+export default function AdminTermsPage() {
   const navigate = useNavigate()
   const gateMode = !isTermsAccepted()
 
@@ -28,7 +28,7 @@ export default function AdminTermsPage({ onLogout }) {
 
   return (
     <>
-      <AdminMainHeader pageTitle="Terms and Policy" onLogout={onLogout} />
+      <AdminMainHeader pageTitle="Terms and Policy" />
       <PortalTermsMain>
         <TermsAndConditions
           schoolName={SCHOOL_NAME}

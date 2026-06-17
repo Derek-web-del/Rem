@@ -1,6 +1,4 @@
-import { ACTION_BLUE } from './instituteChrome.js'
-
-export default function TeacherMainHeader({ onLogout, pageTitle = 'Dashboard' }) {
+export default function TeacherMainHeader({ pageTitle = 'Dashboard' }) {
   return (
     <header className="flex shrink-0 flex-wrap items-start justify-between gap-4 border-b border-neutral-200/80 bg-neutral-50/80 px-4 py-4 backdrop-blur-sm md:px-8 md:py-5">
       <div>
@@ -9,14 +7,6 @@ export default function TeacherMainHeader({ onLogout, pageTitle = 'Dashboard' })
           {pageTitle}
         </h1>
       </div>
-      <button
-        type="button"
-        onClick={onLogout}
-        className="rounded-lg px-5 py-2 text-sm font-semibold text-white shadow-md transition hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
-        style={{ backgroundColor: ACTION_BLUE }}
-      >
-        Logout
-      </button>
     </header>
   )
 }

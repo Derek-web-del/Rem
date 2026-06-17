@@ -137,7 +137,7 @@ export default function StudentWorkList({
 
   return (
     <>
-      <StudentMainHeader pageTitle={config.navTitle} onLogout={logoutToPortal} />
+      <StudentMainHeader pageTitle={config.navTitle} />
       <main className="min-h-0 flex-1 space-y-6 overflow-y-auto overflow-x-hidden p-4 md:p-8">
         <StudentViewHeader title={config.pageHeader} backTo={backTo} />
         <OfflineCacheIndicator fromCache={fromCache} className="mb-2" />

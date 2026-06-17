@@ -1,4 +1,5 @@
 import apiFetch from './apiClient.js'
+import { authClient } from './auth-client.js'
 import { fetchWithOfflineCache } from './offlineFetch.js'
 import { getFromStore, saveToStore } from './indexedDB.js'
 import { isOnline } from './offlineSync.js'
@@ -44,11 +45,23 @@ export async function fetchMyGrades() {
   }
 }
 
+async function facultyCacheScope() {
+  try {
+    const { data } = await authClient.getSession()
+    const userId = String(data?.user?.id ?? '').trim()
+    if (userId) return `faculty:${userId}`
+  } catch {
+    /* use anonymous scope */
+  }
+  return 'faculty:anon'
+}
+
 /** @returns {Promise<{ success: boolean, subjects: Array, has_any_scores: boolean, fromCache?: boolean }>} */
-export async function fetchStudentGrades(studentId) {
+export async function fetchStudentGrades(studentId, { isAdmin = false } = {}) {
   const id = String(studentId ?? '').trim()
   if (!id) throw new Error('Student id is required.')
-  const cacheKey = `student:${id}`
+  const scope = isAdmin ? '' : await facultyCacheScope()
+  const cacheKey = isAdmin ? `student:${id}` : `${scope}:student:${id}`
   const { data, fromCache } = await fetchWithOfflineCache({
     storeName: 'grades',
     id: cacheKey,
@@ -62,7 +75,8 @@ export async function fetchStudentGrades(studentId) {
 export async function fetchSectionGradesOverview(sectionId) {
   const section = String(sectionId ?? '').trim()
   if (!section) throw new Error('Section id is required.')
-  const cacheKey = section
+  const scope = await facultyCacheScope()
+  const cacheKey = `${scope}:section:${section}`
 
   const { data, fromCache } = await fetchWithOfflineCache({
     storeName: 'faculty_grades_overview',

@@ -24,7 +24,7 @@ export default function StudentTermsPage() {
 
   const navigate = useNavigate()
 
-  const { logoutToPortal, setSidebarNavLocked } = useOutletContext() || {}
+  const { setSidebarNavLocked } = useOutletContext() || {}
 
   const { error: notifyError } = useNotify()
 
@@ -47,15 +47,10 @@ export default function StudentTermsPage() {
         if (cancelled) return
 
         if (status.accepted === true) {
-
           setTermsAccepted()
-
+          setGateMode(false)
           setSidebarNavLocked?.(false)
-
-          navigate('/student/dashboard', { replace: true })
-
           return
-
         }
 
         setGateMode(true)
@@ -142,7 +137,7 @@ export default function StudentTermsPage() {
 
     <>
 
-      <StudentMainHeader pageTitle="Terms and Policy" onLogout={logoutToPortal} />
+      <StudentMainHeader pageTitle="Terms and Policy" />
 
       <PortalTermsMain>
 

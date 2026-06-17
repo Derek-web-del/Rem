@@ -182,7 +182,7 @@ export default function StudentQuizViewPage() {
 
   return (
     <>
-      <StudentMainHeader pageTitle="Quizzes" onLogout={logoutToPortal} />
+      <StudentMainHeader pageTitle="Quizzes" />
       <main className="min-h-0 flex-1 overflow-y-auto p-4 md:p-8">
         <StudentViewHeader title="View Quiz" backTo="/student/quizzes" />
         <OfflineCacheIndicator fromCache={fromCache} className="mb-2" />

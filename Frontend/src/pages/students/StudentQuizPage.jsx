@@ -131,7 +131,7 @@ export default function StudentQuizPage() {
 
   return (
     <>
-      <StudentMainHeader pageTitle="Quizzes" onLogout={logoutToPortal} />
+      <StudentMainHeader pageTitle="Quizzes" />
       <main className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto max-w-4xl space-y-6 p-4 md:p-8">
         <StudentViewHeader title="View Quiz" backTo="/student/quizzes" />

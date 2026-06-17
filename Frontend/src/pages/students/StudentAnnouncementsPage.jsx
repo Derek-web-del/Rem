@@ -88,7 +88,7 @@ export default function StudentAnnouncementsPage() {
 
   return (
     <>
-      <StudentMainHeader pageTitle="Announcements" onLogout={logoutToPortal} />
+      <StudentMainHeader pageTitle="Announcements" />
       <main className="min-h-0 flex-1 space-y-6 overflow-y-auto overflow-x-hidden p-4 md:p-8">
         <StudentViewHeader title="Announcements" backTo="/student/dashboard" />
         <OfflineCacheIndicator fromCache={fromCache} className="mb-2" />

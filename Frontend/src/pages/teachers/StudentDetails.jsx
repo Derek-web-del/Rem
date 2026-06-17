@@ -46,7 +46,7 @@ export default function TeacherStudentDetails() {
 
   return (
     <>
-      <TeacherMainHeader pageTitle="Sections" onLogout={logoutToPortal} />
+      <TeacherMainHeader pageTitle="Sections" />
       <main className="min-h-0 flex-1 space-y-6 overflow-y-auto overflow-x-hidden p-4 md:space-y-8 md:p-8">
         <TeacherBackButton
           to={

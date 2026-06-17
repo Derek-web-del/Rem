@@ -165,7 +165,7 @@ export default function TeacherActivitiesPage() {
 
   return (
     <>
-      <TeacherMainHeader pageTitle="Activities" onLogout={logoutToPortal} />
+      <TeacherMainHeader pageTitle="Activities" />
       <main className="min-h-0 flex-1 space-y-6 overflow-y-auto overflow-x-hidden p-4 md:p-8">
         <TeacherBackButton to="/teacher/dashboard" />
         <OfflineCacheIndicator fromCache={fromCache} className="mb-2" />

@@ -206,7 +206,7 @@ export default function TeacherOriginalityCheckerPage() {
 
   return (
     <>
-      <TeacherMainHeader pageTitle="AI-Checker" onLogout={logoutToPortal} />
+      <TeacherMainHeader pageTitle="AI-Checker" />
       <main className="flex flex-col p-4 md:p-6">
         <TeacherBackButton to="/teacher/dashboard" className="mb-2 block w-fit text-left" />
 

@@ -199,7 +199,7 @@ export default function TeacherQuizView() {
 
   return (
     <>
-      <TeacherMainHeader pageTitle="Quiz Maker" onLogout={logoutToPortal} />
+      <TeacherMainHeader pageTitle="Quiz Maker" />
       <main className="flex min-h-0 flex-1 flex-col overflow-auto p-4 md:p-6">
         <div className="mb-4">
           <BackButton to="/teacher/quizzes" />

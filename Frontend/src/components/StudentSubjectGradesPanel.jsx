@@ -79,6 +79,7 @@ export default function StudentSubjectGradesPanel({
   loading,
   error,
   emptyMessage = 'No grades recorded yet.',
+  noSubjectsMessage = 'No subjects available for your grade level.',
   isAdmin = false,
   studentId,
   studentName,
@@ -113,7 +114,7 @@ export default function StudentSubjectGradesPanel({
   if (!subjects.length) {
     return (
       <div className="rounded-lg border border-dashed border-neutral-200 bg-neutral-50 px-4 py-8 text-center text-sm text-neutral-600">
-        No subjects available for your grade level.
+        {noSubjectsMessage}
       </div>
     )
   }

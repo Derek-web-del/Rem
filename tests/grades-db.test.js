@@ -4,7 +4,9 @@ import {
   averagePercents,
   buildGradedComponentSummary,
   componentHasGrades,
+  fetchFacultySubjectsForGrade,
   fetchSectionSubjectGradesMatrix,
+  fetchStudentGradesBySubject,
   normalizeGradeFetchOptions,
   safeGrade,
   sanitizeGradeSummary,
@@ -216,5 +218,105 @@ describe('fetchSectionSubjectGradesMatrix', () => {
     assert.deepEqual(Object.keys(result.students[0].subject_grades).sort(), ['1', '2'])
     assert.equal(result.students[0].subject_grades['1'].has_scored_items, false)
     assert.equal(result.students[0].subject_grades['1'].overall_avg, null)
+  })
+})
+
+describe('fetchFacultySubjectsForGrade', () => {
+  function mockPool({ subjects = [] } = {}) {
+    return {
+      query: async (sql, params) => {
+        const text = String(sql)
+        if (text.includes('information_schema')) return { rows: [] }
+        if (text.includes('faculty_id::text =')) {
+          return { rows: subjects }
+        }
+        return { rows: [] }
+      },
+    }
+  }
+
+  it('returns empty list when facultyId or grade level is missing', async () => {
+    const pool = mockPool()
+    assert.deepEqual(await fetchFacultySubjectsForGrade(pool, '', 'grade 10'), [])
+    assert.deepEqual(await fetchFacultySubjectsForGrade(pool, '42', ''), [])
+  })
+
+  it('returns faculty-owned subjects for grade level', async () => {
+    const pool = mockPool({
+      subjects: [
+        { id: 3, subject_code: 'MATH10', subject_name: 'Math', grade_level: 'Grade 10', semester: '1' },
+      ],
+    })
+    const rows = await fetchFacultySubjectsForGrade(pool, '42', 'grade 10')
+    assert.equal(rows.length, 1)
+    assert.equal(rows[0].subject_name, 'Math')
+    assert.equal(rows[0].id, 3)
+  })
+})
+
+describe('fetchStudentGradesBySubject faculty scoping', () => {
+  const studentRow = { id: 10, grade_level: 'Grade 10', section_id: 5 }
+
+  function mockPool({ facultySubjects = [], allGradeSubjects = [] } = {}) {
+    return {
+      query: async (sql, params) => {
+        const text = String(sql)
+        if (text.includes('information_schema')) return { rows: [] }
+        if (text.includes('faculty_id::text =') && text.includes('FROM subjects')) {
+          return { rows: facultySubjects }
+        }
+        if (text.includes('FROM subjects') && text.includes(' IN (')) {
+          return { rows: allGradeSubjects }
+        }
+        if (text.includes('FROM subjects WHERE id = $1 AND faculty_id')) {
+          const subjectId = Number(params[0])
+          const facultyId = String(params[1])
+          const owned = facultySubjects.some(
+            (s) => Number(s.id) === subjectId && facultyId === 'teacher-b',
+          )
+          return { rows: owned ? [{ id: subjectId }] : [] }
+        }
+        return { rows: [] }
+      },
+    }
+  }
+
+  it('returns empty subjects when faculty has no assigned subjects', async () => {
+    const pool = mockPool({ facultySubjects: [] })
+    const result = await fetchStudentGradesBySubject(pool, 10, studentRow, { facultyId: 'teacher-b' })
+    assert.deepEqual(result.subjects, [])
+    assert.equal(result.has_any_scores, false)
+  })
+
+  it('does not include other teachers subjects when facultyId is set', async () => {
+    const pool = mockPool({
+      facultySubjects: [],
+      allGradeSubjects: [
+        { id: 99, subject_code: 'SCI10', subject_name: 'Science', grade_level: 'Grade 10', semester: '1' },
+      ],
+    })
+    const result = await fetchStudentGradesBySubject(pool, 10, studentRow, { facultyId: 'teacher-b' })
+    assert.deepEqual(result.subjects, [])
+  })
+
+  it('without facultyId queries all grade-level subjects (not faculty-scoped)', async () => {
+    let usedGradeLevelInQuery = false
+    const pool = {
+      query: async (sql) => {
+        const text = String(sql)
+        if (text.includes('information_schema')) return { rows: [] }
+        if (text.includes('FROM subjects') && text.includes(' IN (')) {
+          usedGradeLevelInQuery = true
+          return {
+            rows: [
+              { id: 1, subject_code: 'MATH10', subject_name: 'Math', grade_level: 'Grade 10', semester: '1' },
+            ],
+          }
+        }
+        return { rows: [] }
+      },
+    }
+    await fetchStudentGradesBySubject(pool, 10, studentRow)
+    assert.equal(usedGradeLevelInQuery, true)
   })
 })

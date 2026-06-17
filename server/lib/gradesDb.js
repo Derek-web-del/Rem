@@ -6,7 +6,7 @@ import { studentDisplayName } from './studentPiiCrypto.js'
 import { isDeadlinePassed } from './studentWorkPortal.js'
 import { fetchSubjectGradeComponents } from './subjectGradeCriteriaDb.js'
 import { fetchStudentSubjects } from './studentPortalDb.js'
-import { normalizeGradeLevel } from './studentSession.js'
+import { normalizeGradeLevel, resolveStudentGradeLevel } from './studentSession.js'
 import { fetchSubjectRow } from './subjectCurriculumDb.js'
 import { fetchSubjectGradeItems, fetchStudentScoresForItems } from './subjectGradeItemsDb.js'
 import {
@@ -16,6 +16,25 @@ import {
 } from './gradebookCalc.js'
 
 let studentsArchivedColumnMemo = null
+let subjectsArchivedColumnMemo = null
+
+async function subjectsHasArchivedAt(pool) {
+  if (subjectsArchivedColumnMemo != null) return subjectsArchivedColumnMemo
+  try {
+    const { rows } = await pool.query(
+      `
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'subjects' AND column_name = 'archived_at'
+        LIMIT 1
+      `,
+    )
+    subjectsArchivedColumnMemo = rows?.length > 0
+    return subjectsArchivedColumnMemo
+  } catch {
+    subjectsArchivedColumnMemo = false
+    return false
+  }
+}
 
 async function studentsHasArchivedAt(pool) {
   if (studentsArchivedColumnMemo != null) return studentsArchivedColumnMemo
@@ -580,7 +599,37 @@ export async function fetchStudentSubjectGradeDetail(pool, studentId, subjectId)
   }
 }
 
-export async function fetchStudentGradesBySubject(pool, studentId, studentRow = null) {
+export async function fetchFacultySubjectsForGrade(pool, facultyId, gradeLevel) {
+  const facultyIdText = String(facultyId ?? '').trim()
+  const gradeNorm = normalizeGradeLevel(gradeLevel)
+  if (!pool || !facultyIdText || !gradeNorm) return []
+
+  const archive = await subjectsHasArchivedAt(pool)
+  const archiveFilter = archive ? ' AND archived_at IS NULL' : ''
+
+  const { rows } = await pool.query(
+    `
+      SELECT id, subject_code, subject_name, grade_level, semester
+      FROM subjects
+      WHERE faculty_id::text = $1
+        AND lower(trim(replace(coalesce(grade_level, ''), '  ', ' '))) = $2
+        ${archiveFilter}
+      ORDER BY subject_name ASC, id ASC
+    `,
+    [facultyIdText, gradeNorm],
+  )
+
+  return (rows || []).map((row) => ({
+    id: Number(row.id),
+    subject_code: String(row.subject_code ?? '').trim(),
+    subject_name: String(row.subject_name ?? '').trim(),
+    grade_level: String(row.grade_level ?? '').trim(),
+    semester: String(row.semester ?? '').trim(),
+  }))
+}
+
+export async function fetchStudentGradesBySubject(pool, studentId, studentRow = null, options = {}) {
+  const { facultyId = null } = options
   const sid = Number(studentId)
   if (!Number.isFinite(sid) || sid <= 0) return { subjects: [], has_any_scores: false }
 
@@ -594,13 +643,34 @@ export async function fetchStudentGradesBySubject(pool, studentId, studentRow = 
   }
   if (!row) return { subjects: [], has_any_scores: false }
 
-  const subjectList = await fetchStudentSubjects(pool, row)
+  const facultyIdText = facultyId != null ? String(facultyId).trim() : ''
+  let subjectList
+  if (facultyIdText) {
+    const gradeLevel = await resolveStudentGradeLevel(pool, row)
+    if (!gradeLevel) return { subjects: [], has_any_scores: false }
+    const facultySubjects = await fetchFacultySubjectsForGrade(pool, facultyIdText, gradeLevel)
+    subjectList = facultySubjects.map((sub) => ({
+      id: String(sub.id),
+      subject_code: sub.subject_code,
+      subject_name: sub.subject_name,
+      grade_level: sub.grade_level,
+      semester: sub.semester,
+    }))
+  } else {
+    subjectList = await fetchStudentSubjects(pool, row)
+  }
+
   const subjects = []
   let has_any_scores = false
 
   for (const sub of subjectList) {
     const subjectId = Number(sub.id)
     if (!Number.isFinite(subjectId) || subjectId <= 0) continue
+
+    if (facultyIdText) {
+      const owns = await facultyOwnsSubject(pool, facultyIdText, subjectId)
+      if (!owns) continue
+    }
 
     const detail = await fetchStudentSubjectGradeDetail(pool, sid, subjectId)
     if (!detail) continue
@@ -723,21 +793,11 @@ export async function fetchSectionSubjectGradesMatrix(pool, sectionId, { faculty
     return { grade_level: gradeLevel || '', subjects: [], students: [] }
   }
 
-  const { rows: subjectRows } = await pool.query(
-    `
-      SELECT id, subject_code, subject_name, grade_level
-      FROM subjects
-      WHERE faculty_id::text = $1
-        AND lower(trim(replace(coalesce(grade_level, ''), '  ', ' '))) = $2
-      ORDER BY subject_name ASC, id ASC
-    `,
-    [facultyIdText, gradeLevel],
-  )
-
-  const subjects = (subjectRows || []).map((row) => ({
-    id: Number(row.id),
-    subject_code: String(row.subject_code ?? '').trim(),
-    subject_name: String(row.subject_name ?? '').trim(),
+  const facultySubjectRows = await fetchFacultySubjectsForGrade(pool, facultyIdText, gradeLevel)
+  const subjects = facultySubjectRows.map((row) => ({
+    id: row.id,
+    subject_code: row.subject_code,
+    subject_name: row.subject_name,
   }))
 
   const { rows: students } = await pool.query(

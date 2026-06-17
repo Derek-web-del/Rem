@@ -36,12 +36,15 @@ export default function StudentGradesCard({
   const [error, setError] = useState('')
   const [fromCache, setFromCache] = useState(false)
 
+  const teacherNoSubjectsMessage =
+    'No subjects assigned to your faculty account yet. Grades will appear once admin assigns your subjects.'
+
   const loadGrades = useCallback(async () => {
     if (!resolvedId) return
     setLoading(true)
     setError('')
     try {
-      const data = await fetchStudentGrades(resolvedId)
+      const data = await fetchStudentGrades(resolvedId, { isAdmin })
       setGrades(data)
       setFromCache(Boolean(data.fromCache))
     } catch (e) {
@@ -50,7 +53,7 @@ export default function StudentGradesCard({
     } finally {
       setLoading(false)
     }
-  }, [resolvedId])
+  }, [resolvedId, isAdmin])
 
   useEffect(() => {
     let cancelled = false
@@ -59,7 +62,7 @@ export default function StudentGradesCard({
       setLoading(true)
       setError('')
       try {
-        const data = await fetchStudentGrades(resolvedId)
+        const data = await fetchStudentGrades(resolvedId, { isAdmin })
         if (!cancelled) {
           setGrades(data)
           setFromCache(Boolean(data.fromCache))
@@ -76,7 +79,12 @@ export default function StudentGradesCard({
     return () => {
       cancelled = true
     }
-  }, [resolvedId])
+  }, [resolvedId, isAdmin])
+
+  const emptyMessage = isAdmin ? 'No graded submissions yet.' : teacherNoSubjectsMessage
+  const noSubjectsMessage = isAdmin
+    ? 'No subjects available for your grade level.'
+    : teacherNoSubjectsMessage
 
   return (
     <div
@@ -109,7 +117,8 @@ export default function StudentGradesCard({
         grades={grades}
         loading={loading}
         error={error}
-        emptyMessage="No graded submissions yet."
+        emptyMessage={emptyMessage}
+        noSubjectsMessage={noSubjectsMessage}
         isAdmin={isAdmin}
         studentId={resolvedId}
         studentName={studentName}

@@ -169,7 +169,7 @@ export default function StudentStudyMaterialsPage() {
 
   return (
     <>
-      <StudentMainHeader pageTitle="Study Materials" onLogout={logoutToPortal} />
+      <StudentMainHeader pageTitle="Study Materials" />
       <main className="min-h-0 flex-1 space-y-6 overflow-y-auto overflow-x-hidden p-4 md:p-8">
         <StudentViewHeader title="Study Materials" backTo="/student/dashboard" />
         <OfflineCacheIndicator fromCache={fromCache} className="mb-2" />

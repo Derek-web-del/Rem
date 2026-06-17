@@ -141,7 +141,7 @@ export default function TeacherQuizzesPage() {
 
   return (
     <>
-      <TeacherMainHeader pageTitle="Quiz maker" onLogout={logoutToPortal} />
+      <TeacherMainHeader pageTitle="Quiz maker" />
       <main className="min-h-0 flex-1 space-y-6 overflow-y-auto overflow-x-hidden p-4 md:p-8">
         <TeacherBackButton to="/teacher/dashboard" />
         <OfflineCacheIndicator fromCache={fromCache} className="mb-2" />

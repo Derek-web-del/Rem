@@ -402,7 +402,7 @@ export default function TeacherActivityForm({ mode = 'add' }) {
 
   return (
     <>
-      <TeacherMainHeader pageTitle="Activities" onLogout={logoutToPortal} />
+      <TeacherMainHeader pageTitle="Activities" />
       <main className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-8">
         <div className="flex flex-wrap items-start justify-between gap-3 border-b border-neutral-200 pb-4">
           <div>

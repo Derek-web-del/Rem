@@ -122,7 +122,7 @@ export default function TeacherOriginalityReportView() {
   if (loading) {
     return (
       <>
-        <TeacherMainHeader pageTitle="AI-Checker" onLogout={logoutToPortal} />
+        <TeacherMainHeader pageTitle="AI-Checker" />
         <main className="flex min-h-0 flex-1 flex-col overflow-auto p-4 md:p-6">
           <TeacherBackButton to="/teacher/originality-checker" className="mb-2 block w-fit text-left" />
           <ReportPageHeading />
@@ -135,7 +135,7 @@ export default function TeacherOriginalityReportView() {
   if (!report) {
     return (
       <>
-        <TeacherMainHeader pageTitle="AI-Checker" onLogout={logoutToPortal} />
+        <TeacherMainHeader pageTitle="AI-Checker" />
         <main className="flex min-h-0 flex-1 flex-col overflow-auto p-4 md:p-6">
           <TeacherBackButton to="/teacher/originality-checker" className="mb-2 block w-fit text-left" />
           <ReportPageHeading />
@@ -172,7 +172,7 @@ export default function TeacherOriginalityReportView() {
 
   return (
     <>
-      <TeacherMainHeader pageTitle="AI-Checker" onLogout={logoutToPortal} />
+      <TeacherMainHeader pageTitle="AI-Checker" />
       <main className="flex min-h-0 flex-1 flex-col overflow-auto p-4 md:p-6 print:bg-white">
         <TeacherBackButton to="/teacher/originality-checker" className="mb-2 block w-fit text-left" />
         <ReportPageHeading

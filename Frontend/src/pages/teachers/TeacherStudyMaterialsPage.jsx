@@ -372,7 +372,7 @@ export default function TeacherStudyMaterialsPage() {
 
     <>
 
-      <TeacherMainHeader pageTitle="Study Materials" onLogout={logoutToPortal} />
+      <TeacherMainHeader pageTitle="Study Materials" />
 
       <main className="min-h-0 flex-1 space-y-6 overflow-y-auto overflow-x-hidden p-4 md:p-8">
 

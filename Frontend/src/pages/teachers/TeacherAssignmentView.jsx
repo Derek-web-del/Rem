@@ -244,7 +244,7 @@ export default function TeacherAssignmentView() {
 
   return (
     <>
-      <TeacherMainHeader pageTitle="Assignments" onLogout={logoutToPortal} />
+      <TeacherMainHeader pageTitle="Assignments" />
       <main className="min-h-0 flex-1 space-y-8 overflow-y-auto overflow-x-hidden p-4 md:p-8">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <h2 className="text-2xl font-bold text-neutral-900">Assignment</h2>
