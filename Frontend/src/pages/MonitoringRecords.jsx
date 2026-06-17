@@ -21,10 +21,9 @@ import {
 } from '../lib/auditEventDisplay.js'
 import { auditEventReactKey, dedupeAuditEvents } from '../lib/dedupeById.js'
 import { isNonProfileLedgerType, ledgerTypeToActivityType } from '../../../shared/auditLedgerDisplay.js'
-import TeacherAuditDetailPanel, {
+import {
   auditRowAffectedLabel,
   auditRowModuleLabel,
-  isTeacherStructuredAuditEvent,
   teacherEventSubline,
 } from '../components/TeacherAuditDetailPanel.jsx'
 const EVENT_LABELS = {
@@ -1514,15 +1513,6 @@ export default function MonitoringRecords() {
                         ) : null}
                       </div>
                     </div>
-
-                    {isTeacherStructuredAuditEvent(e) ? (
-                      <div className="mt-6">
-                        <div className="text-xs font-bold uppercase tracking-wider text-white/50">Change details</div>
-                        <div className="mt-3 overflow-hidden rounded-xl border border-white/10 bg-[#0f0f10] p-5">
-                          <TeacherAuditDetailPanel event={e} variant="modal" />
-                        </div>
-                      </div>
-                    ) : null}
 
                     <div className="mt-6">
                       <div className="text-xs font-bold uppercase tracking-wider text-white/50">Event Data</div>
