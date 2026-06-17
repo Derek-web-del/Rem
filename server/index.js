@@ -23,6 +23,7 @@ import { createTeacherGradebookV1Router } from './api/teacherGradebookV1.js'
 import { createGradeOverrideV1Router } from './api/gradeOverrideV1.js'
 import { createAdminCurriculumGuidesRouter } from './api/adminCurriculumGuides.js'
 import { createFileDownloadRouter, createLegacyUploadsRouter } from './api/fileDownload.js'
+import { ensureUploadDirs } from './lib/uploadPaths.js'
 import { createMonitoringRouter } from './routes/monitoring.js'
 import { createBackupRouter } from './routes/backup.js'
 import { startBackupScheduler, stopBackupScheduler } from './jobs/backupScheduler.js'
@@ -114,6 +115,7 @@ function expressBodyParserErrorHandler(err, req, res, next) {
 }
 
 export async function createApp() {
+  ensureUploadDirs()
   const app = express()
 
   // Trust proxy headers for correct req.ip behind reverse proxies (ngrok/CDN),
@@ -137,6 +139,8 @@ export async function createApp() {
           scriptSrc: ["'self'", 'https://static.cloudflareinsights.com'],
           styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
           imgSrc: ["'self'", 'data:', 'blob:'],
+          frameSrc: ["'self'", 'data:', 'blob:'],
+          objectSrc: ["'self'"],
           connectSrc: [
             "'self'",
             'https://*.better-auth.com',
@@ -153,7 +157,7 @@ export async function createApp() {
           : false,
       noSniff: true,
       xssFilter: true,
-      frameguard: { action: 'deny' },
+      frameguard: { action: 'sameorigin' },
     }),
   )
 

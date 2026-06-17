@@ -36,6 +36,10 @@ import {
   syllabusUploadMiddleware,
   validateSyllabusUploadFile,
 } from '../lib/syllabusStorage.js'
+import {
+  sendSubjectSyllabusResponse,
+  syllabusDisplayFileName,
+} from '../lib/syllabusResponse.js'
 import { resolveSubjectImagePath } from '../lib/subjectImageStorage.js'
 import {
   announcementRowToResponse,
@@ -976,61 +980,6 @@ function teacherSubjectSyllabusFileUrl(subjectId) {
   const sid = Number(subjectId)
   if (!Number.isFinite(sid) || sid <= 0) return ''
   return `/api/teacher/subjects/${sid}/syllabus-file`
-}
-
-function parseSyllabusDataUrl(dataUrl) {
-  const t = String(dataUrl || '').trim()
-  const m = /^data:([^;,]+)?(?:;charset=[^;,]+)?;base64,([\s\S]*)$/i.exec(t)
-  if (!m) return null
-  return { mime: m[1] || 'application/octet-stream', buffer: Buffer.from(m[2], 'base64') }
-}
-
-function sendSubjectSyllabusResponse(res, syllabusRaw, downloadName) {
-  const t = String(syllabusRaw || '').trim()
-  if (!t) {
-    res.status(404).json({ error: 'NOT_FOUND', message: 'No syllabus file.' })
-    return
-  }
-  const fileName = String(downloadName || 'syllabus.pdf').replace(/[^\w.\-()+ ]+/g, '_') || 'syllabus.pdf'
-  if (t.startsWith('data:')) {
-    const parsed = parseSyllabusDataUrl(t)
-    if (!parsed) {
-      res.status(500).json({ error: 'INVALID_SYLLABUS', message: 'Invalid syllabus data.' })
-      return
-    }
-    res.setHeader('Content-Type', parsed.mime)
-    res.setHeader('Content-Disposition', `inline; filename="${fileName}"`)
-    res.send(parsed.buffer)
-    return
-  }
-  if (t.startsWith('/uploads/')) {
-    const abs = path.join(process.cwd(), 'public', t.replace(/^\//, ''))
-    if (!fs.existsSync(abs)) {
-      res.status(404).json({ error: 'NOT_FOUND', message: 'Syllabus file missing on disk.' })
-      return
-    }
-    res.setHeader('Content-Disposition', `inline; filename="${fileName}"`)
-    res.sendFile(abs)
-    return
-  }
-  res.status(404).json({ error: 'NOT_FOUND', message: 'Unsupported syllabus format.' })
-}
-
-function syllabusDisplayFileName(syllabusRaw, subjectCode) {
-  const t = String(syllabusRaw || '').trim()
-  if (!t) return 'syllabus.pdf'
-  if (t.startsWith('/uploads/')) {
-    const base = t.split('/').pop()
-    if (base) return base
-  }
-  if (t.startsWith('data:')) {
-    const code = String(subjectCode ?? '').trim()
-    if (t.includes('application/pdf') || t.includes('pdf')) return code ? `${code}.pdf` : 'syllabus.pdf'
-    if (t.includes('wordprocessingml') || t.includes('msword')) return code ? `${code}.docx` : 'syllabus.docx'
-    return code ? `${code}.pdf` : 'syllabus.pdf'
-  }
-  const code = String(subjectCode ?? '').trim()
-  return code ? `${code}.pdf` : 'syllabus.pdf'
 }
 
 function mapTeacherSubjectRow(row, extras = {}) {

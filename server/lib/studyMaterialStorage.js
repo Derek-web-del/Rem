@@ -8,6 +8,7 @@ import {
   FACULTY_STUDY_MATERIAL_MAX_BYTES,
   STUDY_MATERIAL_MAX_MSG,
 } from './uploadLimitsConfig.js'
+import { uploadsRoot } from './uploadPaths.js'
 
 export const MATERIAL_UPLOAD_REL = '/uploads/materials'
 export const MATERIAL_VIDEO_MAX_BYTES = FACULTY_STUDY_MATERIAL_MAX_BYTES
@@ -44,7 +45,7 @@ const ALLOWED_EXT = new Set([
 const VIDEO_EXT = new Set(['.mp4', '.avi', '.mov', '.wmv', '.mkv'])
 
 function materialsUploadAbsDir() {
-  return path.join(process.cwd(), 'public', 'uploads', 'materials')
+  return path.join(uploadsRoot(), 'materials')
 }
 
 export function ensureMaterialsUploadDir() {

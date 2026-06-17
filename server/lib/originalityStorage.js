@@ -6,6 +6,7 @@ import {
   DEFAULT_UPLOAD_MAX_BYTES,
   DEFAULT_UPLOAD_MAX_MSG,
 } from './uploadLimitsConfig.js'
+import { uploadsRoot } from './uploadPaths.js'
 
 export const ORIGINALITY_UPLOAD_REL = '/uploads/originality'
 export const ORIGINALITY_FILE_TYPE_MSG = 'Supported formats: .txt, .docx, .pdf'
@@ -20,7 +21,7 @@ const ALLOWED_MIMES = new Set([
 ])
 
 function originalityUploadAbsDir() {
-  return path.join(process.cwd(), 'public', 'uploads', 'originality')
+  return path.join(uploadsRoot(), 'originality')
 }
 
 export function ensureOriginalityUploadDir() {

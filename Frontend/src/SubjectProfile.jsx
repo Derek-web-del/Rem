@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react'
 import BackButton from './components/BackButton.jsx'
 import { apiUrl } from './lib/lmsStateStorage.js'
-import { resolveTeacherFileUrl } from './lib/teacherMedia.js'
 import { formatSemesterLabel } from './lib/quizQuestionTypes.js'
 import { subjectImageDisplaySrc } from './lib/subjectImages.js'
 
@@ -54,8 +53,10 @@ export default function SubjectProfile({ subject, onBack, onEdit }) {
 
   const grade = subject?.grade || subject?.grade_level || '—'
   const semester = formatSemesterLabel(subject?.semester) || '—'
+  const syllabusRaw = String(subject.syllabusDataUrl || subject.syllabus_pdf || '').trim()
   const syllabusFileName = subject.syllabusFileName || 'syllabus.pdf'
-  const syllabusUrl = resolveTeacherFileUrl(subject.syllabusDataUrl || subject.syllabus_pdf || '')
+  const syllabusUrl =
+    syllabusRaw && subject.id ? apiUrl(`/api/v1/subjects/${subject.id}/syllabus-file`) : ''
   const coverSrc = subjectImageDisplaySrc(subject, { apiUrlFn: apiUrl })
 
   return (

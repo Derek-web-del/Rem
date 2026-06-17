@@ -2,6 +2,7 @@ import { requireAdminSession, logStatePostgresError, auditInstituteRecord, subje
 import { requireAnyRoleSession } from '../../lib/security.js'
 import { GENERIC_SERVER_ERROR, sendSafeServerError } from '../../lib/safeApiError.js'
 import { resolveSubjectImagePath } from '../../lib/subjectImageStorage.js'
+import { sendSubjectSyllabusResponse, syllabusDisplayFileName } from '../../lib/syllabusResponse.js'
 import { extendUpdateSetWithIntegrity, stampRowLastModified } from '../../lib/recordIntegrity.js'
 import {
   subjectPgRowSnapshot,
@@ -248,6 +249,30 @@ export function registerSubjectsRoutes(router, ctx) {
       res.json({ ok: true, id })
     } catch (e) {
       subjectPgError(res, e)
+    }
+  })
+
+  router.get('/v1/subjects/:id/syllabus-file', async (req, res) => {
+    try {
+      if (!(await requireAdminSession(req, res, auth))) return
+      const id = Number(req.params.id)
+      if (!Number.isFinite(id) || id <= 0) {
+        res.status(400).json({ error: 'Invalid subject id.' })
+        return
+      }
+      const { rows } = await pool.query(
+        `SELECT syllabus_pdf, subject_code FROM subjects WHERE id = $1 AND archived_at IS NULL LIMIT 1`,
+        [id],
+      )
+      if (!rows?.length) {
+        res.status(404).json({ error: 'NOT_FOUND', message: 'Subject not found.' })
+        return
+      }
+      const syllabusRaw = String(rows[0]?.syllabus_pdf ?? '').trim()
+      const fileName = syllabusDisplayFileName(syllabusRaw, rows[0]?.subject_code)
+      sendSubjectSyllabusResponse(res, syllabusRaw, fileName)
+    } catch (e) {
+      sendSafeServerError(res, e, 'GET /api/v1/subjects/:id/syllabus-file')
     }
   })
 

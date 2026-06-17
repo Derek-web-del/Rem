@@ -5,6 +5,7 @@ import { sendSafeServerError } from '../lib/safeApiError.js'
 import { logUnauthorizedAccessFromRequest } from '../lib/security.js'
 import { fetchStudentRowForSession, normalizeGradeLevel } from '../lib/studentSession.js'
 import { fetchFacultyRowForSession } from '../lib/facultySession.js'
+import { subjectAssetsRoot, uploadsRoot } from '../lib/uploadPaths.js'
 
 const ALLOWED_CATEGORIES = new Set([
   'assignments',
@@ -33,10 +34,6 @@ const CATEGORY_DIRS = {
   curriculum: 'curriculum',
   syllabus: 'syllabus',
   originality: 'originality',
-}
-
-function uploadsRoot() {
-  return path.resolve(process.cwd(), 'public', 'uploads')
 }
 
 function sessionUser(session) {
@@ -347,9 +344,11 @@ export function createFileDownloadRouter(express, { auth }) {
         return
       }
 
-      const root = uploadsRoot()
       const dirSegment = CATEGORY_DIRS[category]
-      const allowedRoot = path.resolve(root, dirSegment)
+      const allowedRoot =
+        category === 'subjects'
+          ? subjectAssetsRoot()
+          : path.resolve(uploadsRoot(), dirSegment)
       const resolved = path.resolve(allowedRoot, ...splat.split('/').filter(Boolean))
       const rel = path.relative(allowedRoot, resolved)
       if (rel.startsWith('..') || path.isAbsolute(rel)) {
@@ -382,6 +381,12 @@ export function createFileDownloadRouter(express, { auth }) {
       if (!fs.existsSync(resolved) || !fs.statSync(resolved).isFile()) {
         res.status(404).json({ success: false, error: 'NOT_FOUND', message: 'File not found.' })
         return
+      }
+
+      const ext = path.extname(resolved).toLowerCase()
+      if (ext === '.pdf') {
+        res.setHeader('Content-Type', 'application/pdf')
+        res.setHeader('Content-Disposition', 'inline')
       }
 
       res.sendFile(resolved)

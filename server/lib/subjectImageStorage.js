@@ -8,17 +8,18 @@ import {
   resolveSubjectImageFromMap,
   subjectImages,
 } from '../../shared/subjectImages.js'
+import { subjectAssetsRoot } from './uploadPaths.js'
 
 export { SUBJECT_UPLOAD_REL, SUBJECT_IMAGE_PLACEHOLDER, subjectImages }
 
 export function getSubjectImagesDir() {
-  return path.join(process.cwd(), 'public', 'uploads', 'Subjects_images')
+  return subjectAssetsRoot()
 }
 
 function fileExistsPublicUrl(publicPath) {
-  const rel = String(publicPath || '').replace(/^\/uploads\//, '')
+  const rel = String(publicPath || '').replace(/^\/uploads\/Subjects_images\//, '')
   if (!rel) return false
-  return fs.existsSync(path.join(process.cwd(), 'public', 'uploads', rel))
+  return fs.existsSync(path.join(getSubjectImagesDir(), rel))
 }
 
 function normalizeFileStem(stem) {

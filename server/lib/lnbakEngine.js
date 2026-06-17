@@ -22,6 +22,7 @@ import {
 import { filterFacultyRowKeys } from './sqlGuards.js'
 import { repairFacultyAuthLinks, buildFacultyRestoreReport } from './repairFacultyAuthLinks.js'
 import { repairStudentAuthLinks } from './repairStudentAuthLinks.js'
+import { uploadsRoot } from './uploadPaths.js'
 
 const require = createRequire(import.meta.url)
 const archiverLib = require('archiver')
@@ -48,7 +49,7 @@ const unzipper = unzipperLib.default ?? unzipperLib
 
 export const BACKUPS_DIR = path.join(process.cwd(), 'backups')
 export const BACKUP_UPLOADS_DIR = path.join(BACKUPS_DIR, '.uploads')
-export const UPLOADS_DIR = path.join(process.cwd(), 'public', 'uploads')
+export const UPLOADS_DIR = uploadsRoot()
 
 export const LNBAK_TABLE_ORDER = [
   'user',

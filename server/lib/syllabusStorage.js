@@ -6,6 +6,7 @@ import {
   DEFAULT_UPLOAD_MAX_BYTES,
   DEFAULT_UPLOAD_MAX_MSG,
 } from './uploadLimitsConfig.js'
+import { uploadsRoot } from './uploadPaths.js'
 
 export const SYLLABUS_UPLOAD_REL = '/uploads/syllabus'
 export const SYLLABUS_MAX_BYTES = DEFAULT_UPLOAD_MAX_BYTES
@@ -18,7 +19,7 @@ const ALLOWED_MIMES = new Set([
 ])
 
 function syllabusUploadAbsDir() {
-  return path.join(process.cwd(), 'public', 'uploads', 'syllabus')
+  return path.join(uploadsRoot(), 'syllabus')
 }
 
 export function ensureSyllabusUploadDir() {

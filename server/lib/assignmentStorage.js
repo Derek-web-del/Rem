@@ -7,6 +7,7 @@ import {
   DEFAULT_UPLOAD_MAX_MSG,
 } from './uploadLimitsConfig.js'
 import { PDF_MIMES, PDF_OR_DOC_MIMES, verifyUploadMagicBytes } from './uploadMagicBytes.js'
+import { uploadsRoot } from './uploadPaths.js'
 
 export const ASSIGNMENT_UPLOAD_REL = '/uploads/assignments'
 export const ASSIGNMENT_MAX_BYTES = DEFAULT_UPLOAD_MAX_BYTES
@@ -21,7 +22,7 @@ const ALLOWED_MIMES = new Set([
 ])
 
 function assignmentsUploadAbsDir() {
-  return path.join(process.cwd(), 'public', 'uploads', 'assignments')
+  return path.join(uploadsRoot(), 'assignments')
 }
 
 export function ensureAssignmentsUploadDir() {

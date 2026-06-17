@@ -6,6 +6,7 @@ import {
   DEFAULT_UPLOAD_MAX_BYTES,
   DEFAULT_UPLOAD_MAX_MSG,
 } from './uploadLimitsConfig.js'
+import { uploadsRoot } from './uploadPaths.js'
 
 export const LESSON_UPLOAD_REL = '/uploads/lessons'
 export const LESSON_MAX_BYTES = DEFAULT_UPLOAD_MAX_BYTES
@@ -20,7 +21,7 @@ const ALLOWED_MIMES = new Set([
 ])
 
 function lessonsUploadAbsDir() {
-  return path.join(process.cwd(), 'public', 'uploads', 'lessons')
+  return path.join(uploadsRoot(), 'lessons')
 }
 
 export function ensureLessonsUploadDir() {

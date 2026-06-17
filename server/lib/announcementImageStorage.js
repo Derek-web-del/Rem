@@ -5,13 +5,14 @@ import {
   PHOTO_MAX_BYTES,
   PHOTO_MAX_MSG,
 } from './uploadLimitsConfig.js'
+import { uploadsRoot } from './uploadPaths.js'
 
 export const ANNOUNCEMENT_UPLOAD_REL = '/uploads/announcements'
 const ALLOWED_MIME = new Set(['image/png', 'image/jpeg', 'image/jpg'])
 const MAX_BYTES = PHOTO_MAX_BYTES
 
 export function getAnnouncementsUploadDir() {
-  return path.join(process.cwd(), 'public', 'uploads', 'announcements')
+  return path.join(uploadsRoot(), 'announcements')
 }
 
 function ensureUploadDir() {

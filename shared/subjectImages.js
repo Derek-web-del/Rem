@@ -1,4 +1,4 @@
-/** Public URL prefix for subject cover images (served from `public/uploads/Subjects_images/`). */
+/** Public URL prefix for subject cover images (served from `public/assets/subjects/`). */
 export const SUBJECT_UPLOAD_REL = '/uploads/Subjects_images'
 
 export const SUBJECT_IMAGE_PLACEHOLDER = `${SUBJECT_UPLOAD_REL}/subject-placeholder.svg`

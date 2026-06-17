@@ -6,6 +6,7 @@ import { mapAssignmentRow } from './assignmentsDb.js'
 import { mapActivityRow } from './activitiesDb.js'
 import { announcementRowToResponse, ensureAnnouncementsMetadataColumns } from './announcementsDb.js'
 import { decryptStudentPiiFields, studentDisplayName } from './studentPiiCrypto.js'
+import { uploadsRoot } from './uploadPaths.js'
 
 function resolveUploadDiskPath(filePath) {
   const t = String(filePath ?? '').trim()
@@ -15,7 +16,7 @@ function resolveUploadDiskPath(filePath) {
   let rel = t
   if (t.startsWith('/uploads/')) rel = t.slice('/uploads/'.length)
   else if (t.startsWith('uploads/')) rel = t.slice('uploads/'.length)
-  return path.resolve(process.cwd(), 'public', 'uploads', ...rel.split('/').filter(Boolean))
+  return path.resolve(uploadsRoot(), ...rel.split('/').filter(Boolean))
 }
 
 export function fileAvailableOnDisk(filePath) {

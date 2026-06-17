@@ -7,12 +7,13 @@ import {
   DEFAULT_UPLOAD_MAX_MSG,
 } from './uploadLimitsConfig.js'
 import { PDF_OR_DOC_MIMES, verifyUploadMagicBytes } from './uploadMagicBytes.js'
+import { uploadsRoot } from './uploadPaths.js'
 
 export const CURRICULUM_UPLOAD_REL = '/uploads/curriculum'
 export const CURRICULUM_PDF_MAX_BYTES = DEFAULT_UPLOAD_MAX_BYTES
 
 function curriculumUploadAbsDir() {
-  return path.join(process.cwd(), 'public', 'uploads', 'curriculum')
+  return path.join(uploadsRoot(), 'curriculum')
 }
 
 export function ensureCurriculumUploadDir() {

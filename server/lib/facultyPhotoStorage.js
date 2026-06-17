@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { PHOTO_MAX_BYTES, PHOTO_MAX_MSG } from './uploadLimitsConfig.js'
+import { resolvePublicUploadPath, uploadsRoot } from './uploadPaths.js'
 
 export const FACULTY_UPLOAD_REL = '/uploads/faculties'
 export const FACULTY_PHOTO_MAX_BYTES = PHOTO_MAX_BYTES
@@ -13,7 +14,7 @@ const EXT_BY_MIME = {
 }
 
 export function getFacultyUploadDir() {
-  return path.join(process.cwd(), 'public', 'uploads', 'faculties')
+  return path.join(uploadsRoot(), 'faculties')
 }
 
 export function isFacultyPhotoDataUrl(value) {
@@ -86,7 +87,7 @@ export async function saveFacultyPhotoFromDataUrl(dataUrl, facultyId) {
 export async function deleteStoredFacultyPhotoIfLocal(photoUrl) {
   if (!isStoredFacultyPhotoPath(photoUrl)) return
   const rel = String(photoUrl).replace(/^\//, '')
-  const filePath = path.join(process.cwd(), 'public', rel)
+  const filePath = resolvePublicUploadPath(`/${rel}`)
   try {
     await fs.promises.unlink(filePath)
   } catch {

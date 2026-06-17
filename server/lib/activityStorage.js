@@ -6,6 +6,7 @@ import {
   DEFAULT_UPLOAD_MAX_BYTES,
   DEFAULT_UPLOAD_MAX_MSG,
 } from './uploadLimitsConfig.js'
+import { uploadsRoot } from './uploadPaths.js'
 
 export const ACTIVITY_UPLOAD_REL = '/uploads/activities'
 export const ACTIVITY_MAX_BYTES = DEFAULT_UPLOAD_MAX_BYTES
@@ -20,7 +21,7 @@ const ALLOWED_MIMES = new Set([
 ])
 
 function activitiesUploadAbsDir() {
-  return path.join(process.cwd(), 'public', 'uploads', 'activities')
+  return path.join(uploadsRoot(), 'activities')
 }
 
 export function ensureActivitiesUploadDir() {

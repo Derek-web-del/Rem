@@ -6,6 +6,7 @@ import {
   STUDENT_SUBMISSION_MAX_MSG,
 } from '../../shared/uploadLimits.js'
 import { PDF_MIMES, verifyUploadMagicBytes } from './uploadMagicBytes.js'
+import { resolvePublicUploadPath, uploadsRoot } from './uploadPaths.js'
 
 export const ASSIGNMENT_SUBMISSION_REL = '/uploads/submissions/assignments'
 export const ACTIVITY_SUBMISSION_REL = '/uploads/submissions/activities'
@@ -16,7 +17,8 @@ const STUDENT_ALLOWED_EXT = new Set(['.pdf'])
 const STUDENT_ALLOWED_MIMES = new Set(['application/pdf'])
 
 function absDir(rel) {
-  return path.join(process.cwd(), 'public', rel.replace(/^\//, ''))
+  const t = String(rel || '').replace(/^\//, '').replace(/^uploads\//, '')
+  return path.join(uploadsRoot(), t)
 }
 
 function ensureDir(rel) {
@@ -51,7 +53,7 @@ export function saveStudentSubmissionFile({ buffer, originalName, mime, studentI
 export function deleteSubmissionFileByUrl(fileUrl) {
   const t = String(fileUrl || '').trim()
   if (!t.startsWith(ASSIGNMENT_SUBMISSION_REL) && !t.startsWith(ACTIVITY_SUBMISSION_REL)) return
-  const abs = path.join(process.cwd(), 'public', t.replace(/^\//, ''))
+  const abs = resolvePublicUploadPath(t)
   if (fs.existsSync(abs)) {
     try {
       fs.unlinkSync(abs)
@@ -136,7 +138,7 @@ export function streamSubmissionDownload(res, filePath, downloadName) {
     res.status(404).json({ success: false, error: 'NOT_FOUND', message: 'File not found.' })
     return
   }
-  const abs = path.join(process.cwd(), 'public', rel.replace(/^\//, ''))
+  const abs = resolvePublicUploadPath(rel.startsWith('/uploads/') ? rel : `/uploads/${rel.replace(/^uploads\//, '')}`)
   if (!fs.existsSync(abs)) {
     res.status(404).json({ success: false, error: 'NOT_FOUND', message: 'File missing on disk.' })
     return
