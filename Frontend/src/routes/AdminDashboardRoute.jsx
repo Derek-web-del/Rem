@@ -6,6 +6,7 @@ import { useIdleSession } from '../hooks/useIdleSession.js'
 import { authClient } from '../lib/auth-client.js'
 import { navIdFromPath } from '../lib/adminNavRoutes.js'
 import { INSTITUTE_ADMIN_EMAIL } from '../../../shared/constants.js'
+import { loginPathWithPortalId } from '../lib/loginRoutes.js'
 import { markAccessDenied } from '../lib/roleAccess.js'
 
 const InstituteDashboard = lazy(() => import('../modules/dashboard/InstituteDashboardModule.jsx'))
@@ -85,7 +86,7 @@ export default function AdminDashboardRoute() {
         return
       }
       if (cancelled) return
-      navigate('/login', { replace: true })
+      navigate(loginPathWithPortalId('INSTITUTE'), { replace: true })
     }, SESSION_LOST_DEBOUNCE_MS)
 
     return () => {
@@ -107,7 +108,7 @@ export default function AdminDashboardRoute() {
   const onIdleSignOut = useCallback(async () => {
     clearTermsAcceptance()
     await authClient.signOut()
-    navigate('/login', { replace: true })
+    navigate(loginPathWithPortalId('INSTITUTE'), { replace: true })
   }, [navigate])
 
   useIdleSession({
@@ -119,7 +120,7 @@ export default function AdminDashboardRoute() {
   async function handleDashboardLogout() {
     clearTermsAcceptance()
     await authClient.signOut()
-    navigate('/login', { replace: true })
+    navigate(loginPathWithPortalId('INSTITUTE'), { replace: true })
   }
 
   if (sessionPending) {
@@ -141,7 +142,7 @@ export default function AdminDashboardRoute() {
         return <Navigate to="/teacher/dashboard" replace />
       }
     }
-    return <Navigate to="/login" replace />
+    return <Navigate to={loginPathWithPortalId('INSTITUTE')} replace />
   }
 
   const pathname = location.pathname.replace(/\/+$/, '') || '/admin'

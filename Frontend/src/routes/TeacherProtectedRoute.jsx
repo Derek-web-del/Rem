@@ -1,4 +1,5 @@
 import { Navigate, Outlet } from 'react-router-dom'
+import { loginPathWithPortalId } from '../lib/loginRoutes.js'
 import { authClient } from '../lib/auth-client.js'
 import { INSTITUTE_ADMIN_EMAIL } from '../../../shared/constants.js'
 import { markAccessDenied, redirectPathForWrongRole } from '../lib/roleAccess.js'
@@ -29,7 +30,7 @@ export default function TeacherProtectedRoute() {
 
   if (!session) {
     if (import.meta.env.DEV) console.log('[GUARD] Decision: redirect login (no session)')
-    return <Navigate to="/login" replace />
+    return <Navigate to={loginPathWithPortalId('FACULTY')} replace />
   }
 
   const role = String(sessionUser?.role || '').trim().toLowerCase()

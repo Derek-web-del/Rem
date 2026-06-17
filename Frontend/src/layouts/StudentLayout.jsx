@@ -2,6 +2,7 @@ import { Suspense, useCallback, useState } from 'react'
 import { Outlet, useNavigate, useOutletContext } from 'react-router-dom'
 import { authClient } from '../lib/auth-client.js'
 import { clearTermsAcceptance } from '../lib/termsSession.js'
+import { loginPathWithPortalId } from '../lib/loginRoutes.js'
 import { useIdleSession } from '../hooks/useIdleSession.js'
 import StudentSidebar from '../pages/students/StudentSidebar.jsx'
 import OfflineBanner from '../components/OfflineBanner.jsx'
@@ -25,7 +26,7 @@ export default function StudentLayout() {
   const logoutToPortal = useCallback(async () => {
     clearTermsAcceptance()
     await authClient.signOut()
-    navigate('/login/student', { replace: true })
+    navigate(loginPathWithPortalId('STUDENT'), { replace: true })
   }, [navigate])
 
   useIdleSession({

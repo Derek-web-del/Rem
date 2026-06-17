@@ -1,4 +1,4 @@
-import { ROLE_TO_LOGIN_PATH } from './loginRoutes.js'
+import { loginPathWithPortalId } from './loginRoutes.js'
 
 export const ACCESS_DENIED_STORAGE_KEY = 'lenlearn:access-denied'
 
@@ -23,7 +23,7 @@ export function homePathForRole(role) {
 
 /** Login path for a portal tile id (INSTITUTE | FACULTY | STUDENT). */
 export function loginPathForPortal(portalRoleId) {
-  return ROLE_TO_LOGIN_PATH[portalRoleId] || '/login'
+  return loginPathWithPortalId(portalRoleId)
 }
 
 /**

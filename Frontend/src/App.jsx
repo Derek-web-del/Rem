@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useLocation, useNavigate, Link } from 'react-router-dom'
 import { authClient, passwordPolicyHint } from './lib/auth-client.js'
 import { INSTITUTE_ADMIN_EMAIL } from '../../shared/constants.js'
-import { isLoginPath, loginViewFromPath, roleFromLoginPath, ROLE_TO_LOGIN_PATH } from './lib/loginRoutes.js'
+import { isLoginPath, loginViewFromPath, loginPathWithPortalId, roleFromLoginPath, syncLoginPortalSearch } from './lib/loginRoutes.js'
 import {
   homePathForRole,
   loginPathForPortal,
@@ -158,6 +158,13 @@ export default function App() {
       void authClient.signOut()
     }
   }, [location.search])
+
+  useEffect(() => {
+    if (loginViewFromPath(location.pathname) !== 'login') return
+    const synced = syncLoginPortalSearch(location.pathname, location.search)
+    if (!synced || synced === location.search) return
+    navigate({ pathname: location.pathname, search: synced }, { replace: true })
+  }, [location.pathname, location.search, navigate])
 
   useEffect(() => {
     const onSignInScreen =
@@ -378,7 +385,7 @@ export default function App() {
   }
 
   function selectRole(id) {
-    navigate(ROLE_TO_LOGIN_PATH[id] || '/login')
+    navigate(loginPathWithPortalId(id) || '/login')
   }
 
   function backToSelection() {

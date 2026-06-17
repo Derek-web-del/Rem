@@ -8,6 +8,7 @@ import { formatSemesterLabel } from '../../lib/quizQuestionTypes.js'
 import { apiUrl } from '../../lib/lmsStateStorage.js'
 
 import { consumeAccessDenied } from '../../lib/roleAccess.js'
+import { loginPathWithPortalId } from '../../lib/loginRoutes.js'
 
 import {
 
@@ -122,7 +123,7 @@ export default function StudentDashboard() {
 
             if (e.status === 401) {
 
-              navigate('/login/student', { replace: true })
+              navigate(loginPathWithPortalId('STUDENT'), { replace: true })
 
               return
 

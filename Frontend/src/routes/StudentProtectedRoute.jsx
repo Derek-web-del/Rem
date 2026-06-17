@@ -1,4 +1,5 @@
 import { Navigate, Outlet } from 'react-router-dom'
+import { loginPathWithPortalId } from '../lib/loginRoutes.js'
 import { authClient } from '../lib/auth-client.js'
 import { redirectPathForWrongRole } from '../lib/roleAccess.js'
 
@@ -19,7 +20,7 @@ export default function StudentProtectedRoute() {
   }
 
   if (!session) {
-    return <Navigate to="/login/student" replace />
+    return <Navigate to={loginPathWithPortalId('STUDENT')} replace />
   }
 
   const role = String(sessionUser?.role || '').trim().toLowerCase()
@@ -28,7 +29,7 @@ export default function StudentProtectedRoute() {
     if (role === 'teacher' || role === 'faculty' || role === 'admin') {
       /* students only get access denied when they hit wrong routes from their side */
     }
-    return <Navigate to={dest || '/login/student'} replace />
+    return <Navigate to={dest || loginPathWithPortalId('STUDENT')} replace />
   }
 
   return <Outlet context={{ sessionUser }} />
