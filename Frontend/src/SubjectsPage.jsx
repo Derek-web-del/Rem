@@ -2,9 +2,8 @@ import { useMemo, useState } from 'react'
 import BackButton from './components/BackButton.jsx'
 import SubjectDetails from './SubjectDetails.jsx'
 import SubjectProfile from './SubjectProfile.jsx'
-import { apiUrl } from './lib/lmsStateStorage.js'
 import { formatSemesterLabel, SEMESTER_LABELS } from './lib/quizQuestionTypes.js'
-import { subjectImageDisplaySrc } from './lib/subjectImages.js'
+import SubjectCoverImage from './components/SubjectCoverImage.jsx'
 
 function SearchIcon({ className }) {
   return (
@@ -231,8 +230,8 @@ export default function SubjectsPage({
                   filtered.map((s) => (
                     <tr key={s.id} className="text-sm text-neutral-800">
                       <td className="px-4 py-3">
-                        <img
-                          src={subjectImageDisplaySrc(s, { apiUrlFn: apiUrl })}
+                        <SubjectCoverImage
+                          subject={s}
                           alt={s.subjectName || 'Subject'}
                           className="size-10 rounded-lg border border-neutral-200 object-cover"
                         />

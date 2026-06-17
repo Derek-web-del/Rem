@@ -1,23 +1,21 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useOutletContext } from 'react-router-dom'
-import { apiUrl } from '../../lib/lmsStateStorage.js'
 import { fetchStudentSubjects } from '../../lib/studentPortal.js'
 import { isOnline } from '../../lib/offlineSync.js'
-import { subjectImageDisplaySrc } from '../../lib/subjectImages.js'
+import SubjectCoverImage from '../../components/SubjectCoverImage.jsx'
 import OfflineCacheIndicator from '../../components/OfflineCacheIndicator.jsx'
 import StudentMainHeader from './StudentMainHeader.jsx'
 import StudentViewHeader from './StudentViewHeader.jsx'
 import { ACTION_BLUE } from '../teachers/instituteChrome.js'
 
 function SubjectCard({ subject, onDetails }) {
-  const cover = subjectImageDisplaySrc(subject, { apiUrlFn: apiUrl })
   const name = String(subject.subject_name || '').trim() || '—'
   const grade = String(subject.grade_level || '').trim() || '—'
 
   return (
     <article className="flex flex-col overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-sm transition hover:shadow-md">
       <div className="relative aspect-[4/3] w-full bg-gradient-to-br from-sky-100 to-blue-200">
-        <img src={cover} alt={name} className="h-full w-full object-cover" />
+        <SubjectCoverImage subject={subject} alt={name} className="h-full w-full object-cover" />
       </div>
       <div className="flex flex-1 flex-col gap-1 p-4">
         <p className="truncate text-base font-bold text-neutral-900">{name}</p>

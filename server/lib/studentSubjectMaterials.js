@@ -5,6 +5,7 @@ import {
   sendStudentSubjectSyllabusResponse,
   syllabusDisplayFileName,
 } from './syllabusResponse.js'
+import { resolveSubjectImagePath } from './subjectImageStorage.js'
 
 const MATERIAL_SELECT_FIELDS = `
   id,
@@ -233,6 +234,7 @@ function mapSubjectRow(row, extras = {}) {
   if (!row) return null
   const subjectName = String(row.subject_name ?? '').trim()
   const storedCover = String(row.cover_image_url ?? row.subject_photo ?? '').trim()
+  const cover = storedCover || resolveSubjectImagePath(subjectName)
   const base = {
     id: row.id != null ? String(row.id) : '',
     faculty_id: row.faculty_id != null ? String(row.faculty_id) : '',
@@ -240,8 +242,8 @@ function mapSubjectRow(row, extras = {}) {
     subject_code: String(row.subject_code ?? '').trim(),
     grade_level: String(row.grade_level ?? '').trim(),
     semester: row.semester != null ? String(row.semester).trim() : '',
-    cover_image_url: storedCover,
-    subject_photo: storedCover,
+    cover_image_url: cover,
+    subject_photo: cover,
     faculty_name: String(row.faculty_name ?? '').trim(),
     assignedFacultyName: String(row.faculty_name ?? '').trim(),
     faculty_code: String(row.faculty_code ?? row.employee_id ?? '').trim(),

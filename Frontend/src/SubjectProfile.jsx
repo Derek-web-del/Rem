@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import BackButton from './components/BackButton.jsx'
 import { apiUrl } from './lib/lmsStateStorage.js'
 import { formatSemesterLabel } from './lib/quizQuestionTypes.js'
-import { subjectImageDisplaySrc } from './lib/subjectImages.js'
+import SubjectCoverImage from './components/SubjectCoverImage.jsx'
 
 const labelStyle = {
   padding: '10px 14px',
@@ -57,7 +57,6 @@ export default function SubjectProfile({ subject, onBack, onEdit }) {
   const syllabusFileName = subject.syllabusFileName || 'syllabus.pdf'
   const syllabusUrl =
     syllabusRaw && subject.id ? apiUrl(`/api/v1/subjects/${subject.id}/syllabus-file`) : ''
-  const coverSrc = subjectImageDisplaySrc(subject, { apiUrlFn: apiUrl })
 
   return (
     <div className="space-y-5">
@@ -72,8 +71,8 @@ export default function SubjectProfile({ subject, onBack, onEdit }) {
       <section className="rounded-xl border border-neutral-200 bg-white p-5 shadow-md md:p-6">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div className="flex min-w-0 items-center gap-4">
-            <img
-              src={coverSrc}
+            <SubjectCoverImage
+              subject={subject}
               alt={subject.subjectName || 'Subject'}
               className="size-20 shrink-0 rounded-xl border border-neutral-200 object-cover"
             />

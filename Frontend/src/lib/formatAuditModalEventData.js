@@ -34,7 +34,13 @@ function pruneEmpty(obj) {
 function formatChangeValue(v) {
   if (v == null) return null
   if (v === '[redacted]' || v === '[changed]') return v
-  if (typeof v === 'object') return JSON.stringify(v)
+  if (typeof v === 'object') {
+    if (Array.isArray(v)) return v.map((item) => formatChangeValue(item)).join(', ')
+    const parts = Object.entries(v)
+      .filter(([, val]) => val != null && val !== '')
+      .map(([key, val]) => `${key}: ${formatChangeValue(val)}`)
+    return parts.length ? parts.join('; ') : JSON.stringify(v)
+  }
   return String(v)
 }
 
@@ -45,10 +51,12 @@ function extractChanges(detailedDiffs) {
   const out = {}
   for (const [field, diff] of Object.entries(detailedDiffs)) {
     if (!diff || typeof diff !== 'object' || Array.isArray(diff)) continue
-    if (!('old' in diff) && !('new' in diff)) continue
+    const oldVal = diff.old ?? diff.before
+    const newVal = diff.new ?? diff.after
+    if (oldVal === undefined && newVal === undefined) continue
     out[field] = {
-      old: formatChangeValue(diff.old),
-      new: formatChangeValue(diff.new),
+      old: formatChangeValue(oldVal),
+      new: formatChangeValue(newVal),
     }
   }
   return Object.keys(out).length ? out : undefined
@@ -184,6 +192,27 @@ function formatSubjectEvent(ed, e, eventLabel) {
     ...(changes ? { changes } : {}),
     ...(deletedSnapshot && !changes ? { deleted: deletedSnapshot } : {}),
     ...(trim(ed?.description) ? { description: trim(ed.description) } : {}),
+  })
+}
+
+function isGradeCriteriaEventType(type, ed) {
+  const t = String(type || ed?.event_type || '').trim().toLowerCase()
+  return t === 'grade_criteria_saved'
+}
+
+function formatGradeCriteriaEvent(ed, e, eventLabel) {
+  const changes = extractChanges(ed?.detailedDiffs)
+  const teacher = person(
+    ed?.performed_by_name || ed?.userName || e?.actorName,
+    ed?.userEmail || e?.actorEmail,
+    ed?.role || 'teacher',
+  )
+  return pruneEmpty({
+    event: eventLabel,
+    teacher,
+    subject: trim(ed?.target_label),
+    ...(changes ? { changes } : {}),
+    ...(trim(ed?.summary) ? { summary: trim(ed.summary) } : {}),
   })
 }
 
@@ -373,6 +402,10 @@ const SKIP_DETAIL_KEYS = new Set([
   'detailedDiffs',
   'performed_by',
   'target_user',
+  'old_values',
+  'new_values',
+  'criteria',
+  'components',
 ])
 
 function stripInternalFields(obj) {
@@ -461,6 +494,8 @@ export function formatAuditModalEventDataJson(e, eventDisplayName = '') {
     data = formatSectionEvent(ed, e, label)
   } else if (isSubjectEventType(type, activity)) {
     data = formatSubjectEvent(ed, e, label)
+  } else if (isGradeCriteriaEventType(type, ed)) {
+    data = formatGradeCriteriaEvent(ed, e, label)
   } else if (isAnnouncementInstituteEventType(type, activity)) {
     data = formatAnnouncementInstituteEvent(ed, e, label)
   } else if (e?.source === 'lms') {

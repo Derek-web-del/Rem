@@ -143,9 +143,13 @@ function buildDetailedDiffs(oldValues, newValues, fields) {
   if (!fields?.length) return {}
   const diffs = {}
   for (const field of fields) {
+    const oldVal = oldValues?.[field]
+    const newVal = newValues?.[field]
     diffs[field] = {
-      before: oldValues?.[field],
-      after: newValues?.[field],
+      old: oldVal,
+      new: newVal,
+      before: oldVal,
+      after: newVal,
     }
   }
   return diffs

@@ -1,12 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import BackButton from './components/BackButton.jsx'
+import SubjectCoverImage from './components/SubjectCoverImage.jsx'
 import {
   PREDEFINED_SUBJECT_NAMES,
   resolveSubjectImageFromMap,
-  subjectImageDisplaySrc,
 } from './lib/subjectImages.js'
 import { formatSemesterLabel, SEMESTER_LABELS } from './lib/quizQuestionTypes.js'
-import { apiUrl } from './lib/lmsStateStorage.js'
 
 function readFileAsDataUrl(file) {
   return new Promise((resolve, reject) => {
@@ -203,11 +202,6 @@ export default function SubjectDetails({
     }
   }
 
-  const selectedSubjectPhoto = useMemo(
-    () => subjectImageDisplaySrc(form.subjectName, { apiUrlFn: apiUrl }),
-    [form.subjectName],
-  )
-
   const subjectNameOptions = useMemo(() => {
     const options = [...PREDEFINED_SUBJECT_NAMES]
     const current = String(form.subjectName || '').trim()
@@ -257,8 +251,8 @@ export default function SubjectDetails({
 
           {form.subjectName ? (
             <div className="flex items-center gap-3 rounded-lg border border-neutral-200 bg-neutral-50 p-3">
-              <img
-                src={selectedSubjectPhoto}
+              <SubjectCoverImage
+                subjectName={form.subjectName}
                 alt={form.subjectName}
                 className="size-14 rounded-lg border border-neutral-200 object-cover"
               />

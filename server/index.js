@@ -23,7 +23,7 @@ import { createTeacherGradebookV1Router } from './api/teacherGradebookV1.js'
 import { createGradeOverrideV1Router } from './api/gradeOverrideV1.js'
 import { createAdminCurriculumGuidesRouter } from './api/adminCurriculumGuides.js'
 import { createFileDownloadRouter, createLegacyUploadsRouter } from './api/fileDownload.js'
-import { ensureUploadDirs } from './lib/uploadPaths.js'
+import { ensureUploadDirs, subjectAssetsRoot } from './lib/uploadPaths.js'
 import { createMonitoringRouter } from './routes/monitoring.js'
 import { createBackupRouter } from './routes/backup.js'
 import { startBackupScheduler, stopBackupScheduler } from './jobs/backupScheduler.js'
@@ -439,6 +439,13 @@ app.all('/api/auth/*', toNodeHandler(auth))
 
   app.use('/api/files', createFileDownloadRouter(express, { auth }))
   app.use('/uploads', createLegacyUploadsRouter(express, { auth }))
+  app.use(
+    '/subject-logos',
+    express.static(subjectAssetsRoot(), {
+      maxAge: isProduction ? '7d' : 0,
+      immutable: isProduction,
+    }),
+  )
 
   // Terms routes before state router — /v1/faculty/:id would otherwise capture terms-status
   app.use('/api', createTermsV1Router(express, auth))

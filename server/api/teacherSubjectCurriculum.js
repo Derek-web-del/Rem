@@ -47,6 +47,10 @@ import {
   TEACHER_AUDIT_ACTIONS,
   TEACHER_AUDIT_MODULES,
 } from '../lib/teacherAuditLog.js'
+import {
+  computeGradeCriteriaDetailedDiffs,
+  summarizeGradeCriteriaComponents,
+} from '../lib/gradeCriteriaAudit.js'
 import { buildTargetLabel } from '../lib/teacherAuditSnapshots.js'
 
 function parseLessonBody(body = {}) {
@@ -685,10 +689,9 @@ export function createTeacherSubjectCurriculumRouter(express, auth) {
         fetchSubjectGradeComponents(ctx.pool, ctx.subjectId),
       ])
       const subj = await subjectLabel(ctx.pool, ctx.subjectId)
-      const diff = diffRecords(
-        { criteria: oldCriteria, components: oldComponents?.components || [] },
-        { criteria: newCriteria, components: newComponents?.components || [] },
-      )
+      const oldComponentList = oldComponents?.components || []
+      const newComponentList = newComponents?.components || []
+      const detailedDiffs = computeGradeCriteriaDetailedDiffs(oldComponentList, newComponentList)
       await logTeacherAuditEvent(req, {
         event_type: 'grade_criteria_saved',
         module: TEACHER_AUDIT_MODULES.GRADES,
@@ -697,7 +700,10 @@ export function createTeacherSubjectCurriculumRouter(express, auth) {
         facultyRow: ctx.facultyRow,
         target_id: ctx.subjectId,
         target_label: buildTargetLabel('Grade criteria', subj),
-        ...diff,
+        detailedDiffs,
+        old_values: summarizeGradeCriteriaComponents(oldComponentList),
+        new_values: summarizeGradeCriteriaComponents(newComponentList),
+        changed_fields: Object.keys(detailedDiffs),
       })
       res.json({ criteria: result.criteria })
     } catch (e) {

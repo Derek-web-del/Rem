@@ -1,8 +1,19 @@
 import { resolveAuditPortalAffected, resolveAuditPortalModule } from '../lib/auditPortalModules.js'
 
+function isScalarDisplayValue(value) {
+  return value == null || typeof value !== 'object'
+}
+
 function formatValue(value) {
   if (value == null || value === '') return '—'
   if (typeof value === 'object') {
+    if (Array.isArray(value)) {
+      return value.map((item) => formatValue(item)).join(', ')
+    }
+    const entries = Object.entries(value)
+    if (entries.length && entries.every(([, v]) => isScalarDisplayValue(v))) {
+      return entries.map(([k, v]) => `${formatFieldLabel(k)}: ${formatValue(v)}`).join(' · ')
+    }
     try {
       return JSON.stringify(value, null, 2)
     } catch {
@@ -18,15 +29,33 @@ function formatFieldLabel(field) {
     .replace(/\b\w/g, (c) => c.toUpperCase())
 }
 
+function resolveStructuredDiffRows(ed) {
+  const dd = ed?.detailedDiffs
+  if (!dd || typeof dd !== 'object' || Array.isArray(dd)) return []
+  return Object.entries(dd).map(([field, diff]) => ({
+    field,
+    before: diff?.old ?? diff?.before,
+    after: diff?.new ?? diff?.after,
+  }))
+}
+
 export default function TeacherAuditDetailPanel({ event, variant = 'inline' }) {
   const ed = event?.detailsObj || event?.raw?.eventData || {}
   const oldValues = ed?.old_values && typeof ed.old_values === 'object' ? ed.old_values : null
   const newValues = ed?.new_values && typeof ed.new_values === 'object' ? ed.new_values : null
   const changedFields = Array.isArray(ed?.changed_fields) ? ed.changed_fields : []
+  const structuredRows = resolveStructuredDiffRows(ed)
+  const isGradeCriteria = String(ed?.event_type || '').trim().toLowerCase() === 'grade_criteria_saved'
+  const useStructuredDiff =
+    isGradeCriteria ||
+    (structuredRows.length > 0 &&
+      structuredRows.every((row) => isScalarDisplayValue(row.before) && isScalarDisplayValue(row.after)))
   const diffFields =
     changedFields.length > 0
       ? changedFields
-      : [...new Set([...Object.keys(oldValues || {}), ...Object.keys(newValues || {})])]
+      : useStructuredDiff
+        ? structuredRows.map((row) => row.field)
+        : [...new Set([...Object.keys(oldValues || {}), ...Object.keys(newValues || {})])]
 
   const isModal = variant === 'modal'
   const rootClass = isModal
@@ -102,7 +131,7 @@ export default function TeacherAuditDetailPanel({ event, variant = 'inline' }) {
         </div>
       ) : null}
 
-      {oldValues && Object.keys(oldValues).length ? (
+      {!useStructuredDiff && oldValues && Object.keys(oldValues).length ? (
         <div>
           <div className={`mb-1 ${labelClass}`}>Before</div>
           <ul className={panelClass}>
@@ -116,7 +145,7 @@ export default function TeacherAuditDetailPanel({ event, variant = 'inline' }) {
         </div>
       ) : null}
 
-      {newValues && Object.keys(newValues).length ? (
+      {!useStructuredDiff && newValues && Object.keys(newValues).length ? (
         <div>
           <div className={`mb-1 ${labelClass}`}>After</div>
           <ul className={panelClass}>
@@ -130,7 +159,33 @@ export default function TeacherAuditDetailPanel({ event, variant = 'inline' }) {
         </div>
       ) : null}
 
-      {oldValues && newValues && diffFields.length ? (
+      {useStructuredDiff && structuredRows.length ? (
+        <div>
+          <div className={`mb-2 ${labelClass}`}>Changes</div>
+          <div className={tableWrapClass}>
+            <table className="w-full min-w-[480px] text-left text-sm">
+              <thead className={tableHeadClass}>
+                <tr>
+                  <th className="px-3 py-2">Field</th>
+                  <th className="px-3 py-2">Before</th>
+                  <th className="px-3 py-2">After</th>
+                </tr>
+              </thead>
+              <tbody className={tableBodyDivide}>
+                {structuredRows.map((row) => (
+                  <tr key={row.field}>
+                    <td className={`px-3 py-2 ${tableCellStrong}`}>{formatFieldLabel(row.field)}</td>
+                    <td className={`px-3 py-2 ${tableCellMuted}`}>{formatValue(row.before)}</td>
+                    <td className={`px-3 py-2 ${tableCellMuted}`}>{formatValue(row.after)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : null}
+
+      {!useStructuredDiff && oldValues && newValues && diffFields.length ? (
         <div>
           <div className={`mb-2 ${labelClass}`}>Side by side diff</div>
           <div className={tableWrapClass}>
@@ -161,7 +216,14 @@ export default function TeacherAuditDetailPanel({ event, variant = 'inline' }) {
 
 export function isTeacherStructuredAuditEvent(event) {
   const ed = event?.detailsObj || event?.raw?.eventData || {}
-  return Boolean(ed?.module || ed?.event_type || ed?.target_label || ed?.old_values || ed?.new_values)
+  return Boolean(
+    ed?.module ||
+      ed?.event_type ||
+      ed?.target_label ||
+      ed?.old_values ||
+      ed?.new_values ||
+      ed?.detailedDiffs,
+  )
 }
 
 export function teacherEventSubline(event) {

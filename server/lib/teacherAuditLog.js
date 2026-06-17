@@ -231,6 +231,9 @@ export async function logTeacherAuditEvent(req, entry) {
       userName: performed_by_name,
       role: 'teacher',
       description: summary,
+      ...(entry.detailedDiffs && typeof entry.detailedDiffs === 'object'
+        ? { detailedDiffs: entry.detailedDiffs }
+        : {}),
     }
 
     await insertAuditLogRecord(event_type.toUpperCase(), payload, {
