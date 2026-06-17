@@ -1,5 +1,10 @@
 /** Build concise Event Data JSON for the Audit Logs eye-icon modal (display only). */
 
+import {
+  isGradeCriteriaAuditEvent,
+  resolveGradeCriteriaAuditDisplay,
+} from '../../../shared/gradeCriteriaAudit.js'
+
 function trim(v) {
   const s = String(v ?? '').trim()
   return s || undefined
@@ -195,13 +200,36 @@ function formatSubjectEvent(ed, e, eventLabel) {
   })
 }
 
-function isGradeCriteriaEventType(type, ed) {
-  const t = String(type || ed?.event_type || '').trim().toLowerCase()
-  return t === 'grade_criteria_saved'
+function isGradeCriteriaEventType(type, ed, activity = '') {
+  return isGradeCriteriaAuditEvent({
+    event_type: type || ed?.event_type,
+    eventType: ed?.eventType || type,
+    type: ed?.type,
+    activityType: activity || ed?.activityType,
+  })
 }
 
 function formatGradeCriteriaEvent(ed, e, eventLabel) {
-  const changes = extractChanges(ed?.detailedDiffs)
+  const normalized = resolveGradeCriteriaAuditDisplay({
+    event_type: ed?.event_type,
+    eventType: ed?.eventType || e?.eventType,
+    type: ed?.type || e?.type,
+    activityType: ed?.activityType || e?.activityType,
+    old_values: ed?.old_values,
+    new_values: ed?.new_values,
+    detailedDiffs: ed?.detailedDiffs,
+    changed_fields: ed?.changed_fields,
+  })
+  const displayEd = normalized
+    ? {
+        ...ed,
+        old_values: normalized.old_values,
+        new_values: normalized.new_values,
+        changed_fields: normalized.changed_fields,
+        detailedDiffs: normalized.detailedDiffs,
+      }
+    : ed
+  const changes = extractChanges(displayEd?.detailedDiffs)
   const teacher = person(
     ed?.performed_by_name || ed?.userName || e?.actorName,
     ed?.userEmail || e?.actorEmail,
@@ -494,7 +522,7 @@ export function formatAuditModalEventDataJson(e, eventDisplayName = '') {
     data = formatSectionEvent(ed, e, label)
   } else if (isSubjectEventType(type, activity)) {
     data = formatSubjectEvent(ed, e, label)
-  } else if (isGradeCriteriaEventType(type, ed)) {
+  } else if (isGradeCriteriaEventType(type, ed, activity)) {
     data = formatGradeCriteriaEvent(ed, e, label)
   } else if (isAnnouncementInstituteEventType(type, activity)) {
     data = formatAnnouncementInstituteEvent(ed, e, label)

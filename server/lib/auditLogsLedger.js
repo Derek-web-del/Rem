@@ -3,6 +3,7 @@ import {
   ledgerTypeToActivityType,
   resolveLedgerDisplayType,
 } from '../../shared/auditLedgerDisplay.js'
+import { isGradeCriteriaAuditEvent, resolveGradeCriteriaAuditDisplay } from '../../shared/gradeCriteriaAudit.js'
 import { USER_ACCOUNT_CHANGED_EVENT_TYPE } from './profileAudit.js'
 import { getPgPool, isPgConfigured } from '../pgPool.js'
 
@@ -97,6 +98,38 @@ export function mapLedgerRowToAuthEvent(row) {
       : Array.isArray(p.updatedFields)
         ? p.updatedFields
         : []
+  const resolvedEventType = colEventType || ledgerType.toLowerCase() || eventType
+  let detailedDiffs = p.detailedDiffs || buildDetailedDiffs(old_values, new_values, changed_fields)
+  let resolvedOldValues = old_values
+  let resolvedNewValues = new_values
+  let resolvedChangedFields = changed_fields
+
+  if (
+    isGradeCriteriaAuditEvent({
+      event_type: resolvedEventType,
+      eventType: resolvedEventType,
+      type: ledgerType,
+      activityType,
+    })
+  ) {
+    const normalized = resolveGradeCriteriaAuditDisplay({
+      event_type: resolvedEventType,
+      eventType: resolvedEventType,
+      type: ledgerType,
+      activityType,
+      old_values,
+      new_values,
+      detailedDiffs,
+      changed_fields,
+    })
+    if (normalized) {
+      detailedDiffs = normalized.detailedDiffs
+      resolvedOldValues = normalized.old_values
+      resolvedNewValues = normalized.new_values
+      resolvedChangedFields = normalized.changed_fields
+    }
+  }
+
   return {
     id: `audit_logs:${row.id}`,
     eventType,
@@ -110,7 +143,8 @@ export function mapLedgerRowToAuthEvent(row) {
     eventData: {
       ...p,
       type: ledgerType,
-      eventType: colEventType || ledgerType.toLowerCase() || eventType,
+      event_type: resolvedEventType,
+      eventType: resolvedEventType,
       activityType,
       displayType,
       userId,
@@ -124,14 +158,14 @@ export function mapLedgerRowToAuthEvent(row) {
       performed_by_name: colPerformedByName || p.performed_by_name || p.userName || null,
       target_id: colTargetId || p.target_id || null,
       target_label: colTargetLabel || p.target_label || null,
-      old_values,
-      new_values,
-      updatedFields: changed_fields,
-      changed_fields,
+      old_values: resolvedOldValues,
+      new_values: resolvedNewValues,
+      updatedFields: resolvedChangedFields,
+      changed_fields: resolvedChangedFields,
       user_agent: colUserAgent || p.user_agent || null,
       summary: p.summary || null,
       target_user: p.target_user || null,
-      detailedDiffs: p.detailedDiffs || buildDetailedDiffs(old_values, new_values, changed_fields),
+      detailedDiffs,
     },
     details: p,
     targetName: colTargetLabel || p.target_label || p.targetName || p.userName || null,

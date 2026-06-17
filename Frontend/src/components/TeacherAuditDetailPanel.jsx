@@ -1,4 +1,8 @@
 import { resolveAuditPortalAffected, resolveAuditPortalModule } from '../lib/auditPortalModules.js'
+import {
+  isGradeCriteriaAuditEvent,
+  resolveGradeCriteriaAuditDisplay,
+} from '../../../shared/gradeCriteriaAudit.js'
 
 function isScalarDisplayValue(value) {
   return value == null || typeof value !== 'object'
@@ -32,20 +36,54 @@ function formatFieldLabel(field) {
 function resolveStructuredDiffRows(ed) {
   const dd = ed?.detailedDiffs
   if (!dd || typeof dd !== 'object' || Array.isArray(dd)) return []
-  return Object.entries(dd).map(([field, diff]) => ({
-    field,
-    before: diff?.old ?? diff?.before,
-    after: diff?.new ?? diff?.after,
-  }))
+  return Object.entries(dd)
+    .filter(([field, diff]) => {
+      if (field === 'criteria' || field === 'components') return false
+      const before = diff?.old ?? diff?.before
+      const after = diff?.new ?? diff?.after
+      return isScalarDisplayValue(before) && isScalarDisplayValue(after)
+    })
+    .map(([field, diff]) => ({
+      field,
+      before: diff?.old ?? diff?.before,
+      after: diff?.new ?? diff?.after,
+    }))
+}
+
+function resolveGradeCriteriaDisplayState(event, ed) {
+  const normalized = resolveGradeCriteriaAuditDisplay({
+    event_type: ed?.event_type,
+    eventType: ed?.eventType || event?.eventType,
+    type: ed?.type || event?.type,
+    activityType: ed?.activityType || event?.activityType,
+    old_values: ed?.old_values,
+    new_values: ed?.new_values,
+    detailedDiffs: ed?.detailedDiffs,
+    changed_fields: ed?.changed_fields,
+  })
+  if (!normalized) return ed
+  return {
+    ...ed,
+    old_values: normalized.old_values,
+    new_values: normalized.new_values,
+    changed_fields: normalized.changed_fields,
+    detailedDiffs: normalized.detailedDiffs,
+  }
 }
 
 export default function TeacherAuditDetailPanel({ event, variant = 'inline' }) {
-  const ed = event?.detailsObj || event?.raw?.eventData || {}
+  const rawEd = event?.detailsObj || event?.raw?.eventData || {}
+  const ed = resolveGradeCriteriaDisplayState(event, rawEd)
   const oldValues = ed?.old_values && typeof ed.old_values === 'object' ? ed.old_values : null
   const newValues = ed?.new_values && typeof ed.new_values === 'object' ? ed.new_values : null
   const changedFields = Array.isArray(ed?.changed_fields) ? ed.changed_fields : []
   const structuredRows = resolveStructuredDiffRows(ed)
-  const isGradeCriteria = String(ed?.event_type || '').trim().toLowerCase() === 'grade_criteria_saved'
+  const isGradeCriteria = isGradeCriteriaAuditEvent({
+    event_type: ed?.event_type,
+    eventType: ed?.eventType || event?.eventType,
+    type: ed?.type || event?.type,
+    activityType: ed?.activityType || event?.activityType,
+  })
   const useStructuredDiff =
     isGradeCriteria ||
     (structuredRows.length > 0 &&
