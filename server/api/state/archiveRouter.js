@@ -4,6 +4,7 @@ import { requireDestructiveConfirm } from '../../lib/security.js'
 import { resolveArchiveTableSql } from '../../lib/sqlGuards.js'
 import { fetchArchivedStudentWork, fetchArchivedFacultyWork } from '../../lib/archivedWorkDb.js'
 import { studentDisplayName } from '../../lib/studentPiiCrypto.js'
+import { verifyAdminPassword } from '../../lib/verifySessionPassword.js'
 
 async function fetchArchivedStudentSnapshot(pool, id) {
   const { rows } = await pool.query(
@@ -163,6 +164,31 @@ export function registerArchiveRoutes(router, ctx) {
       res.status(400).json({ success: false, message: 'Invalid id.' })
       return
     }
+    const password = String(req.body?.password || '').trim()
+    const adminId = String(adminSession.user?.id || adminSession.data?.user?.id || '').trim()
+    const passwordCheck = await verifyAdminPassword(pool, adminId, password)
+    if (!passwordCheck.ok) {
+      const recordType = type === 'students' ? 'student' : 'faculty'
+      await auditInstituteRecord(adminSession, 'RESTORE_PASSWORD_FAILED', {
+        recordType,
+        recordId: rawId,
+        description: `Archive restore password confirmation failed for ${recordType} ${rawId}`,
+        details: {
+          record_type: recordType,
+          record_id: rawId,
+          error_code: passwordCheck.code,
+          blocked: Boolean(passwordCheck.blocked),
+        },
+      })
+      const status =
+        passwordCheck.code === 'RATE_LIMITED' || passwordCheck.blocked ? 429 : 401
+      res.status(status).json({
+        success: false,
+        message: passwordCheck.message,
+        error: passwordCheck.code,
+      })
+      return
+    }
     try {
       if (type === 'students') {
         const id = Number(rawId)
@@ -195,6 +221,7 @@ export function registerArchiveRoutes(router, ctx) {
               ? snapshot.archived_at.toISOString()
               : snapshot.archived_at ?? null,
             purge_type: 'restore',
+            restore_confirmed_with_password: true,
           },
         })
         res.json({ ok: true, success: true, type, id: String(id) })
@@ -225,6 +252,7 @@ export function registerArchiveRoutes(router, ctx) {
             ? snapshot.archived_at.toISOString()
             : snapshot.archived_at ?? null,
           purge_type: 'restore',
+          restore_confirmed_with_password: true,
         },
       })
       res.json({ ok: true, success: true, type, id: rawId })

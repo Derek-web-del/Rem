@@ -118,6 +118,7 @@ const LMS_ACTIVITY_TYPES = [
   'PASSWORD_CHANGED',
   'PASSWORD_RESET_REQUESTED',
   'PASSWORD_RESET_COMPLETED',
+  'ADMIN_INITIATED_PASSWORD_RESET',
   'TERMS_ACCEPTED',
   'USER_SESSION_STARTED',
   'ANNOUNCEMENT_POSTED',
@@ -163,6 +164,9 @@ const LMS_ACTIVITY_TYPES = [
   'audit_cleared',
   'ARCHIVED_RECORD_ACCESSED',
   'GRADE_OVERRIDE',
+  'SCORE_OVERWRITE_REQUESTED',
+  'SCORE_OVERWRITE_APPROVED',
+  'SCORE_OVERWRITE_REJECTED',
 ]
 
 /** LMS-backed rows merged into Events (filter with unifiedType `lms:…`). */
@@ -198,8 +202,13 @@ const LMS_EVENTS_DROPDOWN = [
   { id: 'SECTION_ARCHIVED', label: 'Section archived' },
   { id: 'faculty_advisory_section_removed', label: 'Advisory section removed' },
   { id: 'AUDIT_LOGS_CLEARED', label: 'Audit logs cleared' },
-  { id: 'PASSWORD_RESET_REQUESTED', label: 'Password reset requested' },
+  { id: 'PASSWORD_RESET_REQUESTED', label: 'Password reset requested (user)' },
+  { id: 'ADMIN_INITIATED_PASSWORD_RESET', label: 'Admin sent password reset email' },
+  { id: 'PASSWORD_RESET_COMPLETED', label: 'Password reset completed' },
   { id: 'GRADE_OVERRIDE', label: 'Grade override' },
+  { id: 'SCORE_OVERWRITE_REQUESTED', label: 'Score overwrite requested' },
+  { id: 'SCORE_OVERWRITE_APPROVED', label: 'Score overwrite approved' },
+  { id: 'SCORE_OVERWRITE_REJECTED', label: 'Score overwrite rejected' },
 ]
 
 function loginSecurityPortalLabel(d) {
@@ -368,7 +377,15 @@ function isAuditUpdateEvent(e) {
     return true
   }
   if (activity.endsWith('_UPDATED') || eventType.endsWith('_updated')) return true
-  if (activity === 'GRADE_OVERRIDE' || activity === 'PASSWORD_CHANGED') return true
+  if (
+    activity === 'GRADE_OVERRIDE' ||
+    activity === 'SCORE_OVERWRITE_REQUESTED' ||
+    activity === 'SCORE_OVERWRITE_APPROVED' ||
+    activity === 'SCORE_OVERWRITE_REJECTED' ||
+    activity === 'PASSWORD_CHANGED'
+  ) {
+    return true
+  }
   if (eventType === 'password_changed' || eventType === 'organization_updated') return true
   const fields = readUpdatedFields(d)
   if (fields.length > 0) return true
@@ -773,7 +790,19 @@ function unifiedActivityLabel(e) {
   if (t === 'ACCOUNT_AUTO_PURGED') return 'Account auto-deleted after retention'
   if (t === 'ACCOUNT_AUTO_PURGE_WARNING') return 'Account auto-deletion warning'
   if (t === 'ACCOUNT_AUTO_PURGE_DRY_RUN') return 'Account auto-deletion dry-run'
+  if (t === 'PASSWORD_RESET_REQUESTED' || t === 'password_reset_requested') {
+    return 'Password reset requested (user)'
+  }
+  if (t === 'ADMIN_INITIATED_PASSWORD_RESET' || t === 'admin_initiated_password_reset') {
+    return 'Admin sent password reset email'
+  }
+  if (t === 'PASSWORD_RESET_COMPLETED' || t === 'password_reset_completed') {
+    return 'Password reset completed'
+  }
   if (t === 'GRADE_OVERRIDE') return 'Grade override'
+  if (t === 'SCORE_OVERWRITE_REQUESTED') return 'Score overwrite requested'
+  if (t === 'SCORE_OVERWRITE_APPROVED') return 'Score overwrite approved'
+  if (t === 'SCORE_OVERWRITE_REJECTED') return 'Score overwrite rejected'
   if (t === 'GOOGLE_DRIVE_CONNECTED' || t === 'google_drive_connected') return 'Google Drive Connected'
   if (t === 'GOOGLE_DRIVE_DISCONNECTED' || t === 'google_drive_disconnected') return 'Google Drive Disconnected'
   if (t === 'BACKUP_UPLOADED_TO_GDRIVE' || t === 'backup_uploaded_to_gdrive') return 'Backup Uploaded to Drive'
@@ -887,6 +916,35 @@ function unifiedDetails(e) {
     return [fmt(before) ? `Before: ${fmt(before)}` : '', fmt(after) ? `After: ${fmt(after)}` : '']
       .filter(Boolean)
       .join(' · ') || d?.description || '—'
+  }
+  if (
+    t === 'PASSWORD_RESET_REQUESTED' ||
+    t === 'password_reset_requested' ||
+    t === 'PASSWORD_RESET_COMPLETED' ||
+    t === 'password_reset_completed'
+  ) {
+    const email = d?.email || ''
+    const initiated =
+      d?.initiated_by === 'user' || d?.source === 'self'
+        ? 'Initiated by: the user themselves'
+        : d?.source === 'admin'
+          ? 'Initiated by: admin'
+          : ''
+    return [d?.description, email, initiated].filter(Boolean).join(' · ') || '—'
+  }
+  if (t === 'ADMIN_INITIATED_PASSWORD_RESET' || t === 'admin_initiated_password_reset') {
+    const admin = d?.admin_name || d?.actorName || 'Administrator'
+    const target = d?.target_name || d?.record_name || d?.target_email || ''
+    return (
+      [
+        d?.description,
+        `Initiated by: Admin ${admin}`,
+        target ? `Target: ${target}` : '',
+        d?.target_email ? `Email: ${d.target_email}` : '',
+      ]
+        .filter(Boolean)
+        .join(' · ') || '—'
+    )
   }
   if (
     t === 'STUDENT_CREATED' ||

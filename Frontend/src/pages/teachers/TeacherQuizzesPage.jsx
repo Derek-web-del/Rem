@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate, useOutletContext } from 'react-router-dom'
 import { isOnline } from '../../lib/offlineSync.js'
 import OfflineCacheIndicator from '../../components/OfflineCacheIndicator.jsx'
+import { isPastDeadline } from '../../lib/teacherAssignments.js'
 import {
   deleteTeacherQuiz,
   fetchTeacherQuizzes,
@@ -241,11 +242,13 @@ export default function TeacherQuizzesPage() {
                               style={BTN_VIEW}
                               onClick={() => navigate(`/teacher/quizzes/${quiz.id}`)}
                             />
-                            <ActionBtn
-                              label="Edit"
-                              style={BTN_EDIT}
-                              onClick={() => navigate(`/teacher/quizzes/${quiz.id}/edit`)}
-                            />
+                            {!isPastDeadline(quiz.deadline) ? (
+                              <ActionBtn
+                                label="Edit"
+                                style={BTN_EDIT}
+                                onClick={() => navigate(`/teacher/quizzes/${quiz.id}/edit`)}
+                              />
+                            ) : null}
                             <ActionBtn
                               label={quiz.is_hidden ? 'Unhide' : 'Hide'}
                               style={BTN_HIDE}

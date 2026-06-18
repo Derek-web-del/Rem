@@ -393,14 +393,15 @@ export const auth = betterAuth({
           : headers?.['x-lenlearn-reset-initiated-by']) || null
       const ipAddress = resolveClientIp({ headers: request?.headers, request })
       try {
-        await customActivityLogger.logPasswordResetRequested(user.id, {
-          email: String(user.email || '').trim().toLowerCase(),
-          source: String(source || 'self').trim() || 'self',
-          ipAddress,
-          initiatedByAdminId: initiatedByAdminId ? String(initiatedByAdminId) : undefined,
-        })
+        if (String(source || 'self').trim() !== 'admin') {
+          await customActivityLogger.logPasswordResetRequested(user.id, {
+            email: String(user.email || '').trim().toLowerCase(),
+            source: 'self',
+            ipAddress,
+          })
+        }
       } catch {
-        /* ignore */
+        /* ignore — admin-initiated resets are logged from adminPasswordResetV1 */
       }
     },
     onPasswordReset: async ({ user }, request) => {

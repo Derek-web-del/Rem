@@ -2883,6 +2883,13 @@ export function createTeacherApiRouter(express, auth) {
         res.status(404).json({ error: 'NOT_FOUND', message: 'Assignment not found.' })
         return
       }
+      if (isDeadlinePassed(existing.submission_deadline)) {
+        res.status(403).json({
+          error: 'ITEM_OVERDUE_LOCKED',
+          message: 'This assignment is past its deadline and can no longer be edited.',
+        })
+        return
+      }
       const oldAssignmentSnap = assignmentAuditSnapshot(mapAssignmentRow(existing))
       const b = req.body || {}
       const title = String(b.title ?? '').trim()

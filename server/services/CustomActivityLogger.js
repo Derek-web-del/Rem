@@ -310,6 +310,11 @@ export class CustomActivityLogger {
     { email, source, ipAddress, initiatedByAdminId } = {},
     ctx = {},
   ) {
+    const normalizedSource = String(source || 'self').trim() || 'self'
+    const description =
+      normalizedSource === 'self'
+        ? 'User requested their own password reset'
+        : `Password reset requested for ${String(email || '').trim().toLowerCase()}`
     return this._log({
       userId,
       activityType: 'PASSWORD_RESET_REQUESTED',
@@ -318,8 +323,10 @@ export class CustomActivityLogger {
         type: 'password_reset_requested',
         eventType: 'password_reset_requested',
         activityType: 'PASSWORD_RESET_REQUESTED',
+        description,
+        initiated_by: normalizedSource === 'self' ? 'user' : 'admin',
         email: String(email || '').trim().toLowerCase(),
-        source: String(source || 'self').trim() || 'self',
+        source: normalizedSource,
         ipAddress: ipAddress || undefined,
         initiatedByAdminId: initiatedByAdminId || undefined,
       },
@@ -327,7 +334,55 @@ export class CustomActivityLogger {
     })
   }
 
+  async logAdminInitiatedPasswordReset(
+    adminUserId,
+    targetUserId,
+    {
+      adminName,
+      adminEmail,
+      targetName,
+      targetEmail,
+      targetRole,
+      ipAddress,
+    } = {},
+    ctx = {},
+  ) {
+    const adminLabel = String(adminName || '').trim() || 'Administrator'
+    const targetLabel = String(targetName || '').trim() || String(targetEmail || '').trim() || 'User'
+    const description = `Admin ${adminLabel} sent a password reset email to ${targetLabel}`
+    return this._log({
+      userId: String(adminUserId || 'system'),
+      activityType: 'ADMIN_INITIATED_PASSWORD_RESET',
+      resourceId: String(targetUserId || ''),
+      details: {
+        type: 'admin_initiated_password_reset',
+        eventType: 'admin_initiated_password_reset',
+        activityType: 'ADMIN_INITIATED_PASSWORD_RESET',
+        description,
+        initiated_by: 'admin',
+        admin_id: String(adminUserId || ''),
+        admin_name: adminLabel,
+        admin_email: String(adminEmail || '').trim().toLowerCase() || undefined,
+        target_user_id: String(targetUserId || ''),
+        target_name: targetLabel,
+        target_email: String(targetEmail || '').trim().toLowerCase() || undefined,
+        target_role: targetRole ? String(targetRole) : undefined,
+        record_name: targetLabel,
+        record_id: String(targetUserId || ''),
+        ipAddress: ipAddress || undefined,
+      },
+      userEmail: String(adminEmail || '').trim().toLowerCase() || undefined,
+      userRole: 'admin',
+      ...ctx,
+    })
+  }
+
   async logPasswordResetCompleted(userId, { email, source, ipAddress } = {}, ctx = {}) {
+    const normalizedSource = String(source || 'self').trim() || 'self'
+    const description =
+      normalizedSource === 'self'
+        ? 'User completed their own password reset'
+        : 'User completed password reset via emailed link'
     return this._log({
       userId,
       activityType: 'PASSWORD_RESET_COMPLETED',
@@ -336,8 +391,10 @@ export class CustomActivityLogger {
         type: 'password_reset_completed',
         eventType: 'password_reset_completed',
         activityType: 'PASSWORD_RESET_COMPLETED',
+        description,
+        initiated_by: normalizedSource === 'self' ? 'user' : 'admin',
         email: String(email || '').trim().toLowerCase(),
-        source: String(source || 'self').trim() || 'self',
+        source: normalizedSource,
         ipAddress: ipAddress || undefined,
       },
       ...ctx,

@@ -362,6 +362,13 @@ export function mountTeacherActivitiesRoutes(router, {
         res.status(404).json({ error: 'NOT_FOUND', message: 'Activity not found.' })
         return
       }
+      if (isDeadlinePassed(existing.submission_deadline)) {
+        res.status(403).json({
+          error: 'ITEM_OVERDUE_LOCKED',
+          message: 'This activity is past its deadline and can no longer be edited.',
+        })
+        return
+      }
       const oldActivitySnap = activityAuditSnapshot(mapActivityRow(existing))
       const b = req.body || {}
       const title = String(b.title ?? '').trim()

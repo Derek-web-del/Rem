@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import BackButton from '../components/BackButton.jsx'
 import ArchivedStudentDetail from '../components/ArchivedStudentDetail.jsx'
 import ArchivedFacultyDetail from '../components/ArchivedFacultyDetail.jsx'
+import PasswordInput from '../components/PasswordInput.jsx'
 import { useNotify } from '../components/notifications.jsx'
 import { apiUrl } from '../lib/lmsStateStorage.js'
 
@@ -116,6 +117,7 @@ export default function ArchiveVault() {
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
   const [restoreTarget, setRestoreTarget] = useState(null)
+  const [restorePassword, setRestorePassword] = useState('')
   const [restoreSubmitting, setRestoreSubmitting] = useState(false)
   const [purgeTarget, setPurgeTarget] = useState(null)
   const [purgePhrase, setPurgePhrase] = useState('')
@@ -197,13 +199,18 @@ export default function ArchiveVault() {
     [purgePhrase],
   )
 
-  async function executeRestore(type, id) {
+  async function executeRestore(type, id, password) {
     const key = `${type}:${id}`
     setActionId(key)
     try {
       const res = await fetch(
         apiUrl(`/api/v1/admin/restore/${encodeURIComponent(type)}/${encodeURIComponent(String(id))}`),
-        { method: 'POST', credentials: 'include' },
+        {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password }),
+        },
       )
       const data = await res.json().catch(() => ({}))
       if (!res.ok) {
@@ -231,11 +238,14 @@ export default function ArchiveVault() {
   }
 
   async function confirmRestore() {
-    if (!restoreTarget) return
+    if (!restoreTarget || !restorePassword.trim()) return
     setRestoreSubmitting(true)
-    const ok = await executeRestore(restoreTarget.type, restoreTarget.id)
+    const ok = await executeRestore(restoreTarget.type, restoreTarget.id, restorePassword)
     setRestoreSubmitting(false)
-    if (ok) setRestoreTarget(null)
+    if (ok) {
+      setRestoreTarget(null)
+      setRestorePassword('')
+    }
   }
 
   async function handlePermanentPurge() {
@@ -513,18 +523,35 @@ export default function ArchiveVault() {
                 Archive Vault and cancels pending auto-deletion. If re-archived later, the 365-day timer starts fresh.
               </p>
             ) : null}
+            <label className="mt-4 block">
+              <span className="text-sm font-semibold text-neutral-800">Confirm with your admin password</span>
+              <p className="mt-1 text-xs text-neutral-500">
+                Re-enter your password to confirm this restore action.
+              </p>
+              <PasswordInput
+                className="mt-2 w-full rounded-lg border border-neutral-300 bg-white py-2 pl-3 pr-10 text-sm"
+                value={restorePassword}
+                onChange={(e) => setRestorePassword(e.target.value)}
+                placeholder="Your admin password"
+                autoComplete="current-password"
+                disabled={restoreSubmitting}
+              />
+            </label>
             <div className="mt-4 flex justify-end gap-2">
               <button
                 type="button"
                 className="rounded bg-neutral-200 px-4 py-2 text-sm font-semibold text-neutral-700"
-                onClick={() => setRestoreTarget(null)}
+                onClick={() => {
+                  setRestoreTarget(null)
+                  setRestorePassword('')
+                }}
                 disabled={restoreSubmitting}
               >
                 Cancel
               </button>
               <button
                 type="button"
-                disabled={restoreSubmitting}
+                disabled={restoreSubmitting || !restorePassword.trim()}
                 className="rounded px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
                 style={{ backgroundColor: ACTION_BLUE }}
                 onClick={confirmRestore}

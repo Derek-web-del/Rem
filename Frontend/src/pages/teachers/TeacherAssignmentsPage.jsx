@@ -6,6 +6,7 @@ import {
   deleteTeacherAssignment,
   fetchTeacherAssignments,
   formatDateYmd,
+  isPastDeadline,
 } from '../../lib/teacherAssignments.js'
 import {
   FACULTY_MSG,
@@ -254,7 +255,9 @@ export default function TeacherAssignmentsPage() {
                           <td className="px-4 py-4 tabular-nums">{formatDateYmd(row.submission_deadline)}</td>
                           <td className="px-4 py-4">
                             <div className="flex flex-wrap gap-2">
-                              <ActionBtn label="Edit" style={BTN_EDIT} onClick={() => navigate(`/teacher/assignments/${row.id}/edit`)} />
+                              {!isPastDeadline(row.submission_deadline) ? (
+                                <ActionBtn label="Edit" style={BTN_EDIT} onClick={() => navigate(`/teacher/assignments/${row.id}/edit`)} />
+                              ) : null}
                               <ActionBtn label="Delete" style={BTN_DELETE} onClick={() => setDeleteTarget(row)} />
                               <ActionBtn label="View / Submissions" style={BTN_VIEW} onClick={() => navigate(`/teacher/assignments/${row.id}`)} />
                             </div>

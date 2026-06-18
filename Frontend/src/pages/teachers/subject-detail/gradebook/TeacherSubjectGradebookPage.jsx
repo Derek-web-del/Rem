@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useOutletContext, useParams } from 'react-router-dom'
 import { useFacultyNotify } from '../../../../lib/facultyNotify.js'
-import { fetchSubjectGradebook, saveSubjectGradebookScores } from '../../../../lib/teacherGradebook.js'
-import { clampScore, itemKey, parseItemKey } from '../../../../lib/gradebookCalc.js'
+import { fetchSubjectGradebook } from '../../../../lib/teacherGradebook.js'
 import { exportGradebookXlsx } from '../../../../lib/gradebookExport.js'
 import TeacherBackButton from '../../TeacherBackButton.jsx'
 import TeacherMainHeader from '../../TeacherMainHeader.jsx'
@@ -27,12 +26,9 @@ export default function TeacherSubjectGradebookPage() {
   const toast = useFacultyNotify()
 
   const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
-  const [savedVisible, setSavedVisible] = useState(false)
   const [gradebook, setGradebook] = useState(null)
   const [sectionId, setSectionId] = useState('')
   const [scoresMap, setScoresMap] = useState({})
-  const [dirty, setDirty] = useState(false)
 
   const load = useCallback(async () => {
     if (!subjectId) return
@@ -43,7 +39,6 @@ export default function TeacherSubjectGradebookPage() {
       })
       setGradebook(data)
       setScoresMap(scoresFromApi(data.scores))
-      setDirty(false)
       if (!sectionId && data.sections?.length) {
         setSectionId(String(data.sections[0].id))
       }
@@ -66,50 +61,6 @@ export default function TeacherSubjectGradebookPage() {
 
   const sectionLabel =
     gradebook?.sections?.find((s) => String(s.id) === String(sectionId))?.section_name || 'All sections'
-
-  function handleScoreChange(studentId, key, raw, maxPoints) {
-    const next = clampScore(raw === '' ? 0 : raw, maxPoints)
-    setScoresMap((prev) => ({
-      ...prev,
-      [studentId]: {
-        ...(prev[studentId] || {}),
-        [key]: next,
-      },
-    }))
-    setDirty(true)
-  }
-
-  async function handleSave() {
-    if (!subjectId || !gradebook) return
-    setSaving(true)
-    try {
-      const scores = []
-      for (const [sid, cells] of Object.entries(scoresMap)) {
-        for (const [key, score] of Object.entries(cells || {})) {
-          const { entity_type, entity_id } = parseItemKey(key)
-          scores.push({
-            student_id: Number(sid),
-            entity_type,
-            entity_id,
-            score,
-          })
-        }
-      }
-      await saveSubjectGradebookScores(subjectId, {
-        scores,
-        sectionId: sectionId || undefined,
-      })
-      setDirty(false)
-      setSavedVisible(true)
-      window.setTimeout(() => setSavedVisible(false), 3000)
-      toast.success('Grades saved.')
-      await load()
-    } catch (e) {
-      toast.error(String(e?.message || 'Could not save grades.'))
-    } finally {
-      setSaving(false)
-    }
-  }
 
   function handleExport() {
     if (!gradebook) return
@@ -173,12 +124,15 @@ export default function TeacherSubjectGradebookPage() {
           </div>
         ) : (
           <div className="gradebook-shell overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-sm">
+            <div className="rounded-t-xl border-b border-sky-100 bg-sky-50 px-4 py-2 text-xs text-sky-900">
+              This gradebook is <span className="font-semibold">view-only</span>. Grades are updated from
+              Assignments, Activities, and Quizzes submission grading — use the View link on each cell.
+            </div>
             <div className="gradebook-toolbar flex flex-wrap items-center justify-between gap-3 border-b border-neutral-200 bg-neutral-50 px-4 py-3">
               <div>
                 <p className="text-sm font-semibold text-neutral-900">Grade Book — {subjectLabel}</p>
                 <p className="text-xs text-neutral-500">
-                  Section: {sectionLabel} · {gradebook.students?.length ?? 0} students
-                  {dirty ? ' · Unsaved changes' : ''}
+                  Section: {sectionLabel} · {gradebook.students?.length ?? 0} students · Read-only
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
@@ -195,12 +149,6 @@ export default function TeacherSubjectGradebookPage() {
                     ))}
                   </select>
                 ) : null}
-                {savedVisible ? (
-                  <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-800">
-                    <i className="ti ti-check" aria-hidden="true" />
-                    Grades saved
-                  </span>
-                ) : null}
                 <button
                   type="button"
                   className="inline-flex items-center gap-1 rounded-md border border-neutral-300 bg-white px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-50"
@@ -208,16 +156,6 @@ export default function TeacherSubjectGradebookPage() {
                 >
                   <i className="ti ti-file-spreadsheet" aria-hidden="true" />
                   Generate Report
-                </button>
-                <button
-                  type="button"
-                  disabled={saving}
-                  className="inline-flex items-center gap-1 rounded-md px-4 py-1.5 text-xs font-semibold text-white hover:brightness-110 disabled:opacity-60"
-                  style={{ background: ACTION_BLUE }}
-                  onClick={() => void handleSave()}
-                >
-                  <i className="ti ti-device-floppy" aria-hidden="true" />
-                  {saving ? 'Saving…' : 'Save Grades'}
                 </button>
               </div>
             </div>
@@ -240,7 +178,6 @@ export default function TeacherSubjectGradebookPage() {
               items={gradebook.items}
               students={gradebook.students}
               scoresMap={scoresMap}
-              onScoreChange={handleScoreChange}
             />
           </div>
         )}

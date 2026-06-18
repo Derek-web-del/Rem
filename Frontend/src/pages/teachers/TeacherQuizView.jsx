@@ -12,6 +12,7 @@ import {
 } from '../../lib/teacherQuizzes.js'
 import { fetchTeacherQuizRosterView, fetchTeacherQuizView } from '../../lib/teacherPortalOffline.js'
 import OfflineCacheIndicator from '../../components/OfflineCacheIndicator.jsx'
+import ScoreOverwriteRequestModal from '../../components/ScoreOverwriteRequestModal.jsx'
 import { formatSemesterLabel } from '../../lib/quizQuestionTypes.js'
 import {
   FACULTY_MSG,
@@ -88,6 +89,7 @@ export default function TeacherQuizView() {
   const [rosterLoading, setRosterLoading] = useState(false)
   const [sectionFilter, setSectionFilter] = useState('')
   const [scoreTarget, setScoreTarget] = useState(null)
+  const [overwriteTarget, setOverwriteTarget] = useState(null)
   const [scoreValue, setScoreValue] = useState('')
   const [savingScore, setSavingScore] = useState(false)
   const [fromCache, setFromCache] = useState(false)
@@ -460,15 +462,25 @@ export default function TeacherQuizView() {
                                 {!st.submission_id ? (
                                   <span className="text-xs text-neutral-500">No submission</span>
                                 ) : scoreLocked ? (
-                                  <span
-                                    className="inline-flex items-center gap-1 text-sm text-neutral-600"
-                                    title={SCORE_LOCKED_MSG}
-                                  >
-                                    <i className="ti ti-lock" aria-hidden="true" />
-                                    {st.score != null
-                                      ? `${formatScoreWithPercent(st.score, st.total_points)} (locked)`
-                                      : '— (locked)'}
-                                  </span>
+                                  <>
+                                    <span
+                                      className="inline-flex items-center gap-1 text-sm text-neutral-600"
+                                      title={SCORE_LOCKED_MSG}
+                                    >
+                                      <i className="ti ti-lock" aria-hidden="true" />
+                                      {st.score != null
+                                        ? `${formatScoreWithPercent(st.score, st.total_points)} (locked)`
+                                        : '— (locked)'}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      className="rounded-md px-3 py-1.5 text-xs font-semibold text-white hover:brightness-110"
+                                      style={BTN_EDIT}
+                                      onClick={() => setOverwriteTarget(st)}
+                                    >
+                                      Request Change
+                                    </button>
+                                  </>
                                 ) : (
                                   <button
                                     type="button"
@@ -536,6 +548,29 @@ export default function TeacherQuizView() {
             </div>
           </div>
         </div>
+      ) : null}
+
+      {overwriteTarget ? (
+        <ScoreOverwriteRequestModal
+          entityType="quiz"
+          entityId={quiz?.id}
+          entityTitle={quiz?.title}
+          submission={{
+            id: overwriteTarget.submission_id,
+            submission_id: overwriteTarget.submission_id,
+            student_id: overwriteTarget.student_id,
+            score: overwriteTarget.score,
+          }}
+          studentName={overwriteTarget.student_name}
+          maxScore={Number(overwriteTarget.total_points) || totalPoints}
+          onClose={() => setOverwriteTarget(null)}
+          onSuccess={() => {
+            toastRef.current.success('Score overwrite request submitted for admin review.', {
+              id: FACULTY_TOAST_ID,
+              duration: FACULTY_ANNOUNCEMENT_TOAST_MS,
+            })
+          }}
+        />
       ) : null}
     </>
   )

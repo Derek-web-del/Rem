@@ -5,13 +5,7 @@ import {
   requireFacultyOrTeacherSession,
 } from '../lib/teacherGradesAuth.js'
 import { facultyOwnsSubject } from '../lib/gradesDb.js'
-import { fetchSubjectGradebook, saveSubjectGradebookScores } from '../lib/gradebookDb.js'
-import {
-  logTeacherAuditEvent,
-  TEACHER_AUDIT_ACTIONS,
-  TEACHER_AUDIT_MODULES,
-} from '../lib/teacherAuditLog.js'
-import { buildTargetLabel } from '../lib/teacherAuditSnapshots.js'
+import { fetchSubjectGradebook } from '../lib/gradebookDb.js'
 
 async function requireSubjectAccess(req, res, auth, subjectId) {
   const session = await requireFacultyOrTeacherSession(req, res, auth)
@@ -82,47 +76,12 @@ export function createTeacherGradebookV1Router(express, auth) {
     try {
       const ctx = await requireSubjectAccess(req, res, auth, req.params.subjectId)
       if (!ctx) return
-
-      const sectionId = parseSectionId(req.body?.section_id ?? req.body?.sectionId)
-      const scores = Array.isArray(req.body?.scores) ? req.body.scores : []
-      const updatedBy = String(ctx.user?.email || ctx.user?.id || '').trim() || null
-
-      const before = await fetchSubjectGradebook(ctx.pool, ctx.subjectId, {
-        sectionId,
-        facultyRow: ctx.facultyRow,
+      res.status(403).json({
+        success: false,
+        error: 'GRADE_BOOK_READ_ONLY',
+        message:
+          'Direct gradebook editing is disabled. Grade students from Assignments, Activities, or Quizzes.',
       })
-      const result = await saveSubjectGradebookScores(ctx.pool, ctx.subjectId, {
-        scores,
-        sectionId,
-        updatedBy,
-      })
-      if (result.error === 'NOT_FOUND') {
-        res.status(404).json({ success: false, error: 'NOT_FOUND', message: 'Subject not found.' })
-        return
-      }
-      const subjName = before?.subject?.subject_name || `Subject ${ctx.subjectId}`
-      for (const entry of scores) {
-        const studentId = String(entry.student_id || '')
-        const entityType = String(entry.entity_type || '').toLowerCase()
-        const entityId = String(entry.entity_id || '')
-        const key = `${entityType}:${entityId}`
-        const oldScore = before?.scores?.[studentId]?.[key]?.score ?? null
-        const newScore = entry.score != null ? Number(entry.score) : null
-        if (oldScore === newScore) continue
-        await logTeacherAuditEvent(req, {
-          event_type: 'grade_score_saved',
-          module: TEACHER_AUDIT_MODULES.GRADES,
-          action: TEACHER_AUDIT_ACTIONS.GRADE,
-          user: ctx.user,
-          facultyRow: ctx.facultyRow,
-          target_id: `${studentId}:${key}`,
-          target_label: buildTargetLabel(subjName, `${entityType} ${entityId} / student ${studentId}`),
-          old_values: { score: oldScore, student_id: studentId, entity_type: entityType, entity_id: entityId },
-          new_values: { score: newScore, student_id: studentId, entity_type: entityType, entity_id: entityId },
-          changed_fields: ['score'],
-        })
-      }
-      res.json({ success: true, ...result })
     } catch (e) {
       sendSafeServerError(res, e, 'POST /api/v1/teacher/subjects/:subjectId/gradebook/scores')
     }

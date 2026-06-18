@@ -8,6 +8,7 @@ export const NAV_ID_TO_PATH = {
   subjects: '/admin/subjects',
   updates: '/admin/announcements',
   monitoring: '/admin/audit-logs',
+  scoreOverwrite: '/admin/score-overwrite-requests',
   backup: '/admin/backup',
   archive: '/admin/archive-vault',
 }

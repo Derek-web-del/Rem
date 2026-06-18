@@ -654,6 +654,18 @@ export function createQuizzesV1Router(express, auth) {
       }
       const payload = await attachQuizPassword(linked.payload, 'update')
       const oldQuiz = await fetchQuizById(pool, id, facultyRow.id)
+      if (!oldQuiz) {
+        res.status(404).json({ success: false, error: 'NOT_FOUND', message: 'Quiz not found.' })
+        return
+      }
+      if (isDeadlinePassed(oldQuiz.deadline)) {
+        res.status(403).json({
+          success: false,
+          error: 'ITEM_OVERDUE_LOCKED',
+          message: 'This quiz is past its deadline and can no longer be edited.',
+        })
+        return
+      }
       const quiz = await updateQuiz(pool, id, facultyRow.id, payload)
       if (!quiz) {
         res.status(404).json({ success: false, error: 'NOT_FOUND', message: 'Quiz not found.' })

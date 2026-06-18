@@ -1,4 +1,5 @@
 import { Fragment, useMemo } from 'react'
+import { Link } from 'react-router-dom'
 import {
   computeClassAverages,
   computeStudentGradeRow,
@@ -20,7 +21,17 @@ function typeBadgeClass(type) {
   return 'bg-sky-100 text-sky-800'
 }
 
-export default function GradebookTable({ components, items, students, scoresMap, onScoreChange }) {
+function itemViewPath(item) {
+  const id = item?.id
+  if (!id) return null
+  const type = String(item.type || '').toLowerCase()
+  if (type === 'assignment') return `/teacher/assignments/${id}`
+  if (type === 'activity') return `/teacher/activities/${id}`
+  if (type === 'quiz') return `/teacher/quizzes/${id}`
+  return null
+}
+
+export default function GradebookTable({ components, items, students, scoresMap }) {
   const groupedItems = useMemo(() => groupItemsByComponent(components, items), [components, items])
 
   const columns = useMemo(() => {
@@ -111,17 +122,21 @@ export default function GradebookTable({ components, items, students, scoresMap,
                     {compItems.map((item) => {
                       const key = itemKey(item.type, item.id)
                       const val = scoresMap[sid]?.[key] ?? 0
+                      const viewPath = itemViewPath(item)
                       return (
-                        <td key={key} className="border border-neutral-200 p-0 text-center">
-                          <input
-                            type="number"
-                            min={0}
-                            max={item.max_points}
-                            step={item.type === 'quiz' ? '0.01' : '1'}
-                            className="gradebook-score-input w-full min-w-[68px] border-none bg-transparent px-1 py-2 text-center text-xs outline-none focus:bg-sky-50 focus:ring-2 focus:ring-inset focus:ring-[#185FA5]"
-                            value={val === 0 ? '0' : String(val)}
-                            onChange={(e) => onScoreChange(sid, key, e.target.value, item.max_points)}
-                          />
+                        <td key={key} className="border border-neutral-200 px-1 py-2 text-center">
+                          <span className="inline-block min-w-[68px] tabular-nums text-xs text-neutral-800">
+                            {val === 0 ? '0' : String(val)}
+                          </span>
+                          {viewPath ? (
+                            <Link
+                              to={viewPath}
+                              className="mt-0.5 block text-[10px] font-medium text-[#185FA5] hover:underline"
+                              title="Grade via submissions view"
+                            >
+                              View
+                            </Link>
+                          ) : null}
                         </td>
                       )
                     })}

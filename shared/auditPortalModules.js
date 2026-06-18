@@ -124,7 +124,8 @@ export function resolveInstituteActivityModule(activityType) {
     if (
       activity === 'FACULTY_RESTORED' ||
       activity === 'FACULTY_PERMANENTLY_PURGED' ||
-      activity === 'FACULTY_IMMEDIATELY_PURGED'
+      activity === 'FACULTY_IMMEDIATELY_PURGED' ||
+      activity === 'RESTORE_PASSWORD_FAILED'
     ) {
       return ADMIN_PORTAL_MODULES.ARCHIVE_VAULT
     }
@@ -150,6 +151,20 @@ export function resolveInstituteActivityModule(activityType) {
     return ADMIN_PORTAL_MODULES.DATA_BACKUP
   }
   if (activity === 'GRADE_OVERRIDE') return ADMIN_PORTAL_MODULES.STUDENTS
+  if (
+    activity === 'SCORE_OVERWRITE_REQUESTED' ||
+    activity === 'SCORE_OVERWRITE_APPROVED' ||
+    activity === 'SCORE_OVERWRITE_REJECTED'
+  ) {
+    return ADMIN_PORTAL_MODULES.STUDENTS
+  }
+  if (
+    activity === 'PASSWORD_RESET_REQUESTED' ||
+    activity === 'PASSWORD_RESET_COMPLETED' ||
+    activity === 'ADMIN_INITIATED_PASSWORD_RESET'
+  ) {
+    return ADMIN_PORTAL_MODULES.DASHBOARD
+  }
 
   return null
 }
