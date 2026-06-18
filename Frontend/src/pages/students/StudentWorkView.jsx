@@ -31,7 +31,7 @@ function InfoRow({ label, children, last = false }) {
   )
 }
 
-export default function StudentWorkView({ config, logoutToPortal }) {
+export default function StudentWorkView({ config }) {
   const id = config.itemId
   const { isOffline } = useOfflineStatus()
   const fileInputRef = useRef(null)
@@ -48,32 +48,39 @@ export default function StudentWorkView({ config, logoutToPortal }) {
   const [previewOpen, setPreviewOpen] = useState(true)
   const [fromCache, setFromCache] = useState(false)
 
-  const load = useCallback(async () => {
+  const load = useCallback(async ({ silent = false } = {}) => {
     if (!id) {
       setLoadError('Invalid item id.')
-      setLoading(false)
+      if (!silent) setLoading(false)
       return
     }
-    setLoading(true)
-    setLoadError('')
+    if (!silent) {
+      setLoading(true)
+      setLoadError('')
+    }
     try {
       const data = await fetchStudentWorkDetail(config.kind, id)
       if (!data?.item) {
-        setItem(null)
-        setSubmission(null)
+        if (!silent) {
+          setItem(null)
+          setSubmission(null)
+        }
         setLoadError('Failed to load. Please go back.')
         return
       }
       setItem(data.item)
       setSubmission(data.submission)
       setFromCache(Boolean(data.fromCache))
+      if (silent) setLoadError('')
     } catch (e) {
       console.error(`[StudentWorkView:${config.kind}]`, e)
-      setItem(null)
-      setSubmission(null)
+      if (!silent) {
+        setItem(null)
+        setSubmission(null)
+      }
       setLoadError(String(e?.message || 'Failed to load. Please go back.'))
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
   }, [id, config.kind])
 
@@ -136,16 +143,17 @@ export default function StudentWorkView({ config, logoutToPortal }) {
       setFileError(STUDENT_SUBMISSION_MAX_MSG)
       return
     }
+    const wasResubmission = hasSubmission
     setSubmitting(true)
     setSubmitError('')
     setSubmitSuccess('')
     try {
       const saved = await submitStudentWorkFile(config.kind, id, selectedFile)
       setSubmission(saved)
-      setSubmitSuccess(hasSubmission ? 'File resubmitted successfully.' : 'File submitted successfully.')
+      setSubmitSuccess(wasResubmission ? 'File resubmitted successfully.' : 'File submitted successfully.')
       setSelectedFile(null)
       if (fileInputRef.current) fileInputRef.current.value = ''
-      await load()
+      await load({ silent: true })
     } catch (e) {
       setSubmitError(String(e?.message || 'Failed to submit file.'))
     } finally {
@@ -154,159 +162,155 @@ export default function StudentWorkView({ config, logoutToPortal }) {
   }
 
   return (
-    <>
+    <div className="flex min-h-0 flex-1 flex-col">
       <StudentMainHeader pageTitle={config.navTitle} />
-      <main className="min-h-0 flex-1 space-y-6 overflow-y-auto overflow-x-hidden p-4 md:p-8">
-        {loading ? (
-          <>
-            <StudentViewHeader title={config.viewHeader} backTo={config.listPath} />
-            <p className="text-sm text-neutral-500">Loading…</p>
-          </>
-        ) : loadError ? (
-          <>
-            <StudentViewHeader title={config.viewHeader} backTo={config.listPath} />
-            <p className="text-sm text-red-600">{loadError}</p>
-          </>
-        ) : !item ? (
-          <>
-            <StudentViewHeader title={config.viewHeader} backTo={config.listPath} />
-            <p className="text-sm text-neutral-600">{config.navTitle.slice(0, -1)} not found.</p>
-          </>
-        ) : (
-          <>
-            <StudentViewHeader title={config.viewHeader} backTo={config.listPath} />
-            <OfflineCacheIndicator fromCache={fromCache} className="mb-2" />
+      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-8">
+        <div className="space-y-6">
+          {loading ? (
+            <>
+              <StudentViewHeader title={config.viewHeader} backTo={config.listPath} />
+              <p className="text-sm text-neutral-500">Loading…</p>
+            </>
+          ) : loadError ? (
+            <>
+              <StudentViewHeader title={config.viewHeader} backTo={config.listPath} />
+              <p className="text-sm text-red-600">{loadError}</p>
+            </>
+          ) : !item ? (
+            <>
+              <StudentViewHeader title={config.viewHeader} backTo={config.listPath} />
+              <p className="text-sm text-neutral-600">{config.navTitle.slice(0, -1)} not found.</p>
+            </>
+          ) : (
+            <>
+              <StudentViewHeader title={config.viewHeader} backTo={config.listPath} />
+              <OfflineCacheIndicator fromCache={fromCache} className="mb-2" />
 
-            <div className="rounded-xl border border-neutral-200 bg-white px-4 py-3 shadow-sm sm:px-5">
-              <InfoRow label="Subject">{item.subject || item.subject_name || '—'}</InfoRow>
-              <InfoRow label="Upload Date">{formatWorkDate(item.upload_date)}</InfoRow>
-              <InfoRow label="Submission Date">
-                <span className="inline-flex flex-wrap items-center gap-2">
-                  {formatWorkDate(item.submission_deadline)}
-                  <span
-                    className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold leading-none ${workBadgeClasses(item.submission_badge_tone)}`}
-                  >
-                    {item.submission_badge}
+              <div className="rounded-xl border border-neutral-200 bg-white px-4 py-3 shadow-sm sm:px-5">
+                <InfoRow label="Subject">{item.subject || item.subject_name || '—'}</InfoRow>
+                <InfoRow label="Upload Date">{formatWorkDate(item.upload_date)}</InfoRow>
+                <InfoRow label="Submission Date">
+                  <span className="inline-flex flex-wrap items-center gap-2">
+                    {formatWorkDate(item.submission_deadline)}
+                    <span
+                      className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold leading-none ${workBadgeClasses(item.submission_badge_tone)}`}
+                    >
+                      {item.submission_badge}
+                    </span>
                   </span>
-                </span>
-              </InfoRow>
-              <InfoRow label="Total">{totalScore}</InfoRow>
-              <InfoRow label="Score">{scoreDisplay}</InfoRow>
-              <InfoRow label="Description" last>
-                <span className="whitespace-pre-wrap">{item.description || '—'}</span>
-              </InfoRow>
-            </div>
-
-            <section className="space-y-2">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <h3 className="text-sm font-bold uppercase tracking-wide text-neutral-700">{config.previewLabel}</h3>
-                {previewUrl ? (
-                  <button
-                    type="button"
-                    onClick={() => setPreviewOpen((open) => !open)}
-                    className="text-xs font-semibold text-neutral-600 hover:text-neutral-900"
-                  >
-                    {previewOpen ? '▲ Hide Preview' : '▼ Show Preview'}
-                  </button>
-                ) : null}
+                </InfoRow>
+                <InfoRow label="Total">{totalScore}</InfoRow>
+                <InfoRow label="Score">{scoreDisplay}</InfoRow>
+                <InfoRow label="Description" last>
+                  <span className="whitespace-pre-wrap">{item.description || '—'}</span>
+                </InfoRow>
               </div>
-              {previewUrl ? (
-                <div className="overflow-hidden rounded-md border border-[#e0e0e0] bg-white">
-                  <div className="flex items-center justify-between border-b border-neutral-100 bg-neutral-50 px-3 py-2 text-sm font-medium text-neutral-700">
-                    <span className="truncate">{item.file_name || 'Document'}</span>
+
+              <section className="space-y-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h3 className="text-sm font-bold uppercase tracking-wide text-neutral-700">{config.previewLabel}</h3>
+                  {previewUrl ? (
                     <button
                       type="button"
-                      onClick={() =>
-                        void downloadStudentWorkPrompt(config.kind, id, item.file_name).catch(console.error)
-                      }
-                      className="ml-2 shrink-0 text-xs font-semibold text-emerald-700 hover:underline"
+                      onClick={() => setPreviewOpen((open) => !open)}
+                      className="text-xs font-semibold text-neutral-600 hover:text-neutral-900"
                     >
-                      Download
+                      {previewOpen ? '▲ Hide Preview' : '▼ Show Preview'}
                     </button>
-                  </div>
-                  <div
-                    className="overflow-hidden transition-[height] duration-200"
-                    style={{ height: previewOpen ? '400px' : '0px', maxHeight: previewOpen ? '400px' : '0px' }}
-                  >
-                    <iframe
-                      title={config.previewLabel}
-                      src={previewOpen ? previewUrl : undefined}
-                      className="block w-full border-0 bg-neutral-100"
-                      style={{
-                        width: '100%',
-                        height: '400px',
-                        maxHeight: '400px',
-                        border: '1px solid #e0e0e0',
-                        borderRadius: '6px',
-                        overflow: 'hidden',
-                      }}
-                    />
-                  </div>
+                  ) : null}
                 </div>
-              ) : (
-                <p className="text-sm text-neutral-500">No file attached.</p>
-              )}
-            </section>
-
-            {expectsSubmission ? (
-              <section
-                className={`rounded-xl border border-neutral-200 bg-white p-6 shadow-md ${
-                  !submissionOpen ? 'opacity-60' : ''
-                }`}
-              >
-                <h3 className="text-sm font-bold uppercase tracking-wide text-neutral-700">Submit Your Work</h3>
-
-                {hasSubmission && submission?.submitted_at ? (
-                  <p className="mt-2 text-sm text-neutral-600">
-                    You submitted a file on {formatWorkDateTime(submission.submitted_at)}
-                  </p>
-                ) : null}
-
-                {!submissionOpen ? (
-                  <p className="mt-3 text-sm font-medium text-neutral-500">Submission period has ended.</p>
-                ) : (
-                  <>
-                    <div className="mt-4 flex flex-wrap items-center gap-3">
-                      <input
-                        ref={fileInputRef}
-                        id={`work-file-${config.kind}-${id}`}
-                        type="file"
-                        accept=".pdf"
-                        disabled={!submissionOpen || isOffline}
-                        onChange={handleFileChange}
-                        className="sr-only"
-                      />
-                      <label
-                        htmlFor={`work-file-${config.kind}-${id}`}
-                        className="cursor-pointer rounded-md border border-neutral-300 bg-neutral-50 px-4 py-2 text-sm font-semibold text-neutral-800 hover:bg-neutral-100"
+                {previewUrl ? (
+                  <div className="overflow-hidden rounded-md border border-[#e0e0e0] bg-white">
+                    <div className="flex items-center justify-between border-b border-neutral-100 bg-neutral-50 px-3 py-2 text-sm font-medium text-neutral-700">
+                      <span className="truncate">{item.file_name || 'Document'}</span>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void downloadStudentWorkPrompt(config.kind, id, item.file_name).catch(console.error)
+                        }
+                        className="ml-2 shrink-0 text-xs font-semibold text-emerald-700 hover:underline"
                       >
-                        Choose File
-                      </label>
-                      <span className="text-sm text-neutral-500">
-                        {selectedFile ? selectedFile.name : 'No file chosen'}
-                      </span>
+                        Download
+                      </button>
                     </div>
-                    <p className="mt-2 text-xs text-neutral-500">Maximum file size: 10 MB</p>
-                    <p className="text-xs text-neutral-500">Accepted format: PDF only</p>
-                    {fileError ? <p className="mt-2 text-sm text-red-600">{fileError}</p> : null}
-                    {submitError ? <p className="mt-2 text-sm text-red-600">{submitError}</p> : null}
-                    {submitSuccess ? <p className="mt-2 text-sm text-emerald-700">{submitSuccess}</p> : null}
-                    <button
-                      type="button"
-                      disabled={!selectedFile || submitting || !submissionOpen || isOffline}
-                      title={isOffline ? 'Not available offline' : undefined}
-                      onClick={() => void handleSubmit()}
-                      className="mt-4 rounded-lg bg-emerald-600 px-5 py-2 text-sm font-semibold text-white hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+                    <div
+                      className="overflow-hidden transition-[height] duration-200"
+                      style={{ height: previewOpen ? '400px' : '0px', maxHeight: previewOpen ? '400px' : '0px' }}
                     >
-                      {submitting ? 'Submitting…' : hasSubmission ? 'Resubmit File' : 'Submit File'}
-                    </button>
-                  </>
+                      <div className="relative h-[400px] w-full overflow-hidden bg-neutral-100">
+                        <iframe
+                          title={config.previewLabel}
+                          src={previewOpen ? previewUrl : undefined}
+                          className="absolute inset-0 h-full w-full border-0"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-sm text-neutral-500">No file attached.</p>
                 )}
               </section>
-            ) : null}
-          </>
-        )}
-      </main>
-    </>
+
+              {expectsSubmission ? (
+                <section
+                  className={`rounded-xl border border-neutral-200 bg-white p-6 shadow-md ${
+                    !submissionOpen ? 'opacity-60' : ''
+                  }`}
+                >
+                  <h3 className="text-sm font-bold uppercase tracking-wide text-neutral-700">Submit Your Work</h3>
+
+                  {hasSubmission && submission?.submitted_at ? (
+                    <p className="mt-2 text-sm text-neutral-600">
+                      You submitted a file on {formatWorkDateTime(submission.submitted_at)}
+                    </p>
+                  ) : null}
+
+                  {!submissionOpen ? (
+                    <p className="mt-3 text-sm font-medium text-neutral-500">Submission period has ended.</p>
+                  ) : (
+                    <>
+                      <div className="mt-4 flex flex-wrap items-center gap-3">
+                        <input
+                          ref={fileInputRef}
+                          id={`work-file-${config.kind}-${id}`}
+                          type="file"
+                          accept=".pdf"
+                          disabled={!submissionOpen || isOffline}
+                          onChange={handleFileChange}
+                          className="hidden"
+                        />
+                        <label
+                          htmlFor={`work-file-${config.kind}-${id}`}
+                          className="cursor-pointer rounded-md border border-neutral-300 bg-neutral-50 px-4 py-2 text-sm font-semibold text-neutral-800 hover:bg-neutral-100"
+                        >
+                          Choose File
+                        </label>
+                        <span className="text-sm text-neutral-500">
+                          {selectedFile ? selectedFile.name : 'No file chosen'}
+                        </span>
+                      </div>
+                      <p className="mt-2 text-xs text-neutral-500">Maximum file size: 10 MB</p>
+                      <p className="text-xs text-neutral-500">Accepted format: PDF only</p>
+                      {fileError ? <p className="mt-2 text-sm text-red-600">{fileError}</p> : null}
+                      {submitError ? <p className="mt-2 text-sm text-red-600">{submitError}</p> : null}
+                      {submitSuccess ? <p className="mt-2 text-sm text-emerald-700">{submitSuccess}</p> : null}
+                      <button
+                        type="button"
+                        disabled={!selectedFile || submitting || !submissionOpen || isOffline}
+                        title={isOffline ? 'Not available offline' : undefined}
+                        onClick={() => void handleSubmit()}
+                        className="mt-4 rounded-lg bg-emerald-600 px-5 py-2 text-sm font-semibold text-white hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {submitting ? 'Submitting…' : hasSubmission ? 'Resubmit File' : 'Submit File'}
+                      </button>
+                    </>
+                  )}
+                </section>
+              ) : null}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
   )
 }
