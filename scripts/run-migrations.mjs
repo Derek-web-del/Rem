@@ -3,16 +3,52 @@
  *
  *   npm run db:migrate
  */
-import { execSync } from 'node:child_process'
-import fs from 'node:fs/promises'
-import path from 'node:path'
-import { fileURLToPath } from 'node:url'
-import '../server/env-bootstrap.js'
-import { getPgPool } from '../server/pgPool.js'
-import { ensureSchema } from '../server/api/state/shared.js'
+console.log('[db:migrate] script entry', {
+  pid: process.pid,
+  cwd: process.cwd(),
+  node: process.version,
+})
+console.log('[db:migrate] memory', process.memoryUsage())
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const migrationsDir = path.join(__dirname, '..', 'Database', 'migrations')
+const REQUIRED_ENV = ['DATABASE_URL']
+
+function maskDatabaseUrl(raw) {
+  const url = String(raw || '').trim()
+  if (!url) return '(not set)'
+  try {
+    const parsed = new URL(url)
+    return `${parsed.protocol}//***@${parsed.host}${parsed.pathname}`
+  } catch {
+    return '(invalid URL)'
+  }
+}
+
+async function verifyDbConnection(pool, timeoutMs = 10_000) {
+  let timer
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      reject(new Error(`[db:migrate] Database connection timed out after ${timeoutMs}ms`))
+    }, timeoutMs)
+  })
+  try {
+    const client = await Promise.race([pool.connect(), timeout])
+    await client.query('SELECT 1')
+    client.release()
+    console.log('[db:migrate] database connection OK')
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+function validateRequiredEnv(dotenvLoadedFrom) {
+  const missing = REQUIRED_ENV.filter((key) => !String(process.env[key] || '').trim())
+  if (missing.length > 0) {
+    console.error('[db:migrate] Missing required environment variables:', missing.join(', '))
+    console.error('[db:migrate] dotenv loaded from:', dotenvLoadedFrom)
+    process.exit(1)
+  }
+  console.log('[db:migrate] DATABASE_URL:', maskDatabaseUrl(process.env.DATABASE_URL))
+}
 
 async function ensureMigrationTable(pool) {
   await pool.query(`
@@ -51,10 +87,13 @@ async function runSqlMigration(pool, filename, sql) {
   }
 }
 
-async function seedAdminIfNeeded(pool) {
+async function seedAdminIfNeeded(pool, execSync) {
   const isProduction = (process.env.NODE_ENV || '') === 'production'
   const password = String(process.env.SEED_ADMIN_PASSWORD || '').trim()
-  if (!isProduction || !password) return
+  if (!isProduction || !password) {
+    console.log('[db:migrate] admin seed skipped (not production or SEED_ADMIN_PASSWORD unset)')
+    return
+  }
   if (password === 'Admin123@') {
     console.warn('[db:migrate] SEED_ADMIN_PASSWORD is the dev default — seeding anyway.')
   }
@@ -75,6 +114,7 @@ async function seedAdminIfNeeded(pool) {
       stdio: 'inherit',
       env: { ...process.env, AUTH_DISABLE_SIGNUP: 'false' },
     })
+    console.log('[db:migrate] admin seed completed')
   } catch (err) {
     console.error(
       '[db:migrate] Admin seed failed — server will still start:',
@@ -83,22 +123,41 @@ async function seedAdminIfNeeded(pool) {
   }
 }
 
-async function main() {
+export async function runMigrations() {
+  const { LENLEARN_DOTENV_LOADED_FROM } = await import('../server/env-bootstrap.js')
+  console.log('[db:migrate] env loaded from:', LENLEARN_DOTENV_LOADED_FROM)
+  validateRequiredEnv(LENLEARN_DOTENV_LOADED_FROM)
+
+  const { execSync } = await import('node:child_process')
+  const fs = await import('node:fs/promises')
+  const path = await import('node:path')
+  const { fileURLToPath } = await import('node:url')
+  const { getPgPool } = await import('../server/pgPool.js')
+  const { ensureSchema } = await import('../server/api/state/shared.js')
+
+  const __dirname = path.dirname(fileURLToPath(import.meta.url))
+  const migrationsDir = path.join(__dirname, '..', 'Database', 'migrations')
+
   const pool = getPgPool()
   if (!pool) {
-    console.error('[db:migrate] DATABASE_URL is not set')
-    process.exit(1)
+    console.error('[db:migrate] DATABASE_URL is not set (pool unavailable)')
+    throw new Error('DATABASE_URL is not set')
   }
+
+  console.log('[db:migrate] connecting to database…')
+  await verifyDbConnection(pool)
 
   console.log('[db:migrate] Running Better Auth migrations…')
   execSync('npx @better-auth/cli migrate --yes --config server/auth.js', {
     stdio: 'inherit',
   })
+  console.log('[db:migrate] Better Auth migrations complete')
 
   await ensureMigrationTable(pool)
 
   console.log('[db:migrate] Ensuring base LMS schema (faculties, students, …)…')
   await ensureSchema(pool)
+  console.log('[db:migrate] Base LMS schema ready')
 
   const files = (await fs.readdir(migrationsDir))
     .filter((name) => name.endsWith('.sql'))
@@ -106,16 +165,26 @@ async function main() {
 
   console.log(`[db:migrate] Applying ${files.length} LMS SQL migration(s)…`)
   for (const filename of files) {
+    console.log(`[db:migrate] starting migration: ${filename}`)
     const sql = await fs.readFile(path.join(migrationsDir, filename), 'utf8')
     await runSqlMigration(pool, filename, sql)
   }
 
   console.log('[db:migrate] Done.')
-  await seedAdminIfNeeded(pool)
+  console.log('[db:migrate] running admin seed check…')
+  await seedAdminIfNeeded(pool, execSync)
+  console.log('[db:migrate] closing pool')
   await pool.end()
 }
 
-main().catch((err) => {
-  console.error('[db:migrate]', err?.message || err)
-  process.exit(1)
-})
+const scriptArg = String(process.argv[1] || '').replace(/\\/g, '/')
+const isDirectRun =
+  scriptArg.endsWith('/run-migrations.mjs') || scriptArg.endsWith('run-migrations.mjs')
+
+if (isDirectRun) {
+  runMigrations().catch((err) => {
+    console.error('[db:migrate] FAILED:', err?.message || err)
+    if (err?.stack) console.error(err.stack)
+    process.exit(1)
+  })
+}
