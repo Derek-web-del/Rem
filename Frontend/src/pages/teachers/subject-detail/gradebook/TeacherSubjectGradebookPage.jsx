@@ -124,10 +124,6 @@ export default function TeacherSubjectGradebookPage() {
           </div>
         ) : (
           <div className="gradebook-shell overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-sm">
-            <div className="rounded-t-xl border-b border-sky-100 bg-sky-50 px-4 py-2 text-xs text-sky-900">
-              This gradebook is <span className="font-semibold">view-only</span>. Grades are updated from
-              Assignments, Activities, and Quizzes submission grading — use the View link on each cell.
-            </div>
             <div className="gradebook-toolbar flex flex-wrap items-center justify-between gap-3 border-b border-neutral-200 bg-neutral-50 px-4 py-3">
               <div>
                 <p className="text-sm font-semibold text-neutral-900">Grade Book — {subjectLabel}</p>
