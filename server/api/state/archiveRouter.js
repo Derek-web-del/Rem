@@ -1,4 +1,4 @@
-import { requireAdminSession, logStatePostgresError, parseArchiveEntityType, obfuscateArchivedStudentForVault, obfuscateArchivedFacultyForVault, getFacultiesColumnSet, FACULTIES_FROM, purgeFacultyFromAppStateJson, auditInstituteRecord, omitStudentPassword, facultyRowToResponse } from './shared.js'
+import { requireAdminSession, logStatePostgresError, parseArchiveEntityType, obfuscateArchivedStudentForVault, obfuscateArchivedFacultyForVault, getFacultiesColumnSet, FACULTIES_FROM, purgeFacultyFromAppStateJson, auditInstituteRecord, omitStudentPassword, facultyRowToResponse, computeArchiveRetention } from './shared.js'
 import { sendSafeServerError } from '../../lib/safeApiError.js'
 import { requireDestructiveConfirm } from '../../lib/security.js'
 import { resolveArchiveTableSql } from '../../lib/sqlGuards.js'
@@ -269,14 +269,13 @@ export function registerArchiveRoutes(router, ctx) {
       }
 
       const archivedAt = new Date(snapshot.archived_at)
-      const oneYearAgo = new Date()
-      oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1)
+      const retention = computeArchiveRetention(archivedAt)
 
-      if (archivedAt > oneYearAgo) {
+      if (!retention.purge_eligible) {
         res.status(403).json({
           success: false,
           message:
-            'Security Restriction: Account must satisfy a 1-year retention hold before purging.',
+            'Security Restriction: Account must satisfy a 365-day retention hold before purging.',
         })
         return
       }

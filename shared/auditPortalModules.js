@@ -132,6 +132,13 @@ export function resolveInstituteActivityModule(activityType) {
   }
   if (activity.startsWith('ANNOUNCEMENT_')) return ADMIN_PORTAL_MODULES.ANNOUNCEMENTS
   if (activity === 'ARCHIVED_RECORD_ACCESSED') return ADMIN_PORTAL_MODULES.ARCHIVE_VAULT
+  if (
+    activity === 'ACCOUNT_AUTO_PURGED' ||
+    activity === 'ACCOUNT_AUTO_PURGE_WARNING' ||
+    activity === 'ACCOUNT_AUTO_PURGE_DRY_RUN'
+  ) {
+    return ADMIN_PORTAL_MODULES.ARCHIVE_VAULT
+  }
   if (activity === 'AUDIT_LOGS_CLEARED' || activity === 'AUDIT_LOG_DELETED') {
     return ADMIN_PORTAL_MODULES.AUDIT_LOGS
   }

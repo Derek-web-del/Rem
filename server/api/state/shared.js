@@ -84,6 +84,47 @@ export async function auditInstituteRecord(adminSession, activityType, payload =
   }
 }
 
+/** System-triggered audit events (scheduled jobs, auto-purge, etc.). */
+export async function auditSystemEvent(activityType, payload = {}) {
+  try {
+    await customActivityLogger.logInstituteRecordEvent('system', activityType, {
+      actorName: 'System',
+      actorEmail: null,
+      actorRole: 'system',
+      ...payload,
+    })
+  } catch (e) {
+    console.warn('[audit] system event log failed:', e?.message || e)
+  }
+}
+
+export const ARCHIVE_RETENTION_DAYS = 365
+
+export function computeArchiveRetention(archivedAt) {
+  const archived = archivedAt instanceof Date ? archivedAt : new Date(archivedAt)
+  if (Number.isNaN(archived.getTime())) {
+    return {
+      days_until_deletion: ARCHIVE_RETENTION_DAYS,
+      auto_delete_at: null,
+      warning_level: 'normal',
+      purge_eligible: false,
+    }
+  }
+  const elapsedMs = Date.now() - archived.getTime()
+  const elapsedDays = Math.floor(elapsedMs / (1000 * 60 * 60 * 24))
+  const days_until_deletion = Math.max(0, ARCHIVE_RETENTION_DAYS - elapsedDays)
+  const auto_delete_at = new Date(archived.getTime() + ARCHIVE_RETENTION_DAYS * 24 * 60 * 60 * 1000)
+  let warning_level = 'normal'
+  if (days_until_deletion === 1) warning_level = 'red'
+  else if (days_until_deletion > 0 && days_until_deletion <= 7) warning_level = 'amber'
+  return {
+    days_until_deletion,
+    auto_delete_at: auto_delete_at.toISOString(),
+    warning_level,
+    purge_eligible: days_until_deletion <= 0,
+  }
+}
+
 export function readStudentField(b, camel, snake) {
   const a = b?.[camel]
   const c = b?.[snake]
@@ -1095,6 +1136,7 @@ export function buildVaultStudentDisplayName(row) {
 export function obfuscateArchivedStudentForVault(row) {
   const decrypted = decryptStudentPiiFields(row)
   const archived_at = decrypted.archived_at
+  const retention = computeArchiveRetention(archived_at)
   return {
     id: decrypted.id,
     name: buildVaultStudentDisplayName(decrypted),
@@ -1103,6 +1145,7 @@ export function obfuscateArchivedStudentForVault(row) {
     last_name: String(decrypted.last_name || '').trim(),
     archived_at,
     archivedAt: archived_at,
+    ...retention,
     email: VAULT_OBFUSCATED_LABEL,
     contact_no: VAULT_OBFUSCATED_LABEL,
     contact_number: VAULT_OBFUSCATED_LABEL,
@@ -1124,6 +1167,7 @@ export function obfuscateArchivedFacultyForVault(row) {
     buildFacultyDisplayName(first_name, middle_name, last_name, '') ||
     VAULT_OBFUSCATED_LABEL
   const archived_at = row.archived_at
+  const retention = computeArchiveRetention(archived_at)
   return {
     id: String(row.id),
     name,
@@ -1132,6 +1176,7 @@ export function obfuscateArchivedFacultyForVault(row) {
     last_name,
     archived_at,
     archivedAt: archived_at,
+    ...retention,
     email: VAULT_OBFUSCATED_LABEL,
     contact_number: VAULT_OBFUSCATED_LABEL,
     contactNumber: VAULT_OBFUSCATED_LABEL,

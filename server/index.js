@@ -27,6 +27,10 @@ import { ensureUploadDirs, subjectAssetsRoot } from './lib/uploadPaths.js'
 import { createMonitoringRouter } from './routes/monitoring.js'
 import { createBackupRouter } from './routes/backup.js'
 import { startBackupScheduler, stopBackupScheduler } from './jobs/backupScheduler.js'
+import {
+  startArchiveCleanupScheduler,
+  stopArchiveCleanupScheduler,
+} from './jobs/archiveCleanupScheduler.js'
 import { ensureBackupSchema, isBackupDbConfigured } from './lib/backupSchema.js'
 import { getPgPool } from './pgPool.js'
 import { toWebOrigin } from './lib/webOrigin.js'
@@ -498,9 +502,11 @@ app.all('/api/auth/*', toNodeHandler(auth))
   }
   app.use('/api/backup', createBackupRouter(express, auth))
   startBackupScheduler()
+  startArchiveCleanupScheduler()
   const { closePgPool } = await import('./pgPool.js')
   app.locals.disposeAuthBackend = async () => {
     stopBackupScheduler()
+    stopArchiveCleanupScheduler()
     try {
       await stateApi.close?.()
     } catch {}

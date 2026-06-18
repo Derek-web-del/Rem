@@ -8,6 +8,8 @@ export const LNBAK_TABLE_KEYS = [
   'faculties',
   'faculty_sections',
   'subjects',
+  'subject_modules',
+  'subject_topics',
   'students',
   'announcements',
   'study_materials',

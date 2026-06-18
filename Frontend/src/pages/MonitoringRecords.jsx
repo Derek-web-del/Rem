@@ -184,6 +184,10 @@ const LMS_EVENTS_DROPDOWN = [
   { id: 'FACULTY_RESTORED', label: 'Faculty restored' },
   { id: 'FACULTY_PERMANENTLY_PURGED', label: 'Faculty permanently purged' },
   { id: 'FACULTY_IMMEDIATELY_PURGED', label: 'Faculty immediately purged' },
+  { id: 'ACCOUNT_AUTO_PURGED', label: 'Account auto-deleted after retention' },
+  { id: 'ACCOUNT_AUTO_PURGE_WARNING', label: 'Account auto-deletion warning' },
+  { id: 'ACCOUNT_AUTO_PURGE_DRY_RUN', label: 'Account auto-deletion dry-run' },
+  { id: 'ARCHIVED_RECORD_ACCESSED', label: 'Archived record viewed' },
   { id: 'BACKUP_SCHEDULE_UPDATED', label: 'Backup schedule updated' },
   { id: 'BACKUP_CREATED', label: 'Backup created' },
   { id: 'BACKUP_RESTORED', label: 'Data restored' },
@@ -766,6 +770,9 @@ function unifiedActivityLabel(e) {
   if (t === 'FACULTY_PERMANENTLY_PURGED') return 'Faculty permanently purged'
   if (t === 'FACULTY_IMMEDIATELY_PURGED') return 'Faculty immediately purged'
   if (t === 'ARCHIVED_RECORD_ACCESSED') return 'Archived record viewed'
+  if (t === 'ACCOUNT_AUTO_PURGED') return 'Account auto-deleted after retention'
+  if (t === 'ACCOUNT_AUTO_PURGE_WARNING') return 'Account auto-deletion warning'
+  if (t === 'ACCOUNT_AUTO_PURGE_DRY_RUN') return 'Account auto-deletion dry-run'
   if (t === 'GRADE_OVERRIDE') return 'Grade override'
   if (t === 'GOOGLE_DRIVE_CONNECTED' || t === 'google_drive_connected') return 'Google Drive Connected'
   if (t === 'GOOGLE_DRIVE_DISCONNECTED' || t === 'google_drive_disconnected') return 'Google Drive Disconnected'

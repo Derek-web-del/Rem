@@ -25,12 +25,74 @@ const BACKUP_CHECKLIST = [
 ]
 
 const RESTORE_STEPS = [
-  'Validating file…',
-  'Creating safety backup…',
-  'Restoring database…',
-  'Restoring uploaded files…',
-  'Complete!',
+  'Validating backup file',
+  'Creating safety snapshot',
+  'Restoring database',
+  'Restoring uploaded files',
+  'Verifying file integrity',
+  'Complete',
 ]
+
+async function runStreamRestore(url, { method = 'POST', body = null, onStep } = {}) {
+  const headers = { Accept: 'application/x-ndjson' }
+  if (body && !(body instanceof FormData)) {
+    headers['Content-Type'] = 'application/json'
+  }
+  const res = await fetch(url, {
+    method,
+    credentials: 'include',
+    headers,
+    body,
+  })
+  if (!res.ok && !res.body) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(String(err.message || err.error || `Restore failed (${res.status})`))
+  }
+  if (!res.body) {
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(String(data.message || data.error || 'Restore failed'))
+    return data
+  }
+
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let lastStep = 0
+  let finalResult = null
+  let streamError = null
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    const lines = buffer.split('\n')
+    buffer = lines.pop() || ''
+    for (const line of lines) {
+      const trimmed = line.trim()
+      if (!trimmed) continue
+      let event
+      try {
+        event = JSON.parse(trimmed)
+      } catch {
+        continue
+      }
+      if (event.type === 'progress' && typeof event.step === 'number') {
+        lastStep = event.step
+        if (onStep) onStep(event.step, event)
+      } else if (event.type === 'complete') {
+        finalResult = event
+      } else if (event.type === 'error') {
+        streamError = new Error(String(event.message || 'Restore failed'))
+      }
+    }
+  }
+
+  if (streamError) throw streamError
+  if (!res.ok && !finalResult) {
+    throw new Error(`Restore failed (${res.status})`)
+  }
+  return { ...(finalResult || {}), _lastStep: lastStep }
+}
 
 function formatRelativeTime(iso) {
   if (!iso) return '—'
@@ -447,24 +509,13 @@ export default function BackupPage() {
     setRestoreStep(0)
     setRestoreError('')
     try {
-      setRestoreStep(0)
-      await new Promise((r) => setTimeout(r, 400))
-      setRestoreStep(1)
       const form = new FormData()
       form.append('file', droppedFile)
-      setRestoreStep(2)
-      const res = await fetch(apiUrl('/api/backup/restore-upload'), {
-        method: 'POST',
-        credentials: 'include',
+      const data = await runStreamRestore(apiUrl('/api/backup/restore-upload?stream=1'), {
         body: form,
+        onStep: (step) => setRestoreStep(step),
       })
-      const data = await res.json().catch(() => ({}))
-      if (!res.ok) {
-        throw new Error(String(data.message || data.error || 'Restore failed'))
-      }
-      setRestoreStep(3)
-      await new Promise((r) => setTimeout(r, 300))
-      setRestoreStep(4)
+      setRestoreStep(5)
       setRestoreResult(data)
       setDroppedFile(null)
       setShowConfirm(false)
@@ -585,24 +636,31 @@ export default function BackupPage() {
   async function handleHistoryRestore() {
     if (!restoreTarget) return
     setHistoryRestoreSubmitting(true)
+    setIsRestoring(true)
+    setRestoreStep(0)
     try {
-      const res = await fetch(apiUrl(`/api/backup/${encodeURIComponent(restoreTarget.id)}/restore`), {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ confirm: 'RESTORE' }),
-      })
-      const data = await readJson(res)
+      const data = await runStreamRestore(
+        apiUrl(`/api/backup/${encodeURIComponent(restoreTarget.id)}/restore?stream=1`),
+        {
+          method: 'POST',
+          body: JSON.stringify({ confirm: 'RESTORE' }),
+          onStep: (step) => setRestoreStep(step),
+        },
+      )
+      setRestoreStep(5)
       setRestoreTarget(null)
       setHistoryRestoreConfirm('')
       setRestoreResult(data)
+      await loadAll()
       dispatchAuditLogsRefresh({ reason: 'backup_restored' })
       dispatchBackupRestored(data)
       toast.updated('Data restored from backup.', { title: 'Restored', durationMs: 6000 })
     } catch (err) {
       toast.error(String(err?.message || err), { title: 'Restore failed' })
+      setRestoreStep(0)
     } finally {
       setHistoryRestoreSubmitting(false)
+      setIsRestoring(false)
     }
   }
 
@@ -905,6 +963,8 @@ export default function BackupPage() {
                 <li key={step} className={idx <= restoreStep ? 'font-semibold' : 'text-blue-600/70'}>
                   {idx < restoreStep ? '✓ ' : idx === restoreStep ? '→ ' : '  '}
                   {step}
+                  {idx === 2 && restoreStep >= 2 ? ' (all tables)' : ''}
+                  {idx === 3 && restoreStep >= 3 ? ' (uploaded files)' : ''}
                 </li>
               ))}
             </ul>
@@ -924,6 +984,7 @@ export default function BackupPage() {
                 <th className="px-4 py-3">Type</th>
                 <th className="px-4 py-3">Size</th>
                 <th className="px-4 py-3">Tables</th>
+                <th className="px-4 py-3">Files</th>
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3">Google Drive</th>
                 <th className="px-4 py-3 text-right">Actions</th>
@@ -932,13 +993,13 @@ export default function BackupPage() {
             <tbody className="divide-y divide-neutral-100">
               {loading ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-neutral-500">
+                  <td colSpan={8} className="px-4 py-8 text-center text-neutral-500">
                     Loading backups…
                   </td>
                 </tr>
               ) : backups.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-neutral-500">
+                  <td colSpan={8} className="px-4 py-8 text-center text-neutral-500">
                     No backups yet. Create your first backup above.
                   </td>
                 </tr>
@@ -963,6 +1024,9 @@ export default function BackupPage() {
                         {row.size_mb != null ? formatStorage(row.size_mb) : '—'}
                       </td>
                       <td className="px-4 py-3 text-neutral-700">{row.table_count ?? row.tables_included?.length ?? '—'}</td>
+                      <td className="px-4 py-3 text-neutral-700">
+                        {row.files_backed_up != null ? row.files_backed_up.toLocaleString() : '—'}
+                      </td>
                       <td className="px-4 py-3">
                         <StatusBadge status={row.status} />
                       </td>
@@ -1066,7 +1130,19 @@ export default function BackupPage() {
             </p>
             <p className="mt-1 text-xs text-neutral-500">
               Files restored: {restoreResult.files_restored ? 'Yes' : 'No (see server logs)'}
+              {restoreResult.files_restored_count != null
+                ? ` (${Number(restoreResult.files_restored_count).toLocaleString()} files in backup)`
+                : ''}
             </p>
+            {restoreResult.file_verification ? (
+              <p className="mt-1 text-xs text-neutral-500">
+                File verification: {restoreResult.file_verification.verified}/
+                {restoreResult.file_verification.sample_checked} sample paths OK
+                {restoreResult.file_verification.missing?.length
+                  ? ` · ${restoreResult.file_verification.missing.length} missing`
+                  : ''}
+              </p>
+            ) : null}
             <div className="mt-4 rounded-lg border border-neutral-100 bg-neutral-50 px-3 py-3 text-sm text-neutral-800">
               <p className="font-semibold text-neutral-900">Institute data after restore</p>
               <p className="mt-2">
@@ -1206,6 +1282,16 @@ export default function BackupPage() {
                 autoComplete="off"
               />
             </label>
+            {historyRestoreSubmitting ? (
+              <ul className="mt-4 space-y-1 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-sm text-blue-800">
+                {RESTORE_STEPS.map((step, idx) => (
+                  <li key={`hist-${step}`} className={idx <= restoreStep ? 'font-semibold' : 'text-blue-600/70'}>
+                    {idx < restoreStep ? '✓ ' : idx === restoreStep ? '→ ' : '  '}
+                    {step}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
             <div className="mt-6 flex justify-end gap-2">
               <button
                 type="button"

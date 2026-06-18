@@ -11,7 +11,6 @@ import {
   getBackupById,
   getBackupStats,
   runBackupJob,
-  restoreFromBackupFile,
   deleteBackupRecord,
   getScheduleSettings,
   updateScheduleSettings,
@@ -28,10 +27,7 @@ import {
   exportBackupData,
   writeLnbakArchiveToPath,
   readLnbakFromPath,
-  validateLnbakParsed,
-  createSafetyBackup,
-  restoreDatabaseFromParsed,
-  completeRestoreAfterDatabase,
+  runRestorePipeline,
 } from '../lib/lnbakEngine.js'
 import { getPgPool } from '../pgPool.js'
 
@@ -78,6 +74,38 @@ function backupUnavailable(res) {
 
 function validationError(res, message) {
   res.status(400).json({ success: false, message })
+}
+
+function wantsStreamRestore(req) {
+  return (
+    String(req.query?.stream || '').trim() === '1' ||
+    String(req.headers.accept || '').includes('application/x-ndjson')
+  )
+}
+
+async function executeStreamRestore(res, runner) {
+  res.setHeader('Content-Type', 'application/x-ndjson')
+  res.setHeader('Cache-Control', 'no-cache')
+  res.flushHeaders?.()
+
+  const writeEvent = (payload) => {
+    res.write(`${JSON.stringify(payload)}\n`)
+  }
+
+  try {
+    const result = await runner((event) => {
+      writeEvent({ type: 'progress', ...event })
+    })
+    writeEvent({ type: 'complete', success: true, ...result })
+    res.end()
+  } catch (e) {
+    writeEvent({
+      type: 'error',
+      success: false,
+      message: String(e?.message || e),
+    })
+    res.end()
+  }
 }
 
 export function createBackupRouter(express, auth) {
@@ -148,22 +176,23 @@ export function createBackupRouter(express, auth) {
       const backupId = randomUUID()
       const pool = getPgPool()
       await ensureBackupSchema(pool)
-      const { meta, data } = await exportBackupData(pool, { createdBy: actor.id })
+      const { meta, data, manifest } = await exportBackupData(pool, { createdBy: actor.id })
 
       const dateStr = new Date().toISOString().slice(0, 10)
       const downloadName = `backup_manual_${dateStr}.lnbak`
       const diskName = buildLnbakFilename(type)
       const diskPath = path.join(BACKUPS_DIR, diskName)
 
-      const { sizeMb, filePath } = await writeLnbakArchiveToPath({
+      const { sizeMb, filePath, files_backed_up, uploads_size_bytes } = await writeLnbakArchiveToPath({
         meta,
         data,
         diskPath,
+        manifest,
       })
 
       await pool.query(
-        `INSERT INTO public.backups (id, name, type, status, size_mb, file_path, notes, tables_included, created_by, completed_at)
-         VALUES ($1, $2, $3, 'completed', $4, $5, $6, $7, $8, NOW())`,
+        `INSERT INTO public.backups (id, name, type, status, size_mb, file_path, notes, tables_included, created_by, completed_at, files_backed_up, uploads_size_bytes)
+         VALUES ($1, $2, $3, 'completed', $4, $5, $6, $7, $8, NOW(), $9, $10)`,
         [
           backupId,
           downloadName.replace('.lnbak', ''),
@@ -173,6 +202,8 @@ export function createBackupRouter(express, auth) {
           req.body?.notes || null,
           LNBAK_TABLE_KEYS,
           actor.id,
+          files_backed_up ?? null,
+          uploads_size_bytes ?? null,
         ],
       )
 
@@ -199,7 +230,7 @@ export function createBackupRouter(express, auth) {
         backupId,
         backupName: downloadName,
         description: `Manual backup "${downloadName}" created and downloaded`,
-        details: { tablesCount: LNBAK_TABLE_KEYS.length, sizeMb, gdrive },
+        details: { tablesCount: LNBAK_TABLE_KEYS.length, sizeMb, files_backed_up, gdrive },
       })
 
       await new Promise((resolve, reject) => {
@@ -228,64 +259,57 @@ export function createBackupRouter(express, auth) {
         return
       }
 
-      let parsed
-      let uploadsBuffer
-      let uploadsPath
+      let opened
       try {
-        const opened = await readLnbakFromPath(uploadPath)
-        parsed = opened.parsed
-        uploadsBuffer = opened.uploadsBuffer
-        uploadsPath = opened.uploadsPath
+        opened = await readLnbakFromPath(uploadPath)
       } catch (e) {
         validationError(res, String(e?.message || e))
         return
       }
 
-      try {
-        validateLnbakParsed(parsed)
-      } catch (e) {
-        validationError(res, String(e?.message || e))
-        return
-      }
+      const { parsed, uploadsBuffer, uploadsPath, manifest, subjectAssetsPath, subjectAssetsBuffer } = opened
 
-      let safetyBackup
-      try {
-        safetyBackup = await createSafetyBackup(actor.id)
-      } catch (e) {
-        res.status(500).json({
-          success: false,
-          message: 'Could not create safety backup before restore.',
-          error: String(e?.message || e),
+      const runRestore = async (onProgress) =>
+        runRestorePipeline({
+          parsed,
+          uploadsSource: uploadsPath || uploadsBuffer,
+          subjectAssetsSource: subjectAssetsPath || subjectAssetsBuffer,
+          manifest,
+          createdBy: actor.id,
+          createSafety: true,
+          onProgress,
+        })
+
+      if (wantsStreamRestore(req)) {
+        await executeStreamRestore(res, async (onProgress) => {
+          const restoreDetails = await runRestore(onProgress)
+          await logBackupAudit(actor, 'BACKUP_RESTORED', {
+            backupId: null,
+            backupName: req.file.originalname,
+            description: `Data restored from uploaded backup (${req.file.originalname})`,
+            details: { restoredAt: new Date().toISOString(), ...restoreDetails },
+          })
+          return {
+            message: 'Restore completed successfully',
+            restored_at: new Date().toISOString(),
+            ...restoreDetails,
+          }
         })
         return
       }
 
-      try {
-        await restoreDatabaseFromParsed(parsed)
-      } catch (e) {
-        const detail = String(e?.message || e)
-        res.status(500).json({
-          success: false,
-          message: `Restore failed — rolled back. ${detail}`,
-          error: detail,
-        })
-        return
-      }
-
-      const restoreDetails = await completeRestoreAfterDatabase(parsed, uploadsPath || uploadsBuffer)
-
+      const restoreDetails = await runRestore()
       await logBackupAudit(actor, 'BACKUP_RESTORED', {
         backupId: null,
         backupName: req.file.originalname,
         description: `Data restored from uploaded backup (${req.file.originalname})`,
-        details: { restoredAt: new Date().toISOString(), safetyBackup, ...restoreDetails },
+        details: { restoredAt: new Date().toISOString(), ...restoreDetails },
       })
 
       res.json({
         success: true,
         message: 'Restore completed successfully',
         restored_at: new Date().toISOString(),
-        safety_backup: safetyBackup,
         ...restoreDetails,
       })
     } catch (e) {
@@ -301,7 +325,9 @@ export function createBackupRouter(express, auth) {
         validationError(res, `Backup file exceeds ${cap} restore upload limit.`)
         return
       }
-      sendSafeServerError(res, e, 'POST /api/backup/restore-upload')
+      if (!res.headersSent) {
+        sendSafeServerError(res, e, 'POST /api/backup/restore-upload')
+      }
     } finally {
       if (uploadPath) {
         await fsp.unlink(uploadPath).catch(() => {})
@@ -467,30 +493,49 @@ export function createBackupRouter(express, auth) {
         return
       }
       const actor = actorFromSession(session)
-      let safetyBackup
-      try {
-        safetyBackup = await createSafetyBackup(actor.id)
-      } catch (e) {
-        res.status(500).json({
-          success: false,
-          message: 'Could not create safety backup before restore.',
-          error: String(e?.message || e),
+      const opened = await readLnbakFromPath(row.file_path)
+
+      const runRestore = async (onProgress) =>
+        runRestorePipeline({
+          parsed: opened.parsed,
+          uploadsSource: opened.uploadsPath || opened.uploadsBuffer,
+          subjectAssetsSource: opened.subjectAssetsPath || opened.subjectAssetsBuffer,
+          manifest: opened.manifest,
+          createdBy: actor.id,
+          createSafety: true,
+          onProgress,
+        })
+
+      if (wantsStreamRestore(req)) {
+        await executeStreamRestore(res, async (onProgress) => {
+          const restoreDetails = await runRestore(onProgress)
+          await logBackupAudit(actor, 'BACKUP_RESTORED', {
+            backupId: row.id,
+            backupName: row.name,
+            description: `Data restored from backup "${row.name}"`,
+            details: { restoredAt: new Date().toISOString(), ...restoreDetails },
+          })
+          return {
+            message: 'Restore completed successfully',
+            restored_at: new Date().toISOString(),
+            ...restoreDetails,
+          }
         })
         return
       }
-      const restoreDetails = await restoreFromBackupFile(row.file_path, row.tables_included)
+
+      const restoreDetails = await runRestore()
       await logBackupAudit(actor, 'BACKUP_RESTORED', {
         backupId: row.id,
         backupName: row.name,
         description: `Data restored from backup "${row.name}"`,
-        details: { restoredAt: new Date().toISOString(), safetyBackup, ...restoreDetails },
+        details: { restoredAt: new Date().toISOString(), ...restoreDetails },
       })
       res.json({
         ok: true,
         success: true,
         message: 'Restore completed successfully',
         restored_at: new Date().toISOString(),
-        safety_backup: safetyBackup,
         ...restoreDetails,
       })
     } catch (e) {

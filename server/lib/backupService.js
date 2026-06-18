@@ -72,6 +72,8 @@ export function mapBackupRow(row) {
     file_path: filePath,
     filename: filePath ? path.basename(filePath) : null,
     table_count: Array.isArray(row.tables_included) ? row.tables_included.length : LNBAK_TABLE_KEYS.length,
+    files_backed_up: row.files_backed_up != null ? Number(row.files_backed_up) : null,
+    uploads_size_bytes: row.uploads_size_bytes != null ? Number(row.uploads_size_bytes) : null,
     gdrive_file_id: row.gdrive_file_id ? String(row.gdrive_file_id) : null,
     gdrive_link: row.gdrive_link ? String(row.gdrive_link) : null,
     gdrive_uploaded_at: row.gdrive_uploaded_at || null,
@@ -83,6 +85,7 @@ export async function listBackups() {
   await ensureBackupSchema(pool)
   const { rows } = await pool.query(
     `SELECT id, name, type, status, size_mb, notes, tables_included, file_path, created_by, created_at, completed_at, error_message,
+            files_backed_up, uploads_size_bytes,
             gdrive_file_id, gdrive_link, gdrive_uploaded_at
      FROM public.backups ORDER BY created_at DESC`,
   )
@@ -142,12 +145,15 @@ export async function restoreFromBackupFile(filePath, tableKeys = null) {
   }
   const isZip = header[0] === 0x50 && header[1] === 0x4b
   if (isZip) {
-    const { readLnbakFromPath, validateLnbakParsed, restoreDatabaseFromParsed, completeRestoreAfterDatabase } =
-      await import('./lnbakEngine.js')
-    const { parsed, uploadsBuffer, uploadsPath } = await readLnbakFromPath(filePath)
-    validateLnbakParsed(parsed)
-    await restoreDatabaseFromParsed(parsed)
-    return completeRestoreAfterDatabase(parsed, uploadsPath || uploadsBuffer)
+    const { readLnbakFromPath, runRestorePipeline } = await import('./lnbakEngine.js')
+    const opened = await readLnbakFromPath(filePath)
+    return runRestorePipeline({
+      parsed: opened.parsed,
+      uploadsSource: opened.uploadsPath || opened.uploadsBuffer,
+      subjectAssetsSource: opened.subjectAssetsPath || opened.subjectAssetsBuffer,
+      manifest: opened.manifest,
+      createSafety: false,
+    })
   }
 
   const raw = await fs.readFile(filePath)
@@ -214,15 +220,21 @@ export async function runBackupJob({
   )
 
   try {
-    const { meta, data } = await exportBackupData(pool, { createdBy })
+    const { meta, data, manifest } = await exportBackupData(pool, { createdBy })
     const filename = buildLnbakFilename(type)
     const filePath = path.join(BACKUPS_DIR, filename)
-    const { sizeMb } = await writeLnbakArchiveToPath({ meta, data, diskPath: filePath })
+    const { sizeMb, files_backed_up, uploads_size_bytes } = await writeLnbakArchiveToPath({
+      meta,
+      data,
+      diskPath: filePath,
+      manifest,
+    })
     await pool.query(
       `UPDATE public.backups
-       SET status = 'completed', size_mb = $2, file_path = $3, completed_at = NOW(), error_message = NULL
+       SET status = 'completed', size_mb = $2, file_path = $3, completed_at = NOW(), error_message = NULL,
+           files_backed_up = $4, uploads_size_bytes = $5
        WHERE id = $1`,
-      [backupId, sizeMb, filePath],
+      [backupId, sizeMb, filePath, files_backed_up ?? null, uploads_size_bytes ?? null],
     )
 
     let gdrive = { uploaded: false, skipped: true, failed: false }
@@ -256,6 +268,8 @@ export async function runBackupJob({
       size_mb: sizeMb,
       file_path: filePath,
       filename: path.basename(filePath),
+      files_backed_up,
+      uploads_size_bytes,
       gdrive,
     }
   } catch (e) {

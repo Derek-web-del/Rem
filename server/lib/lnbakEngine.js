@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import fsp from 'node:fs/promises'
 import path from 'node:path'
-import { createHmac, timingSafeEqual, randomUUID } from 'node:crypto'
+import { createHmac, timingSafeEqual, randomUUID, createHash } from 'node:crypto'
 import { PassThrough } from 'node:stream'
 import { finished, pipeline } from 'node:stream/promises'
 import { spawn } from 'node:child_process'
@@ -22,7 +22,7 @@ import {
 import { filterFacultyRowKeys } from './sqlGuards.js'
 import { repairFacultyAuthLinks, buildFacultyRestoreReport } from './repairFacultyAuthLinks.js'
 import { repairStudentAuthLinks } from './repairStudentAuthLinks.js'
-import { uploadsRoot } from './uploadPaths.js'
+import { uploadsRoot, subjectAssetsRoot, resolvePublicUploadPath } from './uploadPaths.js'
 
 const require = createRequire(import.meta.url)
 const archiverLib = require('archiver')
@@ -50,6 +50,7 @@ const unzipper = unzipperLib.default ?? unzipperLib
 export const BACKUPS_DIR = path.join(process.cwd(), 'backups')
 export const BACKUP_UPLOADS_DIR = path.join(BACKUPS_DIR, '.uploads')
 export const UPLOADS_DIR = uploadsRoot()
+export const SUBJECT_ASSETS_DIR = subjectAssetsRoot()
 
 export const LNBAK_TABLE_ORDER = [
   'user',
@@ -60,6 +61,8 @@ export const LNBAK_TABLE_ORDER = [
   'faculties',
   'faculty_sections',
   'subjects',
+  'subject_modules',
+  'subject_topics',
   'students',
   'announcements',
   'study_materials',
@@ -88,6 +91,8 @@ const RESTORE_PARENT_KEYS = {
   faculty_sections: 'faculties',
   assignment_submissions: 'assignments',
   activity_submissions: 'activities',
+  subject_modules: 'subjects',
+  subject_topics: 'subjects',
   quiz_parts: 'quizzes',
   quiz_questions: 'quizzes',
   quiz_choices: 'quizzes',
@@ -106,6 +111,8 @@ const TABLE_FROM_SQL = {
   faculties: 'public.faculties',
   faculty_sections: 'public.faculty_sections',
   subjects: 'public.subjects',
+  subject_modules: 'public.subject_modules',
+  subject_topics: 'public.subject_topics',
   students: 'public.students',
   announcements: 'public.announcements',
   study_materials: 'public.study_materials',
@@ -136,6 +143,8 @@ const TABLE_SELECT_SQL = {
   faculties: 'SELECT * FROM public.faculties ORDER BY updated_at DESC NULLS LAST, id',
   faculty_sections: 'SELECT * FROM public.faculty_sections ORDER BY faculty_id, section_id',
   subjects: 'SELECT * FROM public.subjects ORDER BY id',
+  subject_modules: 'SELECT * FROM public.subject_modules ORDER BY subject_id, module_order ASC, id ASC',
+  subject_topics: 'SELECT * FROM public.subject_topics ORDER BY subject_id, topic_order ASC, id ASC',
   students: 'SELECT * FROM public.students ORDER BY id',
   announcements: 'SELECT * FROM public.announcements ORDER BY created_at NULLS LAST, id',
   study_materials: 'SELECT * FROM public.study_materials ORDER BY id',
@@ -161,6 +170,8 @@ const TABLES_WITH_SERIAL_ID = new Set([
   'curriculum',
   'sections',
   'subjects',
+  'subject_modules',
+  'subject_topics',
   'students',
   'announcements',
   'study_materials',
@@ -944,6 +955,140 @@ function countCurriculumsInAppStateSnapshot(appStateRows) {
   return Array.isArray(json?.curriculums) ? json.curriculums.length : 0
 }
 
+async function walkDirForManifest(rootDir, pathPrefix) {
+  const files = []
+  const files_by_category = {}
+  let total_bytes = 0
+
+  async function walk(dir, relPrefix) {
+    let entries
+    try {
+      entries = await fsp.readdir(dir, { withFileTypes: true })
+    } catch {
+      return
+    }
+    for (const ent of entries) {
+      const rel = relPrefix ? `${relPrefix}/${ent.name}` : ent.name
+      const abs = path.join(dir, ent.name)
+      if (ent.isDirectory()) {
+        await walk(abs, rel)
+      } else if (ent.isFile()) {
+        const st = await fsp.stat(abs)
+        const hash = createHash('sha256')
+        hash.update(await fsp.readFile(abs))
+        const storedPath = pathPrefix ? `${pathPrefix}/${rel}` : rel
+        files.push({
+          path: storedPath,
+          size_bytes: st.size,
+          sha256: hash.digest('hex'),
+        })
+        total_bytes += st.size
+        const cat = storedPath.split('/')[0] || 'root'
+        files_by_category[cat] = (files_by_category[cat] || 0) + 1
+      }
+    }
+  }
+
+  await walk(rootDir, '')
+  return { files, files_by_category, total_bytes, files_backed_up: files.length }
+}
+
+export async function buildBackupManifest({ row_counts, metaBase, uploadsDir = UPLOADS_DIR, assetsDir = SUBJECT_ASSETS_DIR }) {
+  const uploads = await walkDirForManifest(uploadsDir, 'uploads')
+  let assets = { files: [], files_by_category: {}, total_bytes: 0, files_backed_up: 0 }
+  try {
+    const st = await fsp.stat(assetsDir)
+    if (st.isDirectory()) {
+      assets = await walkDirForManifest(assetsDir, 'assets/subjects')
+    }
+  } catch {
+    /* optional assets dir */
+  }
+
+  const files_by_category = { ...uploads.files_by_category }
+  for (const [k, v] of Object.entries(assets.files_by_category)) {
+    files_by_category[k] = (files_by_category[k] || 0) + v
+  }
+
+  return {
+    manifest_version: 1,
+    created_at: metaBase.created_at,
+    schema_version: metaBase.schema_version,
+    files_backed_up: uploads.files_backed_up + assets.files_backed_up,
+    uploads_size_bytes: uploads.total_bytes + assets.total_bytes,
+    files_by_category,
+    row_counts,
+    files: [...uploads.files, ...assets.files],
+  }
+}
+
+const DB_FILE_PATH_FIELDS = [
+  'photo_url',
+  'file_path',
+  'file_url',
+  'submission_file',
+  'announcement_image',
+  'image_path',
+  'syllabus_pdf',
+  'pdf_path',
+  'lesson_pdf',
+  'attachment_path',
+]
+
+function collectDbFilePaths(parsed, limit = 50) {
+  const paths = new Set()
+  for (const key of LNBAK_TABLE_ORDER) {
+    const rows = parsed?.data?.[key]
+    if (!Array.isArray(rows)) continue
+    for (const row of rows) {
+      for (const field of DB_FILE_PATH_FIELDS) {
+        const val = String(row?.[field] || '').trim()
+        if (!val || val.startsWith('data:') || val.startsWith('http')) continue
+        if (val.startsWith('/uploads/') || val.startsWith('uploads/')) {
+          paths.add(val.startsWith('/') ? val : `/${val}`)
+        }
+      }
+      if (paths.size >= limit) return [...paths]
+    }
+  }
+  return [...paths]
+}
+
+export async function verifyRestoredFiles(parsed, manifest = null) {
+  const samplePaths = collectDbFilePaths(parsed, 50)
+  const missing = []
+  let verified = 0
+  for (const storedPath of samplePaths) {
+    const resolved = resolvePublicUploadPath(storedPath)
+    if (!resolved) continue
+    try {
+      await fsp.access(resolved, fs.constants.F_OK)
+      verified++
+    } catch {
+      missing.push(storedPath)
+    }
+  }
+
+  const warnings = []
+  if (manifest?.files_backed_up != null) {
+    const expected = Number(manifest.files_backed_up)
+    const actual = Number(manifest.files?.length ?? expected)
+    if (expected > 0 && actual !== expected) {
+      warnings.push(`Manifest file count mismatch: expected ${expected}, listed ${actual}`)
+    }
+  } else if (parsed?.meta?.files_backed_up != null) {
+    warnings.push('Backup manifest missing — file count verification skipped')
+  }
+
+  return {
+    verified,
+    missing,
+    sample_checked: samplePaths.length,
+    warnings,
+    ok: missing.length === 0,
+  }
+}
+
 export async function exportBackupData(pool, { createdBy = null } = {}) {
   const data = {}
   const row_counts = {}
@@ -1045,7 +1190,7 @@ export async function exportBackupData(pool, { createdBy = null } = {}) {
     console.error(`[BACKUP] ${msg}`)
   }
 
-  const meta = {
+  const metaBase = {
     app: 'lenlearn',
     version: '1',
     created_at: new Date().toISOString(),
@@ -1056,23 +1201,39 @@ export async function exportBackupData(pool, { createdBy = null } = {}) {
     ...(export_warnings.length ? { export_warnings } : {}),
   }
 
+  const manifest = await buildBackupManifest({ row_counts, metaBase })
+  const meta = {
+    ...metaBase,
+    files_backed_up: manifest.files_backed_up,
+    uploads_size_bytes: manifest.uploads_size_bytes,
+    manifest_version: 1,
+  }
+
   const hmac = computeBackupHmac(meta, data)
-  return { meta: { ...meta, hmac }, data }
+  return { meta: { ...meta, hmac }, data, manifest }
 }
 
-function appendUploadsTarGz(archive, uploadsDir) {
+function appendDirTarGz(archive, dirPath, tarName) {
   const tar = archiver('tar', { gzip: true, gzipOptions: { level: 9 } })
-  archive.append(tar, { name: 'uploads_archive.tar.gz' })
+  archive.append(tar, { name: tarName })
 
   return fsp
-    .stat(uploadsDir)
+    .stat(dirPath)
     .then((st) => {
-      if (st.isDirectory()) tar.directory(uploadsDir, false)
+      if (st.isDirectory()) tar.directory(dirPath, false)
     })
     .catch(() => {
       /* empty tar.gz */
     })
     .then(() => tar.finalize())
+}
+
+function appendUploadsTarGz(archive, uploadsDir) {
+  return appendDirTarGz(archive, uploadsDir, 'uploads_archive.tar.gz')
+}
+
+function appendSubjectAssetsTarGz(archive, assetsDir) {
+  return appendDirTarGz(archive, assetsDir, 'subject_assets_archive.tar.gz')
 }
 
 function teeStream(source, destinations) {
@@ -1098,9 +1259,28 @@ export function buildLnbakFilename(type = 'manual') {
   return `backup_${type}_${dateStr}.lnbak`
 }
 
-export async function writeLnbakArchiveToPath({ meta, data, diskPath, uploadsDir = UPLOADS_DIR }) {
+export async function writeLnbakArchiveToPath({
+  meta,
+  data,
+  diskPath,
+  uploadsDir = UPLOADS_DIR,
+  assetsDir = SUBJECT_ASSETS_DIR,
+  manifest = null,
+}) {
   ensureBackupsDirectory()
   await fsp.mkdir(path.dirname(diskPath), { recursive: true })
+
+  const manifestPayload =
+    manifest ||
+    (await buildBackupManifest({
+      row_counts: meta?.row_counts || {},
+      metaBase: {
+        created_at: meta?.created_at || new Date().toISOString(),
+        schema_version: meta?.schema_version || getLatestMigrationFilename(),
+      },
+      uploadsDir,
+      assetsDir,
+    }))
 
   const dumpString = JSON.stringify({ meta, data })
   const archive = archiver('zip', { zlib: { level: 9 } })
@@ -1118,17 +1298,45 @@ export async function writeLnbakArchiveToPath({ meta, data, diskPath, uploadsDir
   })
 
   archive.append(dumpString, { name: 'database_dump.json' })
+  archive.append(JSON.stringify(manifestPayload), { name: 'backup_manifest.json' })
   await appendUploadsTarGz(archive, uploadsDir)
+  await appendSubjectAssetsTarGz(archive, assetsDir)
   archive.finalize()
   await done
 
   const stats = await fsp.stat(diskPath)
-  return { filePath: diskPath, sizeBytes: stats.size, sizeMb: Number((stats.size / (1024 * 1024)).toFixed(2)) }
+  return {
+    filePath: diskPath,
+    sizeBytes: stats.size,
+    sizeMb: Number((stats.size / (1024 * 1024)).toFixed(2)),
+    files_backed_up: manifestPayload.files_backed_up,
+    uploads_size_bytes: manifestPayload.uploads_size_bytes,
+  }
 }
 
-export async function streamLnbakArchiveToResponse({ meta, data, res, diskPath, uploadsDir = UPLOADS_DIR }) {
+export async function streamLnbakArchiveToResponse({
+  meta,
+  data,
+  res,
+  diskPath,
+  uploadsDir = UPLOADS_DIR,
+  assetsDir = SUBJECT_ASSETS_DIR,
+  manifest = null,
+}) {
   ensureBackupsDirectory()
   await fsp.mkdir(path.dirname(diskPath), { recursive: true })
+
+  const manifestPayload =
+    manifest ||
+    (await buildBackupManifest({
+      row_counts: meta?.row_counts || {},
+      metaBase: {
+        created_at: meta?.created_at || new Date().toISOString(),
+        schema_version: meta?.schema_version || getLatestMigrationFilename(),
+      },
+      uploadsDir,
+      assetsDir,
+    }))
 
   const dumpString = JSON.stringify({ meta, data })
   const archive = archiver('zip', { zlib: { level: 9 } })
@@ -1146,17 +1354,27 @@ export async function streamLnbakArchiveToResponse({ meta, data, res, diskPath, 
 
   const fileDone = finished(fileStream)
   archive.append(dumpString, { name: 'database_dump.json' })
+  archive.append(JSON.stringify(manifestPayload), { name: 'backup_manifest.json' })
   await appendUploadsTarGz(archive, uploadsDir)
+  await appendSubjectAssetsTarGz(archive, assetsDir)
   archive.finalize()
 
   await fileDone
   const stats = await fsp.stat(diskPath)
-  return { filePath: diskPath, sizeBytes: stats.size, sizeMb: Number((stats.size / (1024 * 1024)).toFixed(2)) }
+  return {
+    filePath: diskPath,
+    sizeBytes: stats.size,
+    sizeMb: Number((stats.size / (1024 * 1024)).toFixed(2)),
+    files_backed_up: manifestPayload.files_backed_up,
+    uploads_size_bytes: manifestPayload.uploads_size_bytes,
+  }
 }
 
-async function parseLnbakZip(zip, { uploadsToDisk = false } = {}) {
+async function parseLnbakZip(zip, { uploadsToDisk = false, assetsToDisk = false } = {}) {
   const dumpEntry = zip.files.find((f) => f.path === 'database_dump.json')
   const uploadsEntry = zip.files.find((f) => f.path === 'uploads_archive.tar.gz')
+  const manifestEntry = zip.files.find((f) => f.path === 'backup_manifest.json')
+  const assetsEntry = zip.files.find((f) => f.path === 'subject_assets_archive.tar.gz')
   if (!dumpEntry || !uploadsEntry) {
     throw new Error('Invalid archive structure')
   }
@@ -1168,14 +1386,36 @@ async function parseLnbakZip(zip, { uploadsToDisk = false } = {}) {
     throw new Error('Invalid JSON in backup file')
   }
 
+  let manifest = null
+  if (manifestEntry) {
+    try {
+      manifest = JSON.parse((await manifestEntry.buffer()).toString('utf8'))
+    } catch {
+      manifest = null
+    }
+  }
+
   if (uploadsToDisk) {
     const uploadsPath = path.join(tmpdir(), `lnbak-uploads-${randomUUID()}.tar.gz`)
     await pipeline(uploadsEntry.stream(), fs.createWriteStream(uploadsPath))
-    return { parsed, uploadsPath, uploadsBuffer: null }
+    let subjectAssetsPath = null
+    if (assetsEntry && assetsToDisk) {
+      subjectAssetsPath = path.join(tmpdir(), `lnbak-assets-${randomUUID()}.tar.gz`)
+      await pipeline(assetsEntry.stream(), fs.createWriteStream(subjectAssetsPath))
+    }
+    return { parsed, uploadsPath, uploadsBuffer: null, manifest, subjectAssetsPath, subjectAssetsBuffer: null }
   }
 
   const uploadsBuffer = await uploadsEntry.buffer()
-  return { parsed, uploadsBuffer, uploadsPath: null }
+  const subjectAssetsBuffer = assetsEntry ? await assetsEntry.buffer() : null
+  return {
+    parsed,
+    uploadsBuffer,
+    uploadsPath: null,
+    manifest,
+    subjectAssetsPath: null,
+    subjectAssetsBuffer,
+  }
 }
 
 export async function readLnbakBuffer(buffer) {
@@ -1210,6 +1450,9 @@ export function validateLnbakParsed(parsed) {
   }
   warnOrphanFacultyRefsInParsed(parsed)
   const warnings = collectRestorePreflightWarnings(parsed)
+  if (!parsed?.meta?.manifest_version) {
+    warnings.push('Backup manifest missing — file integrity verification will be limited')
+  }
   if (warnings.length) {
     parsed.meta = { ...(parsed.meta || {}), restore_warnings: warnings }
     for (const w of warnings) console.warn(`[BACKUP] ${w}`)
@@ -1347,6 +1590,28 @@ async function extractTarGzToUploads(tarGzBuffer, uploadsDir = UPLOADS_DIR) {
   }
 }
 
+export async function extractSubjectAssetsArchive(assetsSource) {
+  if (!assetsSource) return true
+  try {
+    if (typeof assetsSource === 'string' && assetsSource) {
+      await extractTarGzFromPath(assetsSource, SUBJECT_ASSETS_DIR)
+      await fsp.unlink(assetsSource).catch(() => {})
+    } else if (Buffer.isBuffer(assetsSource)) {
+      const tempFile = path.join(tmpdir(), `lnbak-assets-${randomUUID()}.tar.gz`)
+      await fsp.writeFile(tempFile, assetsSource)
+      try {
+        await extractTarGzFromPath(tempFile, SUBJECT_ASSETS_DIR)
+      } finally {
+        await fsp.unlink(tempFile).catch(() => {})
+      }
+    }
+    return true
+  } catch (e) {
+    console.warn('[BACKUP] Subject assets extraction failed:', e?.message || e)
+    return false
+  }
+}
+
 export async function extractUploadsArchive(uploadsSource) {
   try {
     if (typeof uploadsSource === 'string' && uploadsSource) {
@@ -1381,11 +1646,11 @@ export async function insertRestoreAuditLog(parsed) {
 
 export async function createSafetyBackup(createdBy) {
   const pool = getPgPool()
-  const { meta, data } = await exportBackupData(pool, { createdBy })
+  const { meta, data, manifest } = await exportBackupData(pool, { createdBy })
   const ts = new Date().toISOString().replace(/[:.]/g, '-')
   const filename = `backup_pre_restore_${ts}.lnbak`
   const diskPath = path.join(BACKUPS_DIR, filename)
-  await writeLnbakArchiveToPath({ meta, data, diskPath })
+  await writeLnbakArchiveToPath({ meta, data, diskPath, manifest })
   return filename
 }
 
@@ -1457,8 +1722,18 @@ export async function buildInstituteRestoreReport(pool) {
 }
 
 /** Post-DB restore: files, app_state, auth link repair, audit log, summary. */
-export async function completeRestoreAfterDatabase(parsed, uploadsSource) {
-  const files_restored = await extractUploadsArchive(uploadsSource)
+export async function completeRestoreAfterDatabase(parsed, uploadsSource, opts = {}) {
+  let files_restored = opts.files_restored
+  let assets_restored = opts.assets_restored
+  if (!opts.skipFileExtract) {
+    files_restored = await extractUploadsArchive(uploadsSource)
+    assets_restored = await extractSubjectAssetsArchive(opts.subjectAssetsSource)
+  }
+
+  const manifest = opts.manifest || null
+  const file_verification =
+    opts.file_verification || (await verifyRestoredFiles(parsed, manifest))
+
   const app_state = await restoreAppStateFromParsed(parsed)
   const pool = getPgPool()
   const auth_repair = await repairFacultyAuthLinks(pool)
@@ -1466,12 +1741,22 @@ export async function completeRestoreAfterDatabase(parsed, uploadsSource) {
   const instituteReport = await buildInstituteRestoreReport(pool)
   await insertRestoreAuditLog(parsed)
   const { tables_restored, row_counts, restore_warnings } = buildRestoreSummary(parsed)
+  const mergedWarnings = [...restore_warnings]
+  if (file_verification.warnings?.length) mergedWarnings.push(...file_verification.warnings)
+  if (file_verification.missing?.length) {
+    mergedWarnings.push(
+      `${file_verification.missing.length} referenced file(s) missing after restore (sample check)`,
+    )
+  }
   const curriculumRowCount = Number(row_counts?.curriculum ?? parsed.data?.curriculum?.length ?? 0)
   const curriculumsInSnapshot = countCurriculumsInAppStateSnapshot(parsed.data?.app_state)
   const sectionsInSnapshot = countSectionsInAppStateSnapshot(parsed.data?.app_state)
 
   return {
     files_restored,
+    assets_restored,
+    file_verification,
+    files_restored_count: manifest?.files_backed_up ?? parsed?.meta?.files_backed_up ?? null,
     app_state,
     auth_repair,
     student_auth_repair,
@@ -1491,6 +1776,67 @@ export async function completeRestoreAfterDatabase(parsed, uploadsSource) {
     student_missing_auth_link: instituteReport.student_missing_auth_link,
     tables_restored,
     row_counts,
-    restore_warnings,
+    restore_warnings: mergedWarnings,
   }
+}
+
+/**
+ * Orchestrated restore with optional progress callbacks.
+ * @param {(event: { step: number, message?: string, detail?: string }) => void} [onProgress]
+ */
+export async function runRestorePipeline({
+  parsed,
+  uploadsSource,
+  subjectAssetsSource = null,
+  manifest = null,
+  createdBy = null,
+  createSafety = true,
+  onProgress,
+}) {
+  const emit = (step, extra = {}) => {
+    if (onProgress) onProgress({ step, ...extra })
+  }
+
+  emit(0, { message: 'Validating backup file' })
+  validateLnbakParsed(parsed)
+
+  let safetyBackup = null
+  if (createSafety) {
+    emit(1, { message: 'Creating safety snapshot' })
+    safetyBackup = await createSafetyBackup(createdBy)
+  }
+
+  const tablesCount = LNBAK_TABLE_ORDER.filter((k) => {
+    const rows = parsed.data?.[k]
+    return Array.isArray(rows) && rows.length > 0
+  }).length
+  emit(2, { message: 'Restoring database', detail: `${tablesCount} tables` })
+
+  try {
+    await restoreDatabaseFromParsed(parsed)
+  } catch (e) {
+    throw e
+  }
+
+  const filesExpected = manifest?.files_backed_up ?? parsed?.meta?.files_backed_up ?? null
+  emit(3, {
+    message: 'Restoring uploaded files',
+    detail: filesExpected != null ? `${filesExpected} files` : undefined,
+  })
+  const files_restored = await extractUploadsArchive(uploadsSource)
+  const assets_restored = await extractSubjectAssetsArchive(subjectAssetsSource)
+
+  emit(4, { message: 'Verifying file integrity' })
+  const file_verification = await verifyRestoredFiles(parsed, manifest)
+
+  emit(5, { message: 'Complete' })
+  const restoreDetails = await completeRestoreAfterDatabase(parsed, uploadsSource, {
+    skipFileExtract: true,
+    files_restored,
+    assets_restored,
+    manifest,
+    file_verification,
+  })
+
+  return { safety_backup: safetyBackup, ...restoreDetails }
 }

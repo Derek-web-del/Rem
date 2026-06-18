@@ -50,6 +50,8 @@ const SCHEMA_STATEMENTS = [
   `CREATE INDEX IF NOT EXISTS idx_google_oauth_pending_expires ON public.google_oauth_pending (expires_at)`,
   `ALTER TABLE public.google_oauth_tokens ADD COLUMN IF NOT EXISTS gdrive_folder_id VARCHAR(255)`,
   `ALTER TABLE public.google_oauth_tokens ADD COLUMN IF NOT EXISTS granted_scopes TEXT`,
+  `ALTER TABLE public.backups ADD COLUMN IF NOT EXISTS files_backed_up INT`,
+  `ALTER TABLE public.backups ADD COLUMN IF NOT EXISTS uploads_size_bytes BIGINT`,
 ]
 
 const SEED_SCHEDULES_SQL = `
