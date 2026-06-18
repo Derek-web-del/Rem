@@ -61,22 +61,79 @@ export function groupItemsByComponent(components, items) {
     grouped[String(comp.id)] = []
   }
 
-  for (const item of list) {
+  function resolveComponentId(item) {
     const type = String(item.type || '').toLowerCase()
-    let compId = item.grade_component_id != null ? String(item.grade_component_id) : null
-
-    if (type === 'quiz' && !compId) {
-      compId = quizComponent ? String(quizComponent.id) : compId
+    if (item.grade_component_id != null) {
+      const id = String(item.grade_component_id)
+      if (grouped[id]) return id
     }
+    if (type === 'quiz' && quizComponent) return String(quizComponent.id)
+    if (type === 'assignment') {
+      const written = comps.find((c) => c.maps_to_assignment && !c.maps_to_activity)
+      if (written) return String(written.id)
+      const any = comps.find((c) => c.maps_to_assignment)
+      if (any) return String(any.id)
+    }
+    if (type === 'activity') {
+      const dedicated = comps.find((c) => c.maps_to_activity && !c.maps_to_assignment)
+      if (dedicated) return String(dedicated.id)
+      const any = comps.find((c) => c.maps_to_activity)
+      if (any) return String(any.id)
+    }
+    return null
+  }
 
+  for (const item of list) {
+    const compId = resolveComponentId(item)
     if (compId && grouped[compId]) {
       grouped[compId].push(item)
-    } else if (quizComponent && type === 'quiz') {
-      grouped[String(quizComponent.id)].push(item)
     }
   }
 
   return grouped
+}
+
+/** Average percent of scored items only within a component bucket. */
+export function computeScoredComponentAvg(items, scoreCells) {
+  const percents = []
+  for (const item of items || []) {
+    const key = itemKey(item.type, item.id)
+    const cell = scoreCells?.[key]
+    if (!cell?.has_score) continue
+    const max = Number(item.max_points) || Number(cell.max_points) || 0
+    if (max <= 0) continue
+    const score = Number(cell.score)
+    if (!Number.isFinite(score)) continue
+    percents.push(Math.round((score / max) * 100))
+  }
+  if (!percents.length) return null
+  return Math.round(percents.reduce((a, b) => a + b, 0) / percents.length)
+}
+
+/**
+ * Weighted overall grade using only components that have at least one scored item.
+ * Renormalizes weights across graded components only.
+ */
+export function computeScoredStudentGradeRow(components, groupedItems, scoreCells) {
+  const componentAvgs = {}
+  let weightedSum = 0
+  let gradedWeightTotal = 0
+
+  for (const comp of components || []) {
+    const compItems = groupedItems[String(comp.id)] || []
+    const avg = computeScoredComponentAvg(compItems, scoreCells)
+    if (avg == null) continue
+    componentAvgs[String(comp.id)] = avg
+    const weight = Number(comp.percentage ?? 0)
+    if (!Number.isFinite(weight) || weight <= 0) continue
+    weightedSum += weight * avg
+    gradedWeightTotal += weight
+  }
+
+  const finalGrade =
+    gradedWeightTotal > 0 ? Math.round(weightedSum / gradedWeightTotal) : null
+
+  return { componentAvgs, finalGrade, gradedWeightTotal }
 }
 
 export function computeStudentGradeRow(components, groupedItems, scoresForStudent) {

@@ -151,7 +151,7 @@ export async function fetchTeacherSubjectsForAssignments() {
 }
 
 export async function fetchTeacherAssignments(page = 1, options = {}) {
-  const limit = options.limit ?? 5
+  const limit = options.limit ?? 10
   const params = new URLSearchParams({
     page: String(page),
     limit: String(limit),

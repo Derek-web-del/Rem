@@ -72,17 +72,23 @@ export async function fetchStudentGrades(studentId, { isAdmin = false } = {}) {
   return { ...data, fromCache }
 }
 
-export async function fetchSectionGradesOverview(sectionId) {
+export async function fetchSectionGradesOverview(sectionId, { forceRefresh = false } = {}) {
   const section = String(sectionId ?? '').trim()
   if (!section) throw new Error('Section id is required.')
   const scope = await facultyCacheScope()
   const cacheKey = `${scope}:section:${section}`
+  const path = `/api/v1/grades/section-overview?${new URLSearchParams({ section_id: section }).toString()}`
+
+  if (forceRefresh && isOnline()) {
+    const data = await gradesJson(path)
+    await saveToStore('faculty_grades_overview', { id: cacheKey, ...data })
+    return { ...data, fromCache: false }
+  }
 
   const { data, fromCache } = await fetchWithOfflineCache({
     storeName: 'faculty_grades_overview',
     id: cacheKey,
-    fetchOnline: async () =>
-      gradesJson(`/api/v1/grades/section-overview?${new URLSearchParams({ section_id: section }).toString()}`),
+    fetchOnline: async () => gradesJson(path),
     toCache: (payload) => ({ id: cacheKey, ...payload }),
     fromCache: (row) => {
       if (!row || typeof row !== 'object') return null

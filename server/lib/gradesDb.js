@@ -10,7 +10,7 @@ import { normalizeGradeLevel, resolveStudentGradeLevel } from './studentSession.
 import { fetchSubjectRow } from './subjectCurriculumDb.js'
 import { fetchSubjectGradeItems, fetchStudentScoresForItems } from './subjectGradeItemsDb.js'
 import {
-  computeStudentGradeRow,
+  computeScoredStudentGradeRow,
   groupItemsByComponent,
   itemKey,
 } from './gradebookCalc.js'
@@ -460,51 +460,6 @@ function mapScoredWorkItem(item, cell) {
   }
 }
 
-function componentHasScoredWork(comp, groupedItems, scoreCells) {
-  const items = groupedItems[String(comp.id)] || []
-  return items.some((item) => {
-    const cell = scoreCells[itemKey(item.type, item.id)]
-    return Boolean(cell?.has_score)
-  })
-}
-
-function buildGradedWeightMeta(components, groupedItems, scoreCells, componentAvgs) {
-  let gradedWeightTotal = 0
-  const gradedComponentIds = []
-  for (const comp of components || []) {
-    if (!componentHasScoredWork(comp, groupedItems, scoreCells)) continue
-    const weight = Number(comp.percentage ?? 0)
-    if (!Number.isFinite(weight) || weight <= 0) continue
-    gradedWeightTotal += weight
-    gradedComponentIds.push(String(comp.id))
-  }
-  return { graded_weight_total: gradedWeightTotal, graded_component_ids: gradedComponentIds }
-}
-
-async function fetchSavedStudentFinalGrade(pool, subjectId, studentId) {
-  try {
-    const { rows } = await pool.query(
-      `
-      SELECT final_grade, component_avgs, updated_at
-      FROM subject_student_final_grades
-      WHERE subject_id = $1 AND student_id = $2
-      LIMIT 1
-      `,
-      [Number(subjectId), Number(studentId)],
-    )
-    const row = rows?.[0]
-    if (!row) return null
-    return {
-      saved_final_grade: Number(row.final_grade) || 0,
-      saved_component_avgs:
-        row.component_avgs && typeof row.component_avgs === 'object' ? row.component_avgs : {},
-      saved_updated_at: row.updated_at ?? null,
-    }
-  } catch {
-    return null
-  }
-}
-
 export async function fetchStudentSubjectGradeDetail(pool, studentId, subjectId) {
   const sid = Number(studentId)
   const subId = Number(subjectId)
@@ -522,45 +477,12 @@ export async function fetchStudentSubjectGradeDetail(pool, studentId, subjectId)
   const scoreCells = await fetchStudentScoresForItems(pool, sid, items)
   const groupedItems = groupItemsByComponent(components, items)
 
-  const flatScores = {}
-  for (const [key, cell] of Object.entries(scoreCells)) {
-    flatScores[key] = cell?.score ?? 0
-  }
-
-  const computed = computeStudentGradeRow(components, groupedItems, flatScores)
-  const saved = await fetchSavedStudentFinalGrade(pool, subId, sid)
-
-  const computedComponentAvgs = computed.componentAvgs
-  const componentAvgs = saved?.saved_component_avgs
-    ? Object.fromEntries(
-        components.map((c) => [
-          String(c.id),
-          safeGrade(saved.saved_component_avgs[String(c.id)] ?? computedComponentAvgs[String(c.id)]),
-        ]),
-      )
-    : computedComponentAvgs
-
-  const { graded_weight_total, graded_component_ids } = buildGradedWeightMeta(
-    components,
-    groupedItems,
-    scoreCells,
-    componentAvgs,
-  )
-
-  let overall_avg
-  if (saved?.saved_final_grade != null) {
-    overall_avg = safeGrade(saved.saved_final_grade)
-  } else if (graded_weight_total > 0) {
-    let weightedSum = 0
-    for (const comp of components) {
-      if (!graded_component_ids.includes(String(comp.id))) continue
-      const weight = Number(comp.percentage ?? 0)
-      weightedSum += weight * Number(componentAvgs[String(comp.id)] ?? 0)
-    }
-    overall_avg = Math.round(weightedSum / graded_weight_total)
-  } else {
-    overall_avg = safeGrade(computed.finalGrade)
-  }
+  const scored = computeScoredStudentGradeRow(components, groupedItems, scoreCells)
+  const componentAvgs = scored.componentAvgs
+  const overall_avg =
+    scored.finalGrade != null ? safeGrade(scored.finalGrade) : 0
+  const graded_weight_total = safeGrade(scored.gradedWeightTotal)
+  const graded_component_ids = Object.keys(componentAvgs)
 
   const quizzes = []
   const assignments = []
@@ -582,20 +504,20 @@ export async function fetchStudentSubjectGradeDetail(pool, studentId, subjectId)
     subject_code: String(subjectRow.subject_code || '').trim(),
     grade_level: String(subjectRow.grade_level || '').trim(),
     semester: String(subjectRow.semester || '').trim(),
-    overall_avg,
-    computed_overall_avg: safeGrade(computed.finalGrade),
-    computed_component_avgs: computed.componentAvgs,
+    overall_avg: has_scored_items ? overall_avg : 0,
+    computed_overall_avg: has_scored_items ? overall_avg : 0,
+    computed_component_avgs: componentAvgs,
     component_avgs: componentAvgs,
     components,
-    graded_weight_total: safeGrade(graded_weight_total),
+    graded_weight_total,
     graded_component_ids,
     has_scored_items,
     quizzes,
     assignments,
     activities,
-    saved_final_grade: saved?.saved_final_grade ?? null,
-    saved_component_avgs: saved?.saved_component_avgs ?? null,
-    saved_updated_at: saved?.saved_updated_at ?? null,
+    saved_final_grade: null,
+    saved_component_avgs: null,
+    saved_updated_at: null,
   }
 }
 

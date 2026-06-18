@@ -19,7 +19,7 @@ import TeacherMainHeader from './TeacherMainHeader.jsx'
 import TeacherBackButton from './TeacherBackButton.jsx'
 import { ACTION_BLUE } from './instituteChrome.js'
 
-const ITEMS_PER_PAGE = 5
+const ITEMS_PER_PAGE = 10
 
 const BTN_EDIT = { background: '#F59E0B' }
 const BTN_DELETE = { background: '#EF4444' }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useOutletContext } from 'react-router-dom'
 import { isOnline } from '../../lib/offlineSync.js'
 import OfflineCacheIndicator from '../../components/OfflineCacheIndicator.jsx'
@@ -22,6 +22,8 @@ import {
 import TeacherMainHeader from './TeacherMainHeader.jsx'
 import TeacherBackButton from './TeacherBackButton.jsx'
 import { ACTION_BLUE } from './instituteChrome.js'
+
+const ITEMS_PER_PAGE = 10
 
 const BTN_EDIT = { background: '#F59E0B' }
 const BTN_DELETE = { background: '#EF4444' }
@@ -50,6 +52,7 @@ export default function TeacherQuizzesPage() {
   toastRef.current = toast
 
   const [quizzes, setQuizzes] = useState([])
+  const [currentPage, setCurrentPage] = useState(1)
   const [loading, setLoading] = useState(true)
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [fromCache, setFromCache] = useState(false)
@@ -99,6 +102,27 @@ export default function TeacherQuizzesPage() {
     }
   }, [location.pathname, location.state, navigate])
 
+  const totalPages = Math.max(1, Math.ceil(quizzes.length / ITEMS_PER_PAGE))
+  const safePage = Math.min(currentPage, totalPages)
+  const pageQuizzes = useMemo(() => {
+    const start = (safePage - 1) * ITEMS_PER_PAGE
+    return quizzes.slice(start, start + ITEMS_PER_PAGE)
+  }, [quizzes, safePage])
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages)
+    }
+  }, [currentPage, totalPages])
+
+  function handlePrev() {
+    if (safePage > 1) setCurrentPage((p) => p - 1)
+  }
+
+  function handleNext() {
+    if (safePage < totalPages) setCurrentPage((p) => p + 1)
+  }
+
   async function confirmDelete() {
     if (!deleteTarget?.id) return
     setDeleting(true)
@@ -109,6 +133,11 @@ export default function TeacherQuizzesPage() {
         durationMs: FACULTY_ANNOUNCEMENT_TOAST_MS,
       })
       setDeleteTarget(null)
+      const nextTotal = quizzes.length - 1
+      const nextTotalPages = Math.max(1, Math.ceil(nextTotal / ITEMS_PER_PAGE))
+      if (safePage > nextTotalPages) {
+        setCurrentPage(nextTotalPages)
+      }
       await loadQuizzes()
     } catch (e) {
       toastRef.current.error(String(e?.message || FACULTY_MSG.quiz.deleteFailed), {
@@ -188,7 +217,7 @@ export default function TeacherQuizzesPage() {
                     </td>
                   </tr>
                 ) : (
-                  quizzes.map((quiz) => {
+                  pageQuizzes.map((quiz) => {
                     const partTypes = quizPartTypeLabels(quiz)
                     return (
                       <tr
@@ -264,6 +293,28 @@ export default function TeacherQuizzesPage() {
               </tbody>
             </table>
           </div>
+
+          {!loading && quizzes.length > 0 ? (
+            <div className="flex items-center justify-between border-t border-neutral-100 px-4 py-3 text-sm font-medium text-neutral-600">
+              <button
+                type="button"
+                disabled={safePage === 1}
+                onClick={handlePrev}
+                className="disabled:opacity-40 hover:text-neutral-900"
+              >
+                ← Prev
+              </button>
+              <span className="underline tabular-nums text-neutral-800">{safePage}</span>
+              <button
+                type="button"
+                disabled={safePage === totalPages}
+                onClick={handleNext}
+                className="disabled:opacity-40 hover:text-neutral-900"
+              >
+                Next →
+              </button>
+            </div>
+          ) : null}
         </div>
       </main>
 

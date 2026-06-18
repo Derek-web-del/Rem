@@ -53,18 +53,32 @@ export function groupItemsByComponent(components, items) {
     grouped[String(comp.id)] = []
   }
 
-  for (const item of list) {
+  function resolveComponentId(item) {
     const type = String(item.type || '').toLowerCase()
-    let compId = item.grade_component_id != null ? String(item.grade_component_id) : null
-
-    if (type === 'quiz' && !compId) {
-      compId = quizComponent ? String(quizComponent.id) : compId
+    if (item.grade_component_id != null) {
+      const id = String(item.grade_component_id)
+      if (grouped[id]) return id
     }
+    if (type === 'quiz' && quizComponent) return String(quizComponent.id)
+    if (type === 'assignment') {
+      const written = comps.find((c) => c.maps_to_assignment && !c.maps_to_activity)
+      if (written) return String(written.id)
+      const any = comps.find((c) => c.maps_to_assignment)
+      if (any) return String(any.id)
+    }
+    if (type === 'activity') {
+      const dedicated = comps.find((c) => c.maps_to_activity && !c.maps_to_assignment)
+      if (dedicated) return String(dedicated.id)
+      const any = comps.find((c) => c.maps_to_activity)
+      if (any) return String(any.id)
+    }
+    return null
+  }
 
+  for (const item of list) {
+    const compId = resolveComponentId(item)
     if (compId && grouped[compId]) {
       grouped[compId].push(item)
-    } else if (quizComponent && type === 'quiz') {
-      grouped[String(quizComponent.id)].push(item)
     }
   }
 

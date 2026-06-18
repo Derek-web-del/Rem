@@ -4,7 +4,6 @@ import { fetchSectionGradesOverview } from '../../lib/gradesApi.js'
 import { fetchTeacherAdvisorySections } from '../../lib/teacherPortalOffline.js'
 import OfflineCacheIndicator from '../../components/OfflineCacheIndicator.jsx'
 import { formatGradeAvg } from '../../lib/gradeStatus.js'
-import { GradesStatusBadge } from '../../components/GradesPanel.jsx'
 import TeacherMainHeader from './TeacherMainHeader.jsx'
 
 function MetricCard({ label, value, sub }) {
@@ -22,10 +21,7 @@ function SubjectGradeCell({ overallAvg, hasScoredItems }) {
     return <span className="text-neutral-400">—</span>
   }
   return (
-    <div className="flex flex-col items-start gap-1">
-      <span className="font-medium tabular-nums text-neutral-900">{formatGradeAvg(overallAvg)}</span>
-      <GradesStatusBadge percent={overallAvg} noScoresYet={false} />
-    </div>
+    <span className="font-medium tabular-nums text-neutral-900">{formatGradeAvg(overallAvg)}</span>
   )
 }
 
@@ -67,13 +63,13 @@ export default function GradesOverview() {
     }
   }, [])
 
-  const loadGrades = useCallback(async () => {
+  const loadGrades = useCallback(async ({ forceRefresh = false } = {}) => {
     if (!sectionId) return
     setLoadingGrades(true)
     setError('')
     setFromCache(false)
     try {
-      const data = await fetchSectionGradesOverview(sectionId)
+      const data = await fetchSectionGradesOverview(sectionId, { forceRefresh })
       setSubjects(Array.isArray(data.subjects) ? data.subjects : [])
       setRows(Array.isArray(data.students) ? data.students : [])
       setFromCache(Boolean(data.fromCache))
@@ -87,7 +83,7 @@ export default function GradesOverview() {
   }, [sectionId])
 
   useEffect(() => {
-    if (sectionId) void loadGrades()
+    if (sectionId) void loadGrades({ forceRefresh: true })
   }, [sectionId, loadGrades])
 
   const metrics = useMemo(() => {
@@ -138,23 +134,33 @@ export default function GradesOverview() {
           </div>
 
           <section className="rounded-xl border border-neutral-200 bg-white p-4 shadow-sm md:p-5">
-            <label className="text-sm font-medium text-neutral-700">
-              Section
-              <select
-                className="mt-1 block min-w-[220px] rounded-lg border border-neutral-200 px-3 py-2 text-sm"
-                value={sectionId}
-                onChange={(e) => setSectionId(e.target.value)}
-                disabled={loadingSections || sections.length === 0}
+            <div className="flex flex-wrap items-end justify-between gap-3">
+              <label className="text-sm font-medium text-neutral-700">
+                Section
+                <select
+                  className="mt-1 block min-w-[220px] rounded-lg border border-neutral-200 px-3 py-2 text-sm"
+                  value={sectionId}
+                  onChange={(e) => setSectionId(e.target.value)}
+                  disabled={loadingSections || sections.length === 0}
+                >
+                  {sections.length === 0 ? <option value="">No sections assigned</option> : null}
+                  {sections.map((s) => (
+                    <option key={String(s.id)} value={String(s.id)}>
+                      {[s.grade_level || s.grade, s.name || s.section_name].filter(Boolean).join(' — ') ||
+                        `Section ${s.id}`}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button
+                type="button"
+                onClick={() => void loadGrades({ forceRefresh: true })}
+                disabled={loadingGrades || !sectionId}
+                className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
               >
-                {sections.length === 0 ? <option value="">No sections assigned</option> : null}
-                {sections.map((s) => (
-                  <option key={String(s.id)} value={String(s.id)}>
-                    {[s.grade_level || s.grade, s.name || s.section_name].filter(Boolean).join(' — ') ||
-                      `Section ${s.id}`}
-                  </option>
-                ))}
-              </select>
-            </label>
+                {loadingGrades ? 'Refreshing…' : 'Refresh'}
+              </button>
+            </div>
           </section>
 
           {error ? (
