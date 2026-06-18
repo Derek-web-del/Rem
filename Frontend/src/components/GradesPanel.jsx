@@ -3,7 +3,6 @@ import {
   displayGrade,
   formatGradeAvg,
   formatSubmittedAt,
-  gradeStatusBadgeClass,
   gradeStatusFromPercent,
 } from '../lib/gradeStatus.js'
 import GradeOverrideModal from './GradeOverrideModal.jsx'
@@ -14,17 +13,6 @@ function SummaryTile({ label, value }) {
       <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">{label}</p>
       <p className="mt-1 text-2xl font-bold text-neutral-900">{formatGradeAvg(value)}</p>
     </div>
-  )
-}
-
-function StatusBadge({ percent, noScoresYet = false }) {
-  const { label, tone } = gradeStatusFromPercent(percent, { noScoresYet })
-  return (
-    <span
-      className={`inline-flex shrink-0 items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${gradeStatusBadgeClass(tone)}`}
-    >
-      {label}
-    </span>
   )
 }
 
@@ -64,7 +52,6 @@ function GradeItemRow({ item, readOnly, isAdmin, studentId, studentName, onOverr
       <div className="flex w-full flex-col gap-2 sm:w-auto sm:min-w-[18rem] sm:flex-row sm:items-center">
         <div className="flex w-full flex-col gap-2 sm:w-72 sm:flex-row sm:items-center">
           <ScoreBar percent={item.percent} />
-          <StatusBadge percent={item.percent} />
           {!readOnly && item.score != null && item.max_score != null ? (
             <span className="hidden text-xs text-neutral-500 sm:inline">
               {item.score}/{item.max_score}
@@ -77,7 +64,7 @@ function GradeItemRow({ item, readOnly, isAdmin, studentId, studentName, onOverr
             onClick={() => onOverrideClick?.(item)}
             className="shrink-0 rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700"
           >
-            Override score
+            Overwrite Score
           </button>
         ) : null}
       </div>
@@ -236,7 +223,7 @@ export default function GradesPanel({
           studentName={studentName}
           onClose={() => setOverrideItem(null)}
           onSuccess={() => {
-            setOverrideSuccess('Score updated and logged.')
+            setOverrideSuccess('Score overwritten and logged.')
             setOverrideItem(null)
             onGradesRefresh?.()
           }}
@@ -246,8 +233,8 @@ export default function GradesPanel({
   )
 }
 
-export function GradesStatusBadge({ percent, noScoresYet = false }) {
-  return <StatusBadge percent={percent} noScoresYet={noScoresYet} />
+export function GradesStatusBadge() {
+  return null
 }
 
 export function GradesScoreBar({ percent, noScoresYet = false }) {

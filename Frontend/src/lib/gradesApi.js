@@ -106,5 +106,9 @@ export async function adminGradeOverride({ entity_type, submission_id, student_i
     body: JSON.stringify({ entity_type, submission_id, student_id, new_score, reason }),
     softAuth: true,
   })
-  return res.json().catch(() => ({}))
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error(String(data?.message || data?.error || `Request failed (${res.status})`))
+  }
+  return data
 }

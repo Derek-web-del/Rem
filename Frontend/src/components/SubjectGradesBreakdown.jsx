@@ -42,7 +42,7 @@ function WorkItemRow({ item, isAdmin, onOverrideClick }) {
           onClick={() => onOverrideClick?.(item)}
           className="shrink-0 self-start rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700 sm:self-center"
         >
-          Override score
+          Overwrite Score
         </button>
       ) : null}
     </div>

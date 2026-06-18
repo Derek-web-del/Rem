@@ -21,7 +21,6 @@ import SystemOfflineBanner from './components/SystemOfflineBanner.jsx'
 import AdminAuditBanner from './components/AdminAuditBanner.jsx'
 import { resolveSubjectImageFromMap } from './lib/subjectImages.js'
 import MonitoringRecords from './pages/MonitoringRecords.jsx'
-import AdminScoreOverwriteRequestsPage from './pages/AdminScoreOverwriteRequestsPage.jsx'
 import BackupPage from './pages/BackupPage.jsx'
 import ArchiveVault from './pages/ArchiveVault.jsx'
 import AuditStatisticsSection from './components/AuditStatisticsSection.jsx'
@@ -646,17 +645,6 @@ function DatabaseExportIcon({ className }) {
   )
 }
 
-function ScoreOverwriteIcon({ className }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" aria-hidden>
-      <path d="M12 3v18" strokeLinecap="round" />
-      <path d="M5 7h14M5 17h14" strokeLinecap="round" />
-      <circle cx="8" cy="12" r="2" />
-      <circle cx="16" cy="12" r="2" />
-    </svg>
-  )
-}
-
 const NAV = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutGridIcon, to: NAV_ID_TO_PATH.dashboard },
   { id: 'curriculum', label: 'Curriculum', icon: BookOpenIcon, to: NAV_ID_TO_PATH.curriculum },
@@ -666,7 +654,6 @@ const NAV = [
   { id: 'subjects', label: 'Subjects', icon: FileTextIcon, to: NAV_ID_TO_PATH.subjects },
   { id: 'updates', label: 'Announcements', icon: BellIcon, to: NAV_ID_TO_PATH.updates },
   { id: 'monitoring', label: 'Audit Logs', icon: ActivityIcon, to: NAV_ID_TO_PATH.monitoring },
-  { id: 'scoreOverwrite', label: 'Score Overwrites', icon: ScoreOverwriteIcon, to: NAV_ID_TO_PATH.scoreOverwrite },
   { id: 'backup', label: 'Data Backup', icon: DatabaseExportIcon, to: NAV_ID_TO_PATH.backup },
   { id: 'archive', label: 'Archive Vault', icon: ArchiveIcon, to: NAV_ID_TO_PATH.archive },
 ]
@@ -3104,8 +3091,6 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
                               ? 'Announcements'
                               : activeNav === 'monitoring'
                                 ? 'Audit Logs'
-                                : activeNav === 'scoreOverwrite'
-                                  ? 'Score Overwrite Requests'
                                 : activeNav === 'backup'
                                   ? 'Data Backup'
                                   : activeNav === 'archive'
@@ -3181,8 +3166,6 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
             sectionContent()
           ) : activeNav === 'monitoring' ? (
             <MonitoringRecords />
-          ) : activeNav === 'scoreOverwrite' ? (
-            <AdminScoreOverwriteRequestsPage />
           ) : activeNav === 'backup' ? (
             <BackupPage />
           ) : activeNav === 'archive' ? (

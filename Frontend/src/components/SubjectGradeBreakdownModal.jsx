@@ -39,7 +39,7 @@ export default function SubjectGradeBreakdownModal({
               <div>
                 {isAdmin ? (
                   <p className="text-xs text-neutral-500">
-                    Locked scores can be overridden with a documented reason.
+                    Locked scores can be overwritten with a valid reason. Changes are audit logged.
                   </p>
                 ) : null}
               </div>
@@ -88,7 +88,7 @@ export default function SubjectGradeBreakdownModal({
           studentName={studentName}
           onClose={() => setOverrideItem(null)}
           onSuccess={() => {
-            setOverrideSuccess('Score updated and logged.')
+            setOverrideSuccess('Score overwritten and logged.')
             setOverrideItem(null)
             onGradesRefresh?.()
           }}

@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import {
   displayGrade,
-  gradeStatusBadgeClass,
   gradeStatusFromPercent,
 } from '../lib/gradeStatus.js'
 import { ACTION_BLUE } from '../pages/teachers/instituteChrome.js'
@@ -29,17 +28,6 @@ function ScoreBar({ percent, noScoresYet = false }) {
   )
 }
 
-function StatusBadge({ percent, noScoresYet = false }) {
-  const { label, tone } = gradeStatusFromPercent(percent, { noScoresYet })
-  return (
-    <span
-      className={`inline-flex shrink-0 items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${gradeStatusBadgeClass(tone)}`}
-    >
-      {label}
-    </span>
-  )
-}
-
 function SubjectGradeCard({ subject, onView }) {
   const noScoresYet = !subject.has_scored_items
   const title = [subject.subject_name, subject.subject_code].filter(Boolean).join(' · ')
@@ -59,7 +47,6 @@ function SubjectGradeCard({ subject, onView }) {
         </div>
         <div className="flex w-full flex-col gap-2 sm:w-auto sm:min-w-[20rem] sm:flex-row sm:items-center">
           <ScoreBar percent={subject.overall_avg} noScoresYet={noScoresYet} />
-          <StatusBadge percent={subject.overall_avg} noScoresYet={noScoresYet} />
           <button
             type="button"
             className="shrink-0 rounded-md px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90"

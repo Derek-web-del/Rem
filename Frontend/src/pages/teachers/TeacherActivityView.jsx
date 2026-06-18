@@ -11,7 +11,6 @@ import {
 import { fetchTeacherActivityView } from '../../lib/teacherPortalOffline.js'
 import OfflineCacheIndicator from '../../components/OfflineCacheIndicator.jsx'
 import PdfViewerModal from '../../components/PdfViewerModal.jsx'
-import ScoreOverwriteRequestModal from '../../components/ScoreOverwriteRequestModal.jsx'
 import {
   FACULTY_MSG,
   FACULTY_TOAST_ID,
@@ -20,7 +19,7 @@ import {
   useFacultyNotify,
 } from '../../lib/facultyNotify.js'
 import { countGradedSubmissions, computePercent, formatScoreWithPercent, submissionStatusBadgeClass } from '../../lib/gradeStatus.js'
-import { GradesScoreBar, GradesStatusBadge } from '../../components/GradesPanel.jsx'
+import { GradesScoreBar } from '../../components/GradesPanel.jsx'
 import TeacherMainHeader from './TeacherMainHeader.jsx'
 import BackButton from '../../components/BackButton.jsx'
 import { ACTION_BLUE, SIDEBAR_GOLD_DARK } from './instituteChrome.js'
@@ -106,7 +105,6 @@ export default function TeacherActivityView() {
   const [sortDir, setSortDir] = useState('asc')
   const [page, setPage] = useState(1)
   const [scoreTarget, setScoreTarget] = useState(null)
-  const [overwriteTarget, setOverwriteTarget] = useState(null)
   const [scoreValue, setScoreValue] = useState('')
   const [savingScore, setSavingScore] = useState(false)
   const [pdfViewer, setPdfViewer] = useState(null)
@@ -384,7 +382,6 @@ export default function TeacherActivityView() {
                             {sub.score != null && Number.isFinite(Number(sub.score)) ? (
                               <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center">
                                 <GradesScoreBar percent={computePercent(sub.score, totalScore)} />
-                                <GradesStatusBadge percent={computePercent(sub.score, totalScore)} />
                               </div>
                             ) : (
                               <span className="text-sm text-neutral-500">—</span>
@@ -393,22 +390,15 @@ export default function TeacherActivityView() {
                           <td className="px-4 py-4">
                             <div className="flex flex-wrap items-center gap-2">
                               {scoreLocked ? (
-                                <>
-                                  <span
-                                    className="inline-flex items-center gap-1 text-sm text-neutral-600"
-                                    title={SCORE_LOCKED_MSG}
-                                  >
-                                    <i className="ti ti-lock" aria-hidden="true" />
-                                    {sub.score != null
-                                      ? `${formatScoreWithPercent(sub.score, totalScore)} (locked)`
-                                      : '— (locked)'}
-                                  </span>
-                                  <ActionBtn
-                                    label="Request Change"
-                                    style={BTN_EDIT}
-                                    onClick={() => setOverwriteTarget(sub)}
-                                  />
-                                </>
+                                <span
+                                  className="inline-flex items-center gap-1 text-sm text-neutral-600"
+                                  title={SCORE_LOCKED_MSG}
+                                >
+                                  <i className="ti ti-lock" aria-hidden="true" />
+                                  {sub.score != null
+                                    ? `${formatScoreWithPercent(sub.score, totalScore)} (locked)`
+                                    : '— (locked)'}
+                                </span>
                               ) : (
                                 <ActionBtn label="Edit Score" style={BTN_EDIT} onClick={() => openEditScore(sub)} />
                               )}
@@ -504,24 +494,6 @@ export default function TeacherActivityView() {
           fileUrl={pdfViewer.url}
           fileName={pdfViewer.fileName}
           onClose={() => setPdfViewer(null)}
-        />
-      ) : null}
-
-      {overwriteTarget ? (
-        <ScoreOverwriteRequestModal
-          entityType="activity"
-          entityId={activity?.id}
-          entityTitle={activity?.title}
-          submission={overwriteTarget}
-          studentName={overwriteTarget.student_name}
-          maxScore={totalScore}
-          onClose={() => setOverwriteTarget(null)}
-          onSuccess={() => {
-            toastRef.current.success('Score overwrite request submitted for admin review.', {
-              id: FACULTY_TOAST_ID,
-              duration: FACULTY_ANNOUNCEMENT_TOAST_MS,
-            })
-          }}
         />
       ) : null}
     </>
