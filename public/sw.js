@@ -66,8 +66,12 @@ function isAdminApiRoute(pathname) {
 }
 
 function isPdfRequest(url) {
-  if (url.pathname.startsWith('/api/files/')) return true
-  return url.pathname.startsWith('/uploads/') && /\.pdf$/i.test(url.pathname)
+  const p = url.pathname
+  if (p.startsWith('/api/files/')) return true
+  if (/\/syllabus-file$/i.test(p)) return true
+  if (/\/prompt-file$/i.test(p)) return true
+  if (/\/submission-file$/i.test(p)) return true
+  return p.startsWith('/uploads/') && /\.pdf$/i.test(p)
 }
 
 function isApiRequest(url) {

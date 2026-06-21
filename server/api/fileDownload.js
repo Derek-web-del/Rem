@@ -92,6 +92,36 @@ async function facultyOwnsSubject(pool, facultyId, subjectId) {
   return Boolean(rows?.length)
 }
 
+const columnExistsMemo = new Map()
+
+async function tableHasColumn(pool, tableName, columnName) {
+  const key = `${tableName}.${columnName}`
+  if (columnExistsMemo.has(key)) return columnExistsMemo.get(key)
+  try {
+    const { rows } = await pool.query(
+      `
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = $1 AND column_name = $2
+        LIMIT 1
+      `,
+      [tableName, columnName],
+    )
+    const ok = Boolean(rows?.length)
+    columnExistsMemo.set(key, ok)
+    return ok
+  } catch {
+    columnExistsMemo.set(key, false)
+    return false
+  }
+}
+
+/** Returns SQL fragment filtering non-archived rows when column exists. */
+async function archivedAtFilter(pool, tableName, alias = '') {
+  if (!(await tableHasColumn(pool, tableName, 'archived_at'))) return ''
+  const prefix = alias ? `${alias}.` : ''
+  return ` AND (${prefix}archived_at IS NULL) `
+}
+
 async function canAccessSubmissionFile(req, auth, relativePath) {
   const session = await getSession(req, auth)
   const user = sessionUser(session)
@@ -194,10 +224,26 @@ async function canAccessCategoryFile(req, auth, category, relativePath) {
     }
 
     case 'assignments': {
-      const { rows } = await pool.query(
-        `SELECT faculty_id, grade_level FROM assignments WHERE file_path = $1 LIMIT 1`,
-        [filePath],
-      )
+      const hasFacultyId = await tableHasColumn(pool, 'assignments', 'faculty_id')
+      const hasGradeLevel = await tableHasColumn(pool, 'assignments', 'grade_level')
+      const { rows } =
+        hasFacultyId && hasGradeLevel
+          ? await pool.query(
+              `SELECT faculty_id, grade_level FROM assignments WHERE file_path = $1 LIMIT 1`,
+              [filePath],
+            )
+          : await pool.query(
+              `
+              SELECT
+                COALESCE(a.faculty_id, sub.faculty_id) AS faculty_id,
+                COALESCE(a.grade_level, sub.grade_level) AS grade_level
+              FROM assignments a
+              LEFT JOIN subjects sub ON sub.id = a.subject_id
+              WHERE a.file_path = $1
+              LIMIT 1
+              `,
+              [filePath],
+            )
       if (!rows?.length) return { ok: false, status: 403 }
       const row = rows[0]
       if (isFacultyRole(role) && String(row.faculty_id) === String(facultyRow.id)) return { ok: true }
@@ -224,11 +270,13 @@ async function canAccessCategoryFile(req, auth, category, relativePath) {
     }
 
     case 'materials': {
+      const studyArchived = await archivedAtFilter(pool, 'study_materials')
+      const hasStudyUploadedBy = await tableHasColumn(pool, 'study_materials', 'uploaded_by')
+      const uploadedBySelect = hasStudyUploadedBy ? 'uploaded_by' : 'NULL::text AS uploaded_by'
       const { rows } = await pool.query(
-        `SELECT subject_id, grade_level, uploaded_by
+        `SELECT subject_id, grade_level, ${uploadedBySelect}
          FROM study_materials
-         WHERE file_url = $1
-           AND (archived_at IS NULL)
+         WHERE file_url = $1${studyArchived}
          LIMIT 1`,
         [filePath],
       )
@@ -248,11 +296,15 @@ async function canAccessCategoryFile(req, auth, category, relativePath) {
           return { ok, status: ok ? 200 : 403 }
         }
       }
+      const subjectArchived = await archivedAtFilter(pool, 'subject_materials', 'sm')
+      const hasSubjectFileUrl = await tableHasColumn(pool, 'subject_materials', 'file_url')
+      const subjectPathMatch = hasSubjectFileUrl
+        ? '(sm.file_path = $1 OR sm.file_url = $1)'
+        : 'sm.file_path = $1'
       const { rows: smRows } = await pool.query(
         `SELECT sm.subject_id FROM subject_materials sm
          INNER JOIN subjects sub ON sub.id = sm.subject_id
-         WHERE (sm.file_path = $1 OR sm.file_url = $1)
-           AND (sm.archived_at IS NULL)
+         WHERE ${subjectPathMatch}${subjectArchived}
          LIMIT 1`,
         [filePath],
       )
@@ -279,7 +331,8 @@ async function canAccessCategoryFile(req, auth, category, relativePath) {
         `SELECT m.subject_id, sub.grade_level, sub.faculty_id
          FROM subject_modules m
          INNER JOIN subjects sub ON sub.id = m.subject_id
-         WHERE m.file_path = $1 OR m.lesson_file_path = $1 LIMIT 1`,
+         WHERE m.file_path = $1
+         LIMIT 1`,
         [filePath],
       )
       if (!rows?.length) return { ok: false, status: 403 }

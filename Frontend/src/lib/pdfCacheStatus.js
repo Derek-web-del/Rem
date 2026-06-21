@@ -1,16 +1,19 @@
 import { uploadsPathToApiUrl } from './fileUrls.js'
 import { resolveStudyMaterialFileUrl } from './facultyStudyMaterials.js'
 import { isOnline } from './offlineSync.js'
+import { apiUrl } from './lmsStateStorage.js'
 
-export const PDF_CACHE_NAME = 'lenlearn-v2-pdf'
+/** Must match `PDF_CACHE` in `public/sw.js` (`lenlearn-v4-pdf`). */
+export const PDF_CACHE_NAME = 'lenlearn-v4-pdf'
 const PDF_LRU_KEY = 'lenlearn_pdf_lru'
 const PDF_LRU_MAX = 50
 
-function resolvePdfUrl(filePath) {
+export function resolvePdfUrl(filePath) {
   if (!filePath) return ''
   const raw = String(filePath).trim()
   if (!raw) return ''
   if (raw.startsWith('http://') || raw.startsWith('https://')) return raw
+  if (raw.startsWith('/api/')) return apiUrl(raw)
   return resolveStudyMaterialFileUrl(raw) || uploadsPathToApiUrl(raw) || ''
 }
 
@@ -137,7 +140,7 @@ export async function downloadCachedPdf(filePath, fileName) {
   return 'network'
 }
 
-/** Pre-fetch PDFs into lenlearn-v2-pdf (first N materials while online). */
+/** Pre-fetch PDFs into the service-worker PDF cache (first N materials while online). */
 export async function prefetchStudyMaterialPdfs(filePaths, { limit = 50 } = {}) {
   if (!isOnline() || typeof caches === 'undefined') return
   const paths = (Array.isArray(filePaths) ? filePaths : []).filter(Boolean).slice(0, limit)

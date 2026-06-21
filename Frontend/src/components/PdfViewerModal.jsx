@@ -1,11 +1,17 @@
 import { useEffect, useState } from 'react'
 import { uploadsPathToApiUrl } from '../lib/fileUrls.js'
-import { downloadCachedPdf, isPdfCached, cachePdfOnView } from '../lib/pdfCacheStatus.js'
+import {
+  cachePdfOnView,
+  downloadCachedPdf,
+  getCachedPdfBlob,
+  isPdfCached,
+  resolvePdfUrl,
+} from '../lib/pdfCacheStatus.js'
 import { isOnline } from '../lib/offlineSync.js'
 import { ACTION_BLUE } from '../pages/teachers/instituteChrome.js'
 
 export function resolvePdfViewerUrl(fileUrl) {
-  return uploadsPathToApiUrl(fileUrl)
+  return resolvePdfUrl(fileUrl) || uploadsPathToApiUrl(fileUrl)
 }
 
 /**
@@ -15,22 +21,50 @@ export function resolvePdfViewerUrl(fileUrl) {
 export default function PdfViewerModal({ fileUrl, fileName = 'document.pdf', onClose, onDownloadUnavailable }) {
   const [zoom, setZoom] = useState(100)
   const [cached, setCached] = useState(false)
+  const [viewerSrc, setViewerSrc] = useState('')
+  const [loadError, setLoadError] = useState('')
   const resolvedUrl = resolvePdfViewerUrl(fileUrl)
   const displayName = String(fileName || 'document.pdf').trim() || 'document.pdf'
   const offline = !isOnline()
 
   useEffect(() => {
     let cancelled = false
-    void isPdfCached(fileUrl).then((ok) => {
-      if (!cancelled) setCached(ok)
-    })
-    if (resolvedUrl && isOnline()) {
-      void cachePdfOnView(fileUrl)
+    let objectUrl = ''
+
+    async function loadViewer() {
+      setLoadError('')
+      const cachedOk = await isPdfCached(fileUrl)
+      if (!cancelled) setCached(cachedOk)
+
+      if (offline) {
+        const blob = await getCachedPdfBlob(fileUrl)
+        if (cancelled) return
+        if (blob) {
+          objectUrl = URL.createObjectURL(blob)
+          setViewerSrc(objectUrl)
+          return
+        }
+        setViewerSrc('')
+        setLoadError('This file is not available offline. Open it once while online, then try again.')
+        return
+      }
+
+      if (resolvedUrl) {
+        setViewerSrc(resolvedUrl)
+        const stored = await cachePdfOnView(fileUrl)
+        if (!cancelled && stored) setCached(true)
+      } else {
+        setViewerSrc('')
+      }
     }
+
+    void loadViewer()
+
     return () => {
       cancelled = true
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
     }
-  }, [fileUrl, resolvedUrl])
+  }, [fileUrl, resolvedUrl, offline])
 
   useEffect(() => {
     function onKey(e) {
@@ -68,7 +102,9 @@ export default function PdfViewerModal({ fileUrl, fileName = 'document.pdf', onC
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-neutral-200 px-4 py-3">
           <div className="min-w-0">
             <p className="truncate text-sm font-semibold text-neutral-900">{displayName}</p>
-            <p className="text-xs text-neutral-500">PDF viewer</p>
+            <p className="text-xs text-neutral-500">
+              {offline ? (cached ? 'PDF viewer (offline — cached)' : 'PDF viewer (offline)') : 'PDF viewer'}
+            </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <div className="flex items-center gap-1 rounded-lg border border-neutral-200 bg-neutral-50 px-2 py-1">
@@ -115,14 +151,16 @@ export default function PdfViewerModal({ fileUrl, fileName = 'document.pdf', onC
             className="mx-auto origin-top"
             style={{ transform: `scale(${zoom / 100})`, width: `${10000 / zoom}%`, maxWidth: '100%' }}
           >
-            {resolvedUrl ? (
+            {viewerSrc ? (
               <iframe
                 title={displayName}
-                src={resolvedUrl}
+                src={viewerSrc}
                 className="h-[75vh] w-full rounded border border-neutral-200 bg-white"
               />
             ) : (
-              <p className="py-12 text-center text-sm text-neutral-500">File unavailable.</p>
+              <p className="py-12 text-center text-sm text-neutral-500">
+                {loadError || 'File unavailable.'}
+              </p>
             )}
           </div>
         </div>
