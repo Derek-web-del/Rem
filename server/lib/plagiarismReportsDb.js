@@ -165,8 +165,9 @@ export function mapPlagiarismReportRow(row) {
     aiProbability: row.ai_probability != null ? Number(row.ai_probability) : null,
     aiVerdict: row.ai_verdict != null ? String(row.ai_verdict).trim() || null : null,
     aiSentenceResults: parseAiSentenceResults(row.ai_sentence_results),
-    aiDetectionEnabled: row.ai_detection_enabled === true,
-    aiDetectionRan: row.ai_detection_enabled === true,
+    aiDetectionEnabled: Boolean(row.ai_detection_enabled),
+    aiDetectionRan: Boolean(row.ai_detection_enabled),
+    ai_detection_ran: Boolean(row.ai_detection_enabled),
     createdAt:
       row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at ?? null,
   }

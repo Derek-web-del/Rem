@@ -189,7 +189,10 @@ export default function TeacherOriginalityReportView() {
   const riskColor =
     risk.tone === 'green' ? 'text-sky-600' : risk.tone === 'yellow' ? 'text-amber-600' : 'text-red-600'
 
-  const aiRan = report.aiDetectionRan === true
+  const aiRan =
+    report.aiDetectionRan === true ||
+    report.aiDetectionEnabled === true ||
+    report.aiProbability != null
   const aiProbability = report.aiProbability != null ? Number(report.aiProbability) : null
   const aiStyle = getAiVerdictStyle(aiProbability, report.aiVerdict)
   const aiSentences = report.aiSentenceResults || []

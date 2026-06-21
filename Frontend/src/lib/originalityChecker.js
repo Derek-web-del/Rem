@@ -77,12 +77,16 @@ export function mapReportRow(row) {
           : null,
     aiVerdict: row.aiVerdict ?? row.ai_verdict ?? null,
     aiSentenceResults: parseAiSentenceResults(row.aiSentenceResults ?? row.ai_sentence_results),
-    aiDetectionEnabled: row.aiDetectionEnabled === true || row.ai_detection_enabled === true,
+    aiDetectionEnabled:
+      row.aiDetectionEnabled === true ||
+      row.ai_detection_enabled === true,
     aiDetectionRan:
       row.aiDetectionRan === true ||
       row.ai_detection_ran === true ||
       row.aiDetectionEnabled === true ||
-      row.ai_detection_enabled === true,
+      row.ai_detection_enabled === true ||
+      row.aiProbability != null ||
+      row.ai_probability != null,
     createdAt: row.createdAt ?? row.created_at ?? null,
   }
 }
