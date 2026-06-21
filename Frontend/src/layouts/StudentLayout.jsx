@@ -1,14 +1,17 @@
-import { Suspense, useCallback, useState } from 'react'
+import { Suspense, useCallback, useEffect, useState } from 'react'
 import { Outlet, useNavigate, useOutletContext } from 'react-router-dom'
 import { authClient } from '../lib/auth-client.js'
 import { clearTermsAcceptance } from '../lib/termsSession.js'
 import { loginPathWithPortalId } from '../lib/loginRoutes.js'
 import { useIdleSession } from '../hooks/useIdleSession.js'
+import { warmStudentOfflineCache } from '../lib/studentPortal.js'
+import { isOnline } from '../lib/offlineSync.js'
 import StudentSidebar from '../pages/students/StudentSidebar.jsx'
 import OfflineBanner from '../components/OfflineBanner.jsx'
 import SystemOfflineBanner from '../components/SystemOfflineBanner.jsx'
 
 const IDLE_MS = 30 * 60 * 1000
+const OFFLINE_WARM_KEY = 'lenlearn:student-offline-warmed'
 
 function StudentOutletFallback() {
   return (
@@ -34,6 +37,17 @@ export default function StudentLayout() {
     timeoutMs: IDLE_MS,
     onIdle: logoutToPortal,
   })
+
+  useEffect(() => {
+    if (!isOnline()) return
+    if (typeof sessionStorage !== 'undefined' && sessionStorage.getItem(OFFLINE_WARM_KEY)) return
+    try {
+      sessionStorage.setItem(OFFLINE_WARM_KEY, '1')
+    } catch {
+      /* ignore */
+    }
+    void warmStudentOfflineCache()
+  }, [])
 
   return (
     <div

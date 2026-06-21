@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>LenLearn — Offline</title>
+    <title>Glendale LMS — Offline</title>
     <style>
       body {
         font-family: Inter, system-ui, sans-serif;
@@ -17,14 +17,37 @@
         text-align: center;
         padding: 2rem;
       }
-      h1 { color: #185fa5; }
+      .card {
+        max-width: 28rem;
+        background: #fff;
+        border: 1px solid #e5e7eb;
+        border-radius: 1rem;
+        padding: 2rem;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.06);
+      }
+      h1 { color: #185fa5; margin-top: 0; font-size: 1.5rem; }
+      p { color: #4b5563; line-height: 1.5; }
+      a.btn {
+        display: inline-block;
+        margin-top: 1rem;
+        padding: 0.65rem 1.25rem;
+        border-radius: 0.5rem;
+        background: #185fa5;
+        color: #fff;
+        text-decoration: none;
+        font-weight: 600;
+      }
     </style>
   </head>
   <body>
-    <div>
+    <div class="card">
       <h1>You're offline</h1>
-      <p>LenLearn needs a network connection for most features.</p>
+      <p>
+        Open Glendale LMS once while online so this device can save your subjects, materials, and
+        quizzes for offline use.
+      </p>
       <p>Quiz progress saved on this device will sync when you're back online.</p>
+      <a class="btn" href="/">Open Glendale LMS</a>
     </div>
   </body>
 </html>

@@ -3,8 +3,8 @@ import { resolveStudyMaterialFileUrl } from './facultyStudyMaterials.js'
 import { isOnline } from './offlineSync.js'
 import { apiUrl } from './lmsStateStorage.js'
 
-/** Must match `PDF_CACHE` in `public/sw.js` (`lenlearn-v4-pdf`). */
-export const PDF_CACHE_NAME = 'lenlearn-v4-pdf'
+/** Must match `PDF_CACHE` in `public/sw.js` (`lenlearn-v5-pdf`). */
+export const PDF_CACHE_NAME = 'lenlearn-v5-pdf'
 const PDF_LRU_KEY = 'lenlearn_pdf_lru'
 const PDF_LRU_MAX = 50
 

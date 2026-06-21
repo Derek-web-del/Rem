@@ -1,12 +1,13 @@
-const CACHE_VERSION = 'lenlearn-v4'
+const CACHE_VERSION = 'lenlearn-v5'
 const STATIC_CACHE = `${CACHE_VERSION}-static`
 const DYNAMIC_CACHE = `${CACHE_VERSION}-dynamic`
 const PDF_CACHE = `${CACHE_VERSION}-pdf`
+const APP_SHELL_URL = '/index.html'
 const ALLOWED = new Set([STATIC_CACHE, DYNAMIC_CACHE, PDF_CACHE])
 
 const PRECACHE_URLS = [
   '/',
-  '/index.html',
+  APP_SHELL_URL,
   '/manifest.json',
   '/offline.html',
   '/icons/icon-192.png',
@@ -29,7 +30,10 @@ function isReadOnlyApiRoute(pathname) {
   const p = pathname.replace(/\/+$/, '') || '/'
   const readOnly = [
     /^\/api\/v1\/student\/subjects\/[^/]+\/stream$/,
-    /^\/api\/v1\/student\/subjects(\/[^/]+(\/(materials))?)?$/,
+    /^\/api\/v1\/student\/subjects\/[^/]+\/modules$/,
+    /^\/api\/v1\/student\/subjects\/[^/]+\/materials$/,
+    /^\/api\/v1\/student\/subjects\/[^/]+$/,
+    /^\/api\/v1\/student\/subjects$/,
     /^\/api\/v1\/student\/study-materials(\/[^/]+)?$/,
     /^\/api\/v1\/student\/assignments(\/[^/]+)?$/,
     /^\/api\/v1\/student\/activities(\/[^/]+)?$/,
@@ -81,9 +85,32 @@ function isApiRequest(url) {
 function isStaticAsset(url, request) {
   if (url.pathname.startsWith('/assets/')) return true
   if (url.pathname.startsWith('/icons/')) return true
+  if (url.pathname.startsWith('/subject-logos/')) return true
   if (url.pathname === '/manifest.json' || url.pathname === '/offline.html') return true
-  if (request.destination === 'script' || request.destination === 'style') return true
+  if (url.pathname === '/sw.js') return true
+  if (request.destination === 'script' || request.destination === 'style' || request.destination === 'font') {
+    return true
+  }
   return false
+}
+
+/** SPA document requests (refresh / direct URL) — serve cached index.html when offline. */
+function isSpaNavigation(request, url) {
+  if (request.mode === 'navigate') return true
+  if (request.method !== 'GET') return false
+  if (isApiRequest(url) || isStaticAsset(url, request)) return false
+  if (/\.[a-z0-9]+$/i.test(url.pathname)) return false
+  const accept = request.headers.get('Accept') || ''
+  return accept.includes('text/html')
+}
+
+async function readAppShell(cache) {
+  return (await cache.match(APP_SHELL_URL)) || (await cache.match('/'))
+}
+
+async function cacheAppShell(cache, response) {
+  await cache.put(APP_SHELL_URL, response.clone())
+  await cache.put('/', response.clone())
 }
 
 /** Cache-first with background update (stale-while-revalidate style). */
@@ -131,13 +158,38 @@ async function networkFirstAsset(request, cacheName) {
   } catch {
     const cached = await caches.match(request)
     if (cached) return cached
+    const staticCache = await caches.open(STATIC_CACHE)
+    const shell = await readAppShell(staticCache)
+    if (shell && isSpaNavigation(request, new URL(request.url))) return shell
+    return caches.match('/offline.html')
+  }
+}
+
+/** Network-first navigation with app-shell fallback for all SPA routes when offline. */
+async function handleSpaNavigation(request) {
+  const cache = await caches.open(STATIC_CACHE)
+  try {
+    const res = await fetch(request)
+    if (res.ok && res.headers.get('content-type')?.includes('text/html')) {
+      await cacheAppShell(cache, res)
+      await cache.put(request, res.clone())
+    }
+    return res
+  } catch {
+    const exact = await cache.match(request)
+    if (exact) return exact
+    const shell = await readAppShell(cache)
+    if (shell) return shell
     return caches.match('/offline.html')
   }
 }
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(STATIC_CACHE).then((cache) => cache.addAll(PRECACHE_URLS)).then(() => self.skipWaiting()),
+    caches
+      .open(STATIC_CACHE)
+      .then((cache) => cache.addAll(PRECACHE_URLS))
+      .then(() => self.skipWaiting()),
   )
 })
 
@@ -177,27 +229,17 @@ self.addEventListener('fetch', (event) => {
     return
   }
 
+  if (isSpaNavigation(request, url)) {
+    event.respondWith(handleSpaNavigation(request))
+    return
+  }
+
   if (isStaticAsset(url, request)) {
     event.respondWith(networkFirstAsset(request, DYNAMIC_CACHE))
     return
   }
 
-  event.respondWith(
-    (async () => {
-      try {
-        const res = await fetch(request)
-        if (res.ok && request.mode === 'navigate') {
-          const cache = await caches.open(STATIC_CACHE)
-          await cache.put(request, res.clone())
-        }
-        return res
-      } catch {
-        const cached = await caches.match(request)
-        if (cached) return cached
-        return caches.match('/offline.html')
-      }
-    })(),
-  )
+  event.respondWith(handleSpaNavigation(request))
 })
 
 self.addEventListener('sync', (event) => {
