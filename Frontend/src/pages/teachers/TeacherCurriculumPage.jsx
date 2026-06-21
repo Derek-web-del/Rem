@@ -7,15 +7,21 @@ import TeacherBackButton from './TeacherBackButton.jsx'
 import TeacherMainHeader from './TeacherMainHeader.jsx'
 import { ACTION_BLUE } from './instituteChrome.js'
 
-const GRADE_LEVELS = [
-  'All Grades',
-  'Grade 7',
-  'Grade 8',
-  'Grade 9',
-  'Grade 10',
-  'Grade 11',
-  'Grade 12',
-]
+const HIGH_SCHOOL_GRADES = ['Grade 7', 'Grade 8', 'Grade 9', 'Grade 10']
+
+const GRADE_LEVELS = ['All Grades', ...HIGH_SCHOOL_GRADES]
+
+const HIGH_SCHOOL_GRADE_SET = new Set(HIGH_SCHOOL_GRADES)
+
+/** Faculty curriculum guides are limited to Junior High School grades 7–10. */
+function filterHighSchoolGuides(list) {
+  if (!Array.isArray(list)) return []
+  return list.filter((guide) => {
+    const grade = String(guide?.grade_level || guide?.grade || '').trim()
+    if (!grade) return true
+    return HIGH_SCHOOL_GRADE_SET.has(grade)
+  })
+}
 
 function formatUploadDate(raw) {
   if (!raw) return '—'
@@ -248,7 +254,7 @@ export default function TeacherCurriculumPage() {
               : ''
           throw new Error(msg || `Failed to load curriculum guides (${res.status}).`)
         }
-        if (!cancelled) setGuides(Array.isArray(data) ? data : [])
+        if (!cancelled) setGuides(filterHighSchoolGuides(Array.isArray(data) ? data : []))
       } catch (e) {
         const msg = String(e?.message || e || 'Failed to load curriculum guides.')
         console.error('[TeacherCurriculumPage] fetch error:', msg)
