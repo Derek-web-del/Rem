@@ -11,6 +11,7 @@ import {
 } from '../lib/plagiarismAiEngine.js'
 import { getWebSources } from '../lib/webSourceFetcher.js'
 import { parseFile } from '../lib/documentParser.js'
+import { detectAiContent } from '../lib/aiContentDetector.js'
 import {
   getOriginalityUploadFile,
   originalityUploadMiddleware,
@@ -72,6 +73,12 @@ function parseIdParam(raw) {
   const id = Number(raw)
   if (!Number.isFinite(id) || id <= 0) return null
   return id
+}
+
+function parseRunAiDetection(raw) {
+  if (raw === true || raw === 1 || raw === '1') return true
+  if (typeof raw === 'string') return raw.trim().toLowerCase() === 'true'
+  return false
 }
 
 export function createPlagiarismReportsV1Router(express, auth) {
@@ -188,6 +195,13 @@ export function createPlagiarismReportsV1Router(express, auth) {
         }
       }
       const analysis = mergePlagiarismResults(lexicalAnalysis, semanticAnalysis, aiProvider)
+
+      const runAiDetection = parseRunAiDetection(req.body?.run_ai_detection)
+      let aiDetectionResult = null
+      if (runAiDetection) {
+        aiDetectionResult = detectAiContent(submittedText)
+      }
+
       const processingTimeMs = Date.now() - startTime
 
       const report = await createPlagiarismReport(pool, facultyRow.id, {
@@ -204,6 +218,10 @@ export function createPlagiarismReportsV1Router(express, auth) {
         aiProvider: analysis.ai_provider,
         lexicalScore: analysis.lexical_score,
         semanticScore: analysis.semantic_score,
+        aiDetectionEnabled: runAiDetection,
+        aiProbability: aiDetectionResult?.probability ?? null,
+        aiVerdict: aiDetectionResult?.verdict ?? null,
+        aiSentenceResults: aiDetectionResult?.sentences ?? null,
       })
 
       await logTeacherAuditEvent(req, {
@@ -218,6 +236,10 @@ export function createPlagiarismReportsV1Router(express, auth) {
           document_name: fileName || 'Text submission',
           similarity_score: analysis.similarity_score,
           risk_level: analysis.risk_level,
+          ai_detection_ran: runAiDetection,
+          ...(runAiDetection && aiDetectionResult?.probability != null
+            ? { ai_probability: aiDetectionResult.probability }
+            : {}),
         },
       })
 
@@ -237,6 +259,10 @@ export function createPlagiarismReportsV1Router(express, auth) {
         semantic_score: analysis.semantic_score,
         input_type: inputType,
         file_name: fileName,
+        ai_detection_ran: runAiDetection,
+        ai_probability: report.aiProbability ?? null,
+        ai_verdict: report.aiVerdict ?? null,
+        ai_sentence_results: report.aiSentenceResults ?? [],
       })
     } catch (e) {
       sendSafeServerError(res, e, 'POST /api/v1/plagiarism-reports')

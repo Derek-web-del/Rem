@@ -3,8 +3,10 @@ import { useNavigate, useOutletContext, useParams } from 'react-router-dom'
 import {
   fetchPlagiarismReport,
   formatAiProviderLabel,
+  formatAiVerdictLabel,
   formatProcessingTime,
   formatReportTimeDetail,
+  getAiVerdictStyle,
   getRiskLevel,
   inputTypeLabel,
   riskBadgeStyle,
@@ -156,6 +158,19 @@ export default function TeacherOriginalityReportView() {
   const riskColor =
     risk.tone === 'green' ? 'text-sky-600' : risk.tone === 'yellow' ? 'text-amber-600' : 'text-red-600'
 
+  const aiRan = report.aiDetectionRan === true
+  const aiProbability = report.aiProbability != null ? Number(report.aiProbability) : null
+  const aiStyle = getAiVerdictStyle(aiProbability, report.aiVerdict)
+  const aiSentences = report.aiSentenceResults || []
+  const aiFlaggedCount = aiSentences.filter((s) => s.classification === 'ai').length
+  const humanFlaggedCount = aiSentences.filter((s) => s.classification === 'human').length
+  const aiProbColor =
+    aiProbability != null && aiProbability >= 70
+      ? 'text-[#534AB7]'
+      : aiProbability != null && aiProbability >= 31
+        ? 'text-[#633806]'
+        : 'text-[#27500A]'
+
   function highlightContent(content, flagged) {
     const sentences = (flagged || []).map(sentenceText).filter(Boolean)
     if (!sentences.length) return escapeHtml(content)
@@ -181,7 +196,9 @@ export default function TeacherOriginalityReportView() {
         />
 
         <div className="flex min-h-0 flex-1 flex-col gap-3 md:gap-4">
-          <div className="grid w-full grid-cols-2 gap-3 md:grid-cols-4 md:gap-4">
+          <div
+            className={`grid w-full grid-cols-2 gap-3 md:gap-4 ${aiRan ? 'md:grid-cols-6' : 'md:grid-cols-4'}`}
+          >
             <MetricCard
               value={`${Number(report.similarityScore).toFixed(1)}%`}
               label="Similarity Score"
@@ -202,6 +219,20 @@ export default function TeacherOriginalityReportView() {
                 />
               }
             />
+            {aiRan ? (
+              <>
+                <MetricCard
+                  value={aiProbability != null ? `${aiProbability.toFixed(1)}%` : '—'}
+                  label="AI Probability"
+                  valueClass={aiProbColor}
+                />
+                <MetricCard
+                  value={formatAiVerdictLabel(report.aiVerdict)}
+                  label="AI Verdict"
+                  valueStyle={{ color: aiStyle.color }}
+                />
+              </>
+            ) : null}
           </div>
 
           <section className="w-full rounded-xl border border-neutral-200 bg-white p-4 shadow-sm md:p-5">
@@ -224,6 +255,170 @@ export default function TeacherOriginalityReportView() {
               {String(report.content || '').length} characters
             </p>
           </section>
+
+          {aiRan ? (
+            <section className="w-full overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-sm">
+              <div className="flex flex-wrap items-center gap-2 border-b border-neutral-200 bg-neutral-50 px-4 py-3 md:px-5">
+                <h3 className="inline-flex items-center gap-2 text-base font-bold text-neutral-900">
+                  <i className="ti ti-robot" style={{ color: '#534AB7' }} aria-hidden="true" />
+                  AI-generated content detection
+                </h3>
+                <span
+                  className="ml-auto inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold"
+                  style={{
+                    background: aiStyle.bg,
+                    color: aiStyle.color,
+                    border: `1px solid ${aiStyle.border}`,
+                  }}
+                >
+                  {aiProbability != null && aiProbability >= 70
+                    ? 'AI detected'
+                    : aiProbability != null && aiProbability >= 31
+                      ? 'Mixed signals'
+                      : 'Likely human'}
+                </span>
+              </div>
+
+              <div
+                className="mx-4 my-4 overflow-hidden rounded-lg border md:mx-5"
+                style={{ borderColor: aiStyle.border }}
+              >
+                <div
+                  className="flex flex-wrap items-center justify-between gap-2 px-4 py-3"
+                  style={{ background: aiStyle.bg }}
+                >
+                  <p
+                    className="inline-flex items-center gap-2 text-sm font-semibold"
+                    style={{ color: aiStyle.color }}
+                  >
+                    <i className={`ti ${aiStyle.icon}`} aria-hidden="true" />
+                    AI content analysis result
+                  </p>
+                  {aiProbability != null ? (
+                    <span
+                      className="rounded-full px-2.5 py-0.5 text-xs font-semibold"
+                      style={{
+                        background: aiStyle.bg,
+                        color: aiStyle.color,
+                        border: `1px solid ${aiStyle.border}`,
+                      }}
+                    >
+                      {aiProbability.toFixed(1)}% AI probability
+                    </span>
+                  ) : null}
+                </div>
+
+                <div className="space-y-3 px-4 py-3 md:px-5">
+                  <div>
+                    <p className="text-xs text-neutral-500">Overall AI probability score</p>
+                    <div className="mt-2 flex items-center gap-3">
+                      <div className="h-2 flex-1 overflow-hidden rounded-full bg-neutral-200">
+                        <div
+                          className="h-full rounded-full transition-all"
+                          style={{
+                            width: `${Math.min(100, Math.max(0, aiProbability ?? 0))}%`,
+                            background: '#534AB7',
+                          }}
+                        />
+                      </div>
+                      <span className="min-w-[3rem] text-right text-sm font-semibold tabular-nums" style={{ color: aiStyle.color }}>
+                        {aiProbability != null ? `${aiProbability.toFixed(1)}%` : '—'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {aiProbability != null && aiProbability >= 70 ? (
+                    <div
+                      className="flex items-start gap-2 rounded-lg px-3 py-2 text-sm"
+                      style={{ background: '#FAEEDA', color: '#633806' }}
+                    >
+                      <i className="ti ti-alert-triangle mt-0.5 shrink-0" aria-hidden="true" />
+                      <p>
+                        High probability that this content was generated or heavily assisted by AI tools such as
+                        ChatGPT or Gemini.
+                      </p>
+                    </div>
+                  ) : null}
+
+                  {[
+                    ['Detection method', 'Perplexity + Burstiness analysis'],
+                    ['AI provider used', 'Local AI (on-server)'],
+                    [
+                      'Sentences flagged as AI',
+                      `${aiFlaggedCount} of ${aiSentences.length} sentence${aiSentences.length === 1 ? '' : 's'}`,
+                    ],
+                    [
+                      'Human-written sentences',
+                      `${humanFlaggedCount} of ${aiSentences.length} sentence${aiSentences.length === 1 ? '' : 's'}`,
+                    ],
+                    ['Verdict', report.aiVerdict || 'Unknown'],
+                  ].map(([label, value]) => (
+                    <div
+                      key={label}
+                      className="flex items-center justify-between border-b border-neutral-100 py-1.5 text-sm last:border-0"
+                    >
+                      <span className="text-neutral-500">{label}</span>
+                      <span
+                        className="font-semibold text-neutral-900"
+                        style={label === 'Verdict' ? { color: aiStyle.color } : undefined}
+                      >
+                        {value}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {aiSentences.length > 0 ? (
+                <>
+                  <div className="border-t border-neutral-200 bg-neutral-50 px-4 py-3 text-sm font-medium text-neutral-600 md:px-5">
+                    <span className="inline-flex items-center gap-2">
+                      <i className="ti ti-highlight" style={{ color: '#534AB7' }} aria-hidden="true" />
+                      Sentence-level AI breakdown
+                    </span>
+                  </div>
+                  <div className="space-y-2 px-4 py-3 md:px-5">
+                    <div className="mb-2 flex flex-wrap items-center gap-3 text-xs text-neutral-500">
+                      <span className="inline-flex items-center gap-1.5">
+                        <span className="inline-block h-3 w-3 rounded-sm" style={{ background: '#EEEDFE', borderLeft: '3px solid #534AB7' }} />
+                        AI-generated
+                      </span>
+                      <span className="inline-flex items-center gap-1.5">
+                        <span className="inline-block h-3 w-3 rounded-sm" style={{ background: '#EAF3DE', borderLeft: '3px solid #3B6D11' }} />
+                        Human-written
+                      </span>
+                    </div>
+                    {aiSentences.map((item, index) => {
+                      const isAi = item.classification === 'ai'
+                      return (
+                        <div
+                          key={`${item.sentence}-${index}`}
+                          className="rounded-r-md px-3 py-2 text-sm leading-relaxed"
+                          style={{
+                            background: isAi ? '#EEEDFE' : '#EAF3DE',
+                            borderLeft: `3px solid ${isAi ? '#534AB7' : '#3B6D11'}`,
+                            color: isAi ? '#26215C' : '#173404',
+                          }}
+                        >
+                          {item.sentence}
+                          <span
+                            className="ml-2 inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold align-middle"
+                            style={{
+                              background: isAi ? '#EEEDFE' : '#EAF3DE',
+                              color: isAi ? '#3C3489' : '#27500A',
+                              border: `1px solid ${isAi ? '#AFA9EC' : '#97C459'}`,
+                            }}
+                          >
+                            {isAi ? 'AI' : 'Human'}
+                          </span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </>
+              ) : null}
+            </section>
+          ) : null}
 
           <section
             className={`w-full rounded-xl border p-6 text-center shadow-sm md:p-8 ${
@@ -330,6 +525,12 @@ export default function TeacherOriginalityReportView() {
                     : []),
                   ...(report.semanticScore != null
                     ? [['Semantic Score', `${Number(report.semanticScore).toFixed(1)}%`]]
+                    : []),
+                  ...(aiRan
+                    ? [
+                        ['AI detection method', 'Perplexity + Burstiness scoring'],
+                        ['AI provider', 'Local AI (on-server)'],
+                      ]
                     : []),
                   ['Sources Checked', `${report.sourcesChecked ?? 0} web sources`],
                   ['Processing Time', formatProcessingTime(report.processingTimeMs)],

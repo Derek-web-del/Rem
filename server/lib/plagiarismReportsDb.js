@@ -1,7 +1,8 @@
 const REPORT_COLUMNS = `
   id, faculty_id, content, input_type, file_name, similarity_score, risk_level,
   flagged_sentences, web_sources, sources_checked, processing_time_ms,
-  analysis_method, ai_provider, lexical_score, semantic_score, created_at
+  analysis_method, ai_provider, lexical_score, semantic_score,
+  ai_probability, ai_verdict, ai_sentence_results, ai_detection_enabled, created_at
 `
 
 export async function ensurePlagiarismReportsSchema(pool) {
@@ -42,6 +43,22 @@ export async function ensurePlagiarismReportsSchema(pool) {
   await pool.query(`
     ALTER TABLE plagiarism_reports
       ADD COLUMN IF NOT EXISTS semantic_score NUMERIC(5, 2)
+  `)
+  await pool.query(`
+    ALTER TABLE plagiarism_reports
+      ADD COLUMN IF NOT EXISTS ai_probability NUMERIC(5, 2) DEFAULT NULL
+  `)
+  await pool.query(`
+    ALTER TABLE plagiarism_reports
+      ADD COLUMN IF NOT EXISTS ai_verdict VARCHAR(50) DEFAULT NULL
+  `)
+  await pool.query(`
+    ALTER TABLE plagiarism_reports
+      ADD COLUMN IF NOT EXISTS ai_sentence_results JSONB DEFAULT NULL
+  `)
+  await pool.query(`
+    ALTER TABLE plagiarism_reports
+      ADD COLUMN IF NOT EXISTS ai_detection_enabled BOOLEAN DEFAULT FALSE
   `)
   await pool.query(
     `CREATE INDEX IF NOT EXISTS idx_plagiarism_reports_faculty_id ON plagiarism_reports (faculty_id)`,
@@ -102,6 +119,31 @@ function parseWebSources(raw) {
     .filter((item) => item.url)
 }
 
+function parseAiSentenceResults(raw) {
+  if (!Array.isArray(raw)) {
+    if (typeof raw === 'string') {
+      try {
+        const parsed = JSON.parse(raw)
+        if (Array.isArray(parsed)) return parseAiSentenceResults(parsed)
+      } catch {
+        return []
+      }
+    }
+    return []
+  }
+  return raw
+    .map((item) => {
+      if (!item || typeof item !== 'object') return null
+      const classification = String(item.classification ?? '').trim().toLowerCase()
+      return {
+        sentence: String(item.sentence ?? '').trim(),
+        classification: classification === 'ai' ? 'ai' : 'human',
+        confidence: Number(item.confidence ?? 0) || 0,
+      }
+    })
+    .filter((item) => item?.sentence)
+}
+
 export function mapPlagiarismReportRow(row) {
   if (!row) return null
   return {
@@ -120,6 +162,11 @@ export function mapPlagiarismReportRow(row) {
     aiProvider: String(row.ai_provider ?? 'none').trim() || 'none',
     lexicalScore: row.lexical_score != null ? Number(row.lexical_score) : null,
     semanticScore: row.semantic_score != null ? Number(row.semantic_score) : null,
+    aiProbability: row.ai_probability != null ? Number(row.ai_probability) : null,
+    aiVerdict: row.ai_verdict != null ? String(row.ai_verdict).trim() || null : null,
+    aiSentenceResults: parseAiSentenceResults(row.ai_sentence_results),
+    aiDetectionEnabled: row.ai_detection_enabled === true,
+    aiDetectionRan: row.ai_detection_enabled === true,
     createdAt:
       row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at ?? null,
   }
@@ -247,16 +294,22 @@ export async function fetchPlagiarismReportById(pool, id, facultyId) {
  *   aiProvider?: string,
  *   lexicalScore?: number|null,
  *   semanticScore?: number|null,
+ *   aiProbability?: number|null,
+ *   aiVerdict?: string|null,
+ *   aiSentenceResults?: object[]|null,
+ *   aiDetectionEnabled?: boolean,
  * }} analysis
  */
 export async function createPlagiarismReport(pool, facultyId, analysis) {
+  const aiDetectionEnabled = analysis.aiDetectionEnabled === true
   const { rows } = await pool.query(
     `
       INSERT INTO plagiarism_reports (
         faculty_id, content, input_type, file_name, similarity_score, risk_level,
         flagged_sentences, web_sources, sources_checked, processing_time_ms,
-        analysis_method, ai_provider, lexical_score, semantic_score
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9, $10, $11, $12, $13, $14)
+        analysis_method, ai_provider, lexical_score, semantic_score,
+        ai_probability, ai_verdict, ai_sentence_results, ai_detection_enabled
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9, $10, $11, $12, $13, $14, $15, $16, $17::jsonb, $18)
       RETURNING ${REPORT_COLUMNS}
     `,
     [
@@ -274,6 +327,12 @@ export async function createPlagiarismReport(pool, facultyId, analysis) {
       String(analysis.aiProvider ?? 'none').trim() || 'none',
       analysis.lexicalScore != null ? Number(analysis.lexicalScore) : null,
       analysis.semanticScore != null ? Number(analysis.semanticScore) : null,
+      aiDetectionEnabled && analysis.aiProbability != null ? Number(analysis.aiProbability) : null,
+      aiDetectionEnabled && analysis.aiVerdict ? String(analysis.aiVerdict).trim() : null,
+      aiDetectionEnabled && Array.isArray(analysis.aiSentenceResults)
+        ? JSON.stringify(analysis.aiSentenceResults)
+        : null,
+      aiDetectionEnabled,
     ],
   )
   return mapPlagiarismReportRow(rows?.[0])

@@ -36,6 +36,21 @@ function parseWebSources(raw) {
     .filter((item) => item.url)
 }
 
+function parseAiSentenceResults(raw) {
+  if (!Array.isArray(raw)) return []
+  return raw
+    .map((item) => {
+      if (!item || typeof item !== 'object') return null
+      const classification = String(item.classification ?? '').trim().toLowerCase()
+      return {
+        sentence: String(item.sentence ?? '').trim(),
+        classification: classification === 'ai' ? 'ai' : 'human',
+        confidence: Number(item.confidence ?? 0) || 0,
+      }
+    })
+    .filter((item) => item?.sentence)
+}
+
 export function mapReportRow(row) {
   if (!row || typeof row !== 'object') return null
   return {
@@ -54,6 +69,20 @@ export function mapReportRow(row) {
     aiProvider: String(row.aiProvider ?? row.ai_provider ?? 'none').trim() || 'none',
     lexicalScore: row.lexicalScore != null ? Number(row.lexicalScore) : row.lexical_score != null ? Number(row.lexical_score) : null,
     semanticScore: row.semanticScore != null ? Number(row.semanticScore) : row.semantic_score != null ? Number(row.semantic_score) : null,
+    aiProbability:
+      row.aiProbability != null
+        ? Number(row.aiProbability)
+        : row.ai_probability != null
+          ? Number(row.ai_probability)
+          : null,
+    aiVerdict: row.aiVerdict ?? row.ai_verdict ?? null,
+    aiSentenceResults: parseAiSentenceResults(row.aiSentenceResults ?? row.ai_sentence_results),
+    aiDetectionEnabled: row.aiDetectionEnabled === true || row.ai_detection_enabled === true,
+    aiDetectionRan:
+      row.aiDetectionRan === true ||
+      row.ai_detection_ran === true ||
+      row.aiDetectionEnabled === true ||
+      row.ai_detection_enabled === true,
     createdAt: row.createdAt ?? row.created_at ?? null,
   }
 }
@@ -70,11 +99,12 @@ export async function fetchPlagiarismReport(id) {
   return mapReportRow(data.report)
 }
 
-/** @param {{ content?: string, file?: File|null }} payload */
-export async function submitForAnalysis({ content, file } = {}) {
+/** @param {{ content?: string, file?: File|null, runAiDetection?: boolean }} payload */
+export async function submitForAnalysis({ content, file, runAiDetection = false } = {}) {
   if (file) {
     const form = new FormData()
     form.append('file', file)
+    form.append('run_ai_detection', runAiDetection ? 'true' : 'false')
     const res = await apiFetch('/api/v1/plagiarism-reports', {
       method: 'POST',
       body: form,
@@ -91,7 +121,11 @@ export async function submitForAnalysis({ content, file } = {}) {
   const res = await apiFetch('/api/v1/plagiarism-reports', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ content: trimmed, input_type: 'text' }),
+    body: JSON.stringify({
+      content: trimmed,
+      input_type: 'text',
+      run_ai_detection: !!runAiDetection,
+    }),
   })
   const data = await res.json().catch(() => ({}))
   return mapReportRow(data.report)
@@ -183,4 +217,33 @@ export function webSourceScoreClass(score) {
   if (n >= 71) return 'text-red-600'
   if (n >= 31) return 'text-orange-500'
   return 'text-green-600'
+}
+
+export function getAiVerdictStyle(probability, verdict) {
+  const p = probability != null ? Number(probability) : null
+  const v = String(verdict || '').toLowerCase()
+  if (p != null && p >= 70) {
+    return { bg: '#EEEDFE', color: '#534AB7', border: '#AFA9EC', icon: 'ti-robot', short: 'AI' }
+  }
+  if (p != null && p >= 31) {
+    return { bg: '#FAEEDA', color: '#633806', border: '#EF9F27', icon: 'ti-alert-triangle', short: 'Mixed' }
+  }
+  if (p != null || v.includes('human')) {
+    return { bg: '#EAF3DE', color: '#27500A', border: '#97C459', icon: 'ti-check', short: 'Human' }
+  }
+  return { bg: '#F3F4F6', color: '#6B7280', border: '#D1D5DB', icon: 'ti-help', short: 'Unknown' }
+}
+
+export function formatAiVerdictShort(verdict, probability) {
+  const style = getAiVerdictStyle(probability, verdict)
+  return style.short
+}
+
+export function formatAiVerdictLabel(verdict) {
+  const v = String(verdict || '').trim()
+  if (!v || v === 'Unknown') return 'Unknown'
+  if (v === 'Likely AI-generated') return 'Likely AI'
+  if (v === 'Likely Human') return 'Likely Human'
+  if (v === 'Mixed') return 'Mixed'
+  return v
 }
