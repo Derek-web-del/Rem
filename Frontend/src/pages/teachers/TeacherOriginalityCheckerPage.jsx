@@ -91,7 +91,6 @@ export default function TeacherOriginalityCheckerPage() {
   const [file, setFile] = useState(null)
   const [dragOver, setDragOver] = useState(false)
   const [analyzing, setAnalyzing] = useState(false)
-  const [aiDetect, setAiDetect] = useState(true)
   const [reports, setReports] = useState([])
   const [loadingReports, setLoadingReports] = useState(true)
   const [deleteTarget, setDeleteTarget] = useState(null)
@@ -203,8 +202,8 @@ export default function TeacherOriginalityCheckerPage() {
     try {
       const report = await submitForAnalysis(
         activeTab === 'file'
-          ? { file, runAiDetection: aiDetect }
-          : { content: text.trim(), runAiDetection: aiDetect },
+          ? { file, runAiDetection: true }
+          : { content: text.trim(), runAiDetection: true },
       )
       await refreshReports()
       setPage(1)
@@ -342,31 +341,6 @@ export default function TeacherOriginalityCheckerPage() {
                   </div>
                 )}
 
-                <div className="flex items-center gap-3 rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3">
-                  <i className="ti ti-robot shrink-0 text-lg" style={{ color: '#534AB7' }} aria-hidden="true" />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-semibold text-neutral-900">Also check for AI-generated content</p>
-                    <p className="text-xs text-neutral-500">
-                      Detects ChatGPT, Gemini, and other AI writing patterns
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={aiDetect}
-                    aria-label="Also check for AI-generated content"
-                    onClick={() => setAiDetect((v) => !v)}
-                    className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${aiDetect ? '' : 'bg-neutral-300'}`}
-                    style={aiDetect ? { backgroundColor: ACTION_BLUE } : undefined}
-                  >
-                    <span
-                      className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${
-                        aiDetect ? 'translate-x-4' : 'translate-x-0.5'
-                      }`}
-                    />
-                  </button>
-                </div>
-
                 <button
                   type="button"
                   disabled={analyzing}
@@ -375,11 +349,7 @@ export default function TeacherOriginalityCheckerPage() {
                   style={{ backgroundColor: ACTION_BLUE }}
                 >
                   <i className="ti ti-scan" aria-hidden="true" />
-                  {analyzing
-                    ? 'Analyzing…'
-                    : aiDetect
-                      ? 'Analyze for plagiarism + AI content'
-                      : 'Analyze for Plagiarism'}
+                  {analyzing ? 'Analyzing…' : 'Analyze for plagiarism + AI content'}
                 </button>
               </div>
             </section>
@@ -490,13 +460,13 @@ export default function TeacherOriginalityCheckerPage() {
                             </span>
                           </td>
                           <td className="px-3 py-2.5 md:px-4 md:py-3">
-                            <ScoreBadge score={report.similarityScore} />
-                          </td>
-                          <td className="px-3 py-2.5 md:px-4 md:py-3">
                             <span className="inline-flex flex-wrap items-center">
-                              <RiskBadge score={report.similarityScore} />
+                              <ScoreBadge score={report.similarityScore} />
                               <AiListBadge report={report} />
                             </span>
+                          </td>
+                          <td className="px-3 py-2.5 md:px-4 md:py-3">
+                            <RiskBadge score={report.similarityScore} />
                           </td>
                           <td className="px-3 py-2.5 md:px-4 md:py-3">
                             <div className="flex flex-wrap items-center gap-2">

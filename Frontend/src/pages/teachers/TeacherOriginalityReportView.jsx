@@ -8,7 +8,6 @@ import {
   formatReportTimeDetail,
   getAiVerdictStyle,
   getRiskLevel,
-  inputTypeLabel,
   riskBadgeStyle,
   sentenceText,
   webSourceScoreClass,
@@ -32,6 +31,38 @@ function MetricCard({ value, label, valueClass = 'text-neutral-900', valueStyle,
         </p>
       )}
       <p className="mt-1 text-sm font-medium text-neutral-600">{label}</p>
+    </div>
+  )
+}
+
+function AiGuideRow({ range, variant, title, body }) {
+  const styles = {
+    human: { bg: '#EAF3DE', color: '#27500A' },
+    mixed: { bg: '#FAEEDA', color: '#633806' },
+    ai: { bg: '#EEEDFE', color: '#534AB7' },
+  }
+  const style = styles[variant] || styles.human
+  return (
+    <div className="border-b border-neutral-100 py-2.5 last:border-0 md:py-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <span
+          className="rounded-full px-2.5 py-0.5 text-xs font-semibold"
+          style={{ background: style.bg, color: style.color }}
+        >
+          {range}
+        </span>
+        <span className="text-sm font-semibold text-neutral-800">{title}</span>
+      </div>
+      <p className="mt-1 text-sm text-neutral-500">{body}</p>
+    </div>
+  )
+}
+
+function VerdictGuideRow({ title, body }) {
+  return (
+    <div className="border-b border-neutral-100 py-2.5 last:border-0 md:py-3">
+      <p className="text-sm font-semibold text-neutral-800">{title}</p>
+      <p className="mt-1 text-sm text-neutral-500">{body}</p>
     </div>
   )
 }
@@ -60,7 +91,7 @@ function ReportPageHeading({ dateLine, onNewAnalysis }) {
       <p className="text-xs font-semibold uppercase tracking-wider text-neutral-500">VIEW</p>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="text-xl font-bold text-neutral-900 md:text-2xl">AI Plagiarism Report</h2>
+          <h2 className="text-xl font-bold text-neutral-900 md:text-2xl">AI plagiarism report</h2>
           {dateLine ? (
             <p className="mt-1 inline-flex items-center gap-1.5 text-sm text-neutral-500">
               <i className="ti ti-calendar" aria-hidden="true" />
@@ -171,6 +202,11 @@ export default function TeacherOriginalityReportView() {
         ? 'text-[#633806]'
         : 'text-[#27500A]'
 
+  const aiHeaderBadge =
+    aiProbability != null && aiProbability >= 70
+      ? { label: 'AI detected', bg: '#EEEDFE', color: '#534AB7', border: '#AFA9EC' }
+      : { label: 'Not detected', bg: '#EAF3DE', color: '#27500A', border: '#97C459' }
+
   function highlightContent(content, flagged) {
     const sentences = (flagged || []).map(sentenceText).filter(Boolean)
     if (!sentences.length) return escapeHtml(content)
@@ -197,7 +233,7 @@ export default function TeacherOriginalityReportView() {
 
         <div className="flex min-h-0 flex-1 flex-col gap-3 md:gap-4">
           <div
-            className={`grid w-full grid-cols-2 gap-3 md:gap-4 ${aiRan ? 'md:grid-cols-6' : 'md:grid-cols-4'}`}
+            className={`grid w-full grid-cols-2 gap-3 md:gap-4 ${aiRan ? 'md:grid-cols-5' : 'md:grid-cols-3'}`}
           >
             <MetricCard
               value={`${Number(report.similarityScore).toFixed(1)}%`}
@@ -209,15 +245,6 @@ export default function TeacherOriginalityReportView() {
               value={String(flaggedCount)}
               label="Flagged Sentences"
               valueStyle={{ color: ACTION_BLUE }}
-            />
-            <MetricCard
-              label={inputTypeLabel(report.inputType)}
-              icon={
-                <i
-                  className={`ti ${report.inputType === 'file' ? 'ti-file-upload' : 'ti-forms'} text-3xl`}
-                  aria-hidden="true"
-                />
-              }
             />
             {aiRan ? (
               <>
@@ -256,6 +283,53 @@ export default function TeacherOriginalityReportView() {
             </p>
           </section>
 
+          <section
+            className={`w-full rounded-xl border p-6 text-center shadow-sm md:p-8 ${
+              hasPlagiarism ? 'border-red-200 bg-red-50' : 'border-emerald-200 bg-emerald-50'
+            }`}
+          >
+            {hasPlagiarism ? (
+              <>
+                <i className="ti ti-alert-triangle text-5xl text-red-500" aria-hidden="true" />
+                <h3 className="mt-3 text-xl font-bold text-red-700">Plagiarism Detected</h3>
+                <p className="mt-2 text-sm text-red-600">
+                  {flaggedCount} sentence{flaggedCount === 1 ? '' : 's'} flagged as potentially plagiarized content.
+                </p>
+                {report.flaggedSentences?.length ? (
+                  <ul className="mx-auto mt-4 w-full space-y-2 text-left text-sm text-red-800">
+                    {report.flaggedSentences.map((item) => {
+                      const text = sentenceText(item)
+                      const key = `${text}-${item?.source_url || ''}`
+                      return (
+                        <li key={key} className="rounded-lg bg-white/70 px-3 py-2">
+                          <p>{text}</p>
+                          {item?.source_url ? (
+                            <a
+                              href={item.source_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="mt-1 inline-flex items-center gap-1 text-xs text-red-700 underline"
+                            >
+                              {item.source_title || item.source_url}
+                            </a>
+                          ) : null}
+                        </li>
+                      )
+                    })}
+                  </ul>
+                ) : null}
+              </>
+            ) : (
+              <>
+                <i className="ti ti-circle-check text-5xl text-emerald-500" aria-hidden="true" />
+                <h3 className="mt-3 text-xl font-bold text-emerald-700">No Plagiarism Detected</h3>
+                <p className="mt-2 text-sm text-emerald-600">
+                  Great! No sentences were flagged as potentially plagiarized content.
+                </p>
+              </>
+            )}
+          </section>
+
           {aiRan ? (
             <section className="w-full overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-sm">
               <div className="flex flex-wrap items-center gap-2 border-b border-neutral-200 bg-neutral-50 px-4 py-3 md:px-5">
@@ -266,16 +340,12 @@ export default function TeacherOriginalityReportView() {
                 <span
                   className="ml-auto inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold"
                   style={{
-                    background: aiStyle.bg,
-                    color: aiStyle.color,
-                    border: `1px solid ${aiStyle.border}`,
+                    background: aiHeaderBadge.bg,
+                    color: aiHeaderBadge.color,
+                    border: `1px solid ${aiHeaderBadge.border}`,
                   }}
                 >
-                  {aiProbability != null && aiProbability >= 70
-                    ? 'AI detected'
-                    : aiProbability != null && aiProbability >= 31
-                      ? 'Mixed signals'
-                      : 'Likely human'}
+                  {aiHeaderBadge.label}
                 </span>
               </div>
 
@@ -380,11 +450,11 @@ export default function TeacherOriginalityReportView() {
                   <div className="space-y-2 px-4 py-3 md:px-5">
                     <div className="mb-2 flex flex-wrap items-center gap-3 text-xs text-neutral-500">
                       <span className="inline-flex items-center gap-1.5">
-                        <span className="inline-block h-3 w-3 rounded-sm" style={{ background: '#EEEDFE', borderLeft: '3px solid #534AB7' }} />
+                        <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: '#534AB7' }} />
                         AI-generated
                       </span>
                       <span className="inline-flex items-center gap-1.5">
-                        <span className="inline-block h-3 w-3 rounded-sm" style={{ background: '#EAF3DE', borderLeft: '3px solid #3B6D11' }} />
+                        <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: '#3B6D11' }} />
                         Human-written
                       </span>
                     </div>
@@ -419,53 +489,6 @@ export default function TeacherOriginalityReportView() {
               ) : null}
             </section>
           ) : null}
-
-          <section
-            className={`w-full rounded-xl border p-6 text-center shadow-sm md:p-8 ${
-              hasPlagiarism ? 'border-red-200 bg-red-50' : 'border-emerald-200 bg-emerald-50'
-            }`}
-          >
-            {hasPlagiarism ? (
-              <>
-                <i className="ti ti-alert-triangle text-5xl text-red-500" aria-hidden="true" />
-                <h3 className="mt-3 text-xl font-bold text-red-700">Plagiarism Detected</h3>
-                <p className="mt-2 text-sm text-red-600">
-                  {flaggedCount} sentence{flaggedCount === 1 ? '' : 's'} flagged as potentially plagiarized content.
-                </p>
-                {report.flaggedSentences?.length ? (
-                  <ul className="mx-auto mt-4 w-full space-y-2 text-left text-sm text-red-800">
-                    {report.flaggedSentences.map((item) => {
-                      const text = sentenceText(item)
-                      const key = `${text}-${item?.source_url || ''}`
-                      return (
-                        <li key={key} className="rounded-lg bg-white/70 px-3 py-2">
-                          <p>{text}</p>
-                          {item?.source_url ? (
-                            <a
-                              href={item.source_url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="mt-1 inline-flex items-center gap-1 text-xs text-red-700 underline"
-                            >
-                              {item.source_title || item.source_url}
-                            </a>
-                          ) : null}
-                        </li>
-                      )
-                    })}
-                  </ul>
-                ) : null}
-              </>
-            ) : (
-              <>
-                <i className="ti ti-circle-check text-5xl text-emerald-500" aria-hidden="true" />
-                <h3 className="mt-3 text-xl font-bold text-emerald-700">No Plagiarism Detected</h3>
-                <p className="mt-2 text-sm text-emerald-600">
-                  Great! No sentences were flagged as potentially plagiarized content.
-                </p>
-              </>
-            )}
-          </section>
 
           {sortedWebSources.length > 0 ? (
             <section className="w-full rounded-xl border border-neutral-200 bg-white p-4 shadow-sm md:p-5">
@@ -573,6 +596,50 @@ export default function TeacherOriginalityReportView() {
                   tone="red"
                   title="High Risk"
                   body="High similarity detected. Requires immediate attention."
+                />
+
+                <div className="my-4 border-t border-neutral-200" />
+
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-500">
+                  AI probability guide
+                </p>
+                <AiGuideRow
+                  range="0–30%"
+                  variant="human"
+                  title="Likely human"
+                  body="Text shows natural human writing patterns. Low AI involvement."
+                />
+                <AiGuideRow
+                  range="31–69%"
+                  variant="mixed"
+                  title="Mixed / AI-assisted"
+                  body="Moderate AI patterns detected. May have been AI-assisted or edited."
+                />
+                <AiGuideRow
+                  range="70–100%"
+                  variant="ai"
+                  title="Likely AI-generated"
+                  body="Strong AI writing patterns detected. Content may be fully AI-generated."
+                />
+
+                <p className="mb-2 mt-4 text-xs font-semibold uppercase tracking-wide text-neutral-500">
+                  AI verdict guide
+                </p>
+                <VerdictGuideRow
+                  title="Likely Human"
+                  body="Writing patterns consistent with human authorship."
+                />
+                <VerdictGuideRow
+                  title="Mixed"
+                  body="Combination of human and AI writing patterns detected."
+                />
+                <VerdictGuideRow
+                  title="Likely AI-generated"
+                  body="Writing patterns strongly consistent with AI generation tools such as ChatGPT or Gemini."
+                />
+                <VerdictGuideRow
+                  title="Unknown"
+                  body="Insufficient text to determine AI involvement reliably."
                 />
               </div>
             </section>

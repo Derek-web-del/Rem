@@ -100,7 +100,7 @@ export async function fetchPlagiarismReport(id) {
 }
 
 /** @param {{ content?: string, file?: File|null, runAiDetection?: boolean }} payload */
-export async function submitForAnalysis({ content, file, runAiDetection = false } = {}) {
+export async function submitForAnalysis({ content, file, runAiDetection = true } = {}) {
   if (file) {
     const form = new FormData()
     form.append('file', file)
