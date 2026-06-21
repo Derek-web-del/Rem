@@ -58,19 +58,19 @@ function AiGuideRow({ range, variant, title, body }) {
   )
 }
 
-function VerdictGuideRow({ title, body }) {
+function VerdictGuideRow({ title, body, compact = false }) {
   return (
-    <div className="border-b border-neutral-100 py-2.5 last:border-0 md:py-3">
+    <div className={compact ? '' : 'border-b border-neutral-100 py-2.5 last:border-0 md:py-3'}>
       <p className="text-sm font-semibold text-neutral-800">{title}</p>
       <p className="mt-1 text-sm text-neutral-500">{body}</p>
     </div>
   )
 }
 
-function InterpretationRow({ range, tone, title, body }) {
+function InterpretationRow({ range, tone, title, body, compact = false }) {
   const style = riskBadgeStyle(tone)
   return (
-    <div className="border-b border-neutral-100 py-2.5 last:border-0 md:py-3">
+    <div className={compact ? '' : 'border-b border-neutral-100 py-2.5 last:border-0 md:py-3'}>
       <div className="flex flex-wrap items-center gap-2">
         <span
           className="rounded-full px-2.5 py-0.5 text-xs font-semibold"
@@ -582,24 +582,82 @@ export default function TeacherOriginalityReportView() {
                 Interpretation Guide
               </h3>
               <div className="mt-2">
-                <InterpretationRow
-                  range="0–30%"
-                  tone="green"
-                  title="Low Risk"
-                  body="Minimal similarity detected. Content appears original."
-                />
-                <InterpretationRow
-                  range="31–70%"
-                  tone="yellow"
-                  title="Medium Risk"
-                  body="Moderate similarity. Review flagged sections."
-                />
-                <InterpretationRow
-                  range="71–100%"
-                  tone="red"
-                  title="High Risk"
-                  body="High similarity detected. Requires immediate attention."
-                />
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[480px] text-left text-sm">
+                    <thead className="border-b border-neutral-200 text-xs font-semibold uppercase tracking-wide text-neutral-600">
+                      <tr>
+                        <th className="w-1/2 px-2 py-2.5 align-bottom">Plagiarism risk levels</th>
+                        <th className="w-1/2 px-2 py-2.5 align-bottom">AI verdict guide</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr className="border-b border-neutral-100 align-top">
+                        <td className="px-2 py-2.5 md:py-3">
+                          <InterpretationRow
+                            range="0–30%"
+                            tone="green"
+                            title="Low Risk"
+                            body="Minimal similarity detected. Content appears original."
+                            compact
+                          />
+                        </td>
+                        <td className="px-2 py-2.5 md:py-3">
+                          <VerdictGuideRow
+                            title="Likely Human"
+                            body="Writing patterns consistent with human authorship."
+                            compact
+                          />
+                        </td>
+                      </tr>
+                      <tr className="border-b border-neutral-100 align-top">
+                        <td className="px-2 py-2.5 md:py-3">
+                          <InterpretationRow
+                            range="31–70%"
+                            tone="yellow"
+                            title="Medium Risk"
+                            body="Moderate similarity. Review flagged sections."
+                            compact
+                          />
+                        </td>
+                        <td className="px-2 py-2.5 md:py-3">
+                          <VerdictGuideRow
+                            title="Mixed"
+                            body="Combination of human and AI writing patterns detected."
+                            compact
+                          />
+                        </td>
+                      </tr>
+                      <tr className="border-b border-neutral-100 align-top">
+                        <td className="px-2 py-2.5 md:py-3">
+                          <InterpretationRow
+                            range="71–100%"
+                            tone="red"
+                            title="High Risk"
+                            body="High similarity detected. Requires immediate attention."
+                            compact
+                          />
+                        </td>
+                        <td className="px-2 py-2.5 md:py-3">
+                          <VerdictGuideRow
+                            title="Likely AI-generated"
+                            body="Writing patterns strongly consistent with AI generation tools such as ChatGPT or Gemini."
+                            compact
+                          />
+                        </td>
+                      </tr>
+                      <tr className="align-top">
+                        <td className="px-2 py-2.5 md:py-3" />
+                        <td className="px-2 py-2.5 md:py-3">
+                          <VerdictGuideRow
+                            title="Unknown"
+                            body="Insufficient text to determine AI involvement reliably."
+                            compact
+                          />
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
 
                 <div className="my-4 border-t border-neutral-200" />
 
@@ -623,26 +681,6 @@ export default function TeacherOriginalityReportView() {
                   variant="ai"
                   title="Likely AI-generated"
                   body="Strong AI writing patterns detected. Content may be fully AI-generated."
-                />
-
-                <p className="mb-2 mt-4 text-xs font-semibold uppercase tracking-wide text-neutral-500">
-                  AI verdict guide
-                </p>
-                <VerdictGuideRow
-                  title="Likely Human"
-                  body="Writing patterns consistent with human authorship."
-                />
-                <VerdictGuideRow
-                  title="Mixed"
-                  body="Combination of human and AI writing patterns detected."
-                />
-                <VerdictGuideRow
-                  title="Likely AI-generated"
-                  body="Writing patterns strongly consistent with AI generation tools such as ChatGPT or Gemini."
-                />
-                <VerdictGuideRow
-                  title="Unknown"
-                  body="Insufficient text to determine AI involvement reliably."
                 />
               </div>
             </section>
