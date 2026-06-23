@@ -35,6 +35,53 @@ export const ADMIN_PORTAL_MODULES = {
   AUDIT_LOGS: 'Audit Logs',
   DATA_BACKUP: 'Data Backup',
   ARCHIVE_VAULT: 'Archive Vault',
+  TERMS_AND_CONDITIONS: 'Terms & Conditions',
+}
+
+/** Shared Legal Center module label (all portals). */
+export const TERMS_AND_CONDITIONS_MODULE = 'Terms & Conditions'
+
+export function termsAndConditionsModule() {
+  return TERMS_AND_CONDITIONS_MODULE
+}
+
+const LOGIN_ACTIVITY_TYPES = new Set([
+  'USER_SIGNED_IN',
+  'LOGIN',
+  'USER_SESSION_STARTED',
+  'SESSION_CREATED',
+])
+
+const LOGIN_EVENT_TYPES = new Set(['user_signed_in', 'session_created', 'login'])
+
+export function isLoginAuditActivity(activityType) {
+  return LOGIN_ACTIVITY_TYPES.has(String(activityType || '').trim().toUpperCase())
+}
+
+export function isSessionOnlyAuditActivity(activityType) {
+  const activity = String(activityType || '').trim().toUpperCase()
+  return activity === 'USER_SESSION_STARTED' || activity === 'SESSION_CREATED'
+}
+
+export function isSessionOnlyAuditEventType(eventType) {
+  const type = String(eventType || '').trim().toLowerCase()
+  return type === 'session_created'
+}
+
+export function isLoginAuditEventType(eventType) {
+  return LOGIN_EVENT_TYPES.has(String(eventType || '').trim().toLowerCase())
+}
+
+/**
+ * Resolve admin portal module for user_account_changed events.
+ * @param {{ targetRole?: string, studentRecordId?: number|null }} ctx
+ * @returns {string}
+ */
+export function resolveAccountChangedModule({ targetRole = '', studentRecordId = null } = {}) {
+  const role = normalizeRole(targetRole)
+  if (studentRecordId != null || role === 'student') return ADMIN_PORTAL_MODULES.STUDENTS
+  if (role === 'teacher' || role === 'faculty') return ADMIN_PORTAL_MODULES.FACULTIES
+  return ADMIN_PORTAL_MODULES.DASHBOARD
 }
 
 /** Legacy stored module values → canonical portal label (teacher-oriented). */
@@ -208,10 +255,11 @@ function moduleFromActivityType(activity, role) {
       activity === 'USER_SESSION_STARTED' ||
       activity === 'SESSION_CREATED' ||
       activity === 'USER_SIGNED_IN' ||
-      activity === 'TERMS_ACCEPTED'
+      activity === 'LOGIN'
     ) {
       return ADMIN_PORTAL_MODULES.DASHBOARD
     }
+    if (activity === 'TERMS_ACCEPTED') return TERMS_AND_CONDITIONS_MODULE
   }
 
   if (activity === 'ASSIGNMENT_SUBMITTED') return STUDENT_PORTAL_MODULES.ASSIGNMENTS
@@ -223,10 +271,12 @@ function moduleFromActivityType(activity, role) {
     activity === 'USER_SESSION_STARTED' ||
     activity === 'SESSION_CREATED' ||
     activity === 'USER_SIGNED_IN' ||
-    activity === 'TERMS_ACCEPTED'
+    activity === 'LOGIN'
   ) {
     return dashboardModuleForRole(role)
   }
+
+  if (activity === 'TERMS_ACCEPTED') return TERMS_AND_CONDITIONS_MODULE
 
   if (activity.startsWith('CURRICULUM_')) return TEACHER_PORTAL_MODULES.CURRICULUM
   if (activity.startsWith('SECTION_')) return TEACHER_PORTAL_MODULES.SECTION
@@ -276,7 +326,69 @@ function moduleFromLedgerType(event) {
   if (ledgerType.startsWith('SUBJECT_')) return TEACHER_PORTAL_MODULES.SUBJECTS
   if (ledgerType === 'ASSIGNMENT_SUBMITTED') return STUDENT_PORTAL_MODULES.ASSIGNMENTS
   if (ledgerType === 'ACTIVITY_SUBMITTED') return STUDENT_PORTAL_MODULES.ACTIVITIES
-  if (ledgerType === 'TERMS_ACCEPTED') return dashboardModuleForRole(role)
+  if (ledgerType === 'TERMS_ACCEPTED') return TERMS_AND_CONDITIONS_MODULE
+  return null
+}
+
+function moduleFromAccountChanged(event) {
+  const ed = pickEventDetails(event)
+  const activity = pickActivityType(event)
+  const eventType = pickEventType(event)
+  if (activity !== 'USER_ACCOUNT_CHANGED' && eventType !== 'user_account_changed') return null
+
+  const payload = ed?.payload && typeof ed.payload === 'object' ? ed.payload : ed
+  const targetRole = payload?.target_user?.role || payload?.targetRole || ed?.targetRole || ''
+  const studentRecordId = payload?.studentRecordId ?? ed?.studentRecordId ?? null
+  return resolveAccountChangedModule({ targetRole, studentRecordId })
+}
+
+function moduleFromTermsOrLogin(event) {
+  const ed = pickEventDetails(event)
+  const activity = pickActivityType(event)
+  const eventType = pickEventType(event)
+
+  if (activity === 'TERMS_ACCEPTED' || eventType === 'terms_accepted') {
+    return TERMS_AND_CONDITIONS_MODULE
+  }
+
+  if (
+    isLoginAuditActivity(activity) ||
+    isLoginAuditEventType(eventType) ||
+    eventType === 'user_signed_in'
+  ) {
+    const role = pickUserRole(event)
+    return dashboardModuleForRole(role)
+  }
+
+  return null
+}
+
+function pickLoginAffectedLabel(event, ed) {
+  const raw = event?.raw || {}
+  const payload = ed?.payload && typeof ed.payload === 'object' ? ed.payload : ed
+  const targetUser = payload?.target_user || ed?.target_user
+  const name = String(
+    ed?.targetName ||
+      ed?.target_label ||
+      ed?.userName ||
+      ed?.name ||
+      targetUser?.name ||
+      raw?.targetName ||
+      '',
+  ).trim()
+  if (name) return name
+
+  const email = String(
+    ed?.targetEmail || ed?.userEmail || ed?.email || targetUser?.email || raw?.targetEmail || '',
+  ).trim()
+  if (email) return email
+
+  const eventEmail = String(event?.userEmail || raw?.userEmail || '').trim()
+  if (eventEmail) {
+    const parenIdx = eventEmail.indexOf(' (')
+    return parenIdx > 0 ? eventEmail.slice(0, parenIdx).trim() : eventEmail
+  }
+
   return null
 }
 
@@ -287,15 +399,30 @@ function moduleFromLedgerType(event) {
  */
 export function resolveAuditPortalModule(event) {
   const ed = pickEventDetails(event)
-  const stored = normalizeModuleLabel(ed?.module, event)
-  if (stored) return stored
-
+  const activity = pickActivityType(event)
   const eventType = pickEventType(event)
+
+  const fromAccountChanged = moduleFromAccountChanged(event)
+  if (fromAccountChanged) return fromAccountChanged
+
+  const fromTermsOrLogin = moduleFromTermsOrLogin(event)
+  if (fromTermsOrLogin) return fromTermsOrLogin
+
+  const stored = normalizeModuleLabel(ed?.module, event)
+  if (stored) {
+    if (
+      (activity === 'TERMS_ACCEPTED' || eventType === 'terms_accepted') &&
+      stored === ADMIN_PORTAL_MODULES.DASHBOARD
+    ) {
+      return TERMS_AND_CONDITIONS_MODULE
+    }
+    return stored
+  }
+
   const fromEventType = moduleFromEventType(eventType)
   if (fromEventType) return fromEventType
 
   const role = pickUserRole(event)
-  const activity = pickActivityType(event)
   const fromActivity = moduleFromActivityType(activity, role)
   if (fromActivity) return fromActivity
 
@@ -313,6 +440,34 @@ export function resolveAuditPortalModule(event) {
 export function resolveAuditPortalAffected(event) {
   const ed = pickEventDetails(event)
   const activity = pickActivityType(event)
+  const eventType = pickEventType(event)
+
+  if (activity === 'USER_ACCOUNT_CHANGED' || eventType === 'user_account_changed') {
+    const payload = ed?.payload && typeof ed.payload === 'object' ? ed.payload : ed
+    const targetUser = payload?.target_user || ed?.target_user
+    const name = String(
+      ed?.targetName || ed?.target_label || payload?.targetName || targetUser?.name || '',
+    ).trim()
+    if (name) return name
+    const email = String(
+      ed?.targetEmail || payload?.targetEmail || targetUser?.email || ed?.userEmail || '',
+    ).trim()
+    if (email) return email
+  }
+
+  if (
+    isLoginAuditActivity(activity) ||
+    isLoginAuditEventType(eventType) ||
+    eventType === 'user_signed_in'
+  ) {
+    const loginLabel = pickLoginAffectedLabel(event, ed)
+    if (loginLabel) return loginLabel
+  }
+
+  if (activity === 'TERMS_ACCEPTED' || eventType === 'terms_accepted') {
+    const termsLabel = pickLoginAffectedLabel(event, ed)
+    if (termsLabel) return termsLabel
+  }
 
   if (activity === 'QUIZ_SUBMITTED') {
     const title = ed?.quizTitle || ed?.target_label
@@ -342,4 +497,53 @@ export function resolveAuditPortalAffected(event) {
   if (recordName) return String(recordName)
 
   return null
+}
+
+/**
+ * Drop session-only audit rows when a login row exists for the same user within ~2s.
+ * @param {object[]} events Unified audit events
+ * @returns {object[]}
+ */
+export function dedupeLoginSessionEvents(events) {
+  if (!Array.isArray(events) || events.length === 0) return events
+
+  const loginKeys = new Set()
+  for (const e of events) {
+    const activity = String(e?.activityType || '').trim().toUpperCase()
+    const eventType = String(e?.eventType || e?.type || '').trim().toLowerCase()
+    const isLogin =
+      activity === 'USER_SIGNED_IN' ||
+      activity === 'LOGIN' ||
+      eventType === 'user_signed_in' ||
+      eventType === 'login'
+    if (!isLogin) continue
+
+    const ed = e?.detailsObj || e?.eventData || e?.details || e?.raw?.eventData || {}
+    const userId = String(e?.userId || ed?.userId || ed?.targetUserId || '').trim()
+    const ms =
+      (e?.timestamp ? new Date(e.timestamp).getTime() : NaN) ||
+      (e?.time ? new Date(e.time).getTime() : NaN) ||
+      (e?.createdAt ? new Date(e.createdAt).getTime() : NaN)
+    const bucket = Number.isFinite(ms) ? Math.floor(ms / 2000) : 0
+    loginKeys.add(`${userId}:${bucket}`)
+  }
+
+  if (loginKeys.size === 0) return events
+
+  return events.filter((e) => {
+    const activity = String(e?.activityType || '').trim().toUpperCase()
+    const eventType = String(e?.eventType || e?.type || '').trim().toLowerCase()
+    const isSessionOnly =
+      isSessionOnlyAuditActivity(activity) || isSessionOnlyAuditEventType(eventType)
+    if (!isSessionOnly) return true
+
+    const ed = e?.detailsObj || e?.eventData || e?.details || e?.raw?.eventData || {}
+    const userId = String(e?.userId || ed?.userId || ed?.targetUserId || '').trim()
+    const ms =
+      (e?.timestamp ? new Date(e.timestamp).getTime() : NaN) ||
+      (e?.time ? new Date(e.time).getTime() : NaN) ||
+      (e?.createdAt ? new Date(e.createdAt).getTime() : NaN)
+    const bucket = Number.isFinite(ms) ? Math.floor(ms / 2000) : 0
+    return !loginKeys.has(`${userId}:${bucket}`)
+  })
 }

@@ -3,9 +3,11 @@ import assert from 'node:assert/strict'
 import {
   resolveAuditPortalAffected,
   resolveAuditPortalModule,
+  dedupeLoginSessionEvents,
   ADMIN_PORTAL_MODULES,
   TEACHER_PORTAL_MODULES,
   STUDENT_PORTAL_MODULES,
+  TERMS_AND_CONDITIONS_MODULE,
 } from '../shared/auditPortalModules.js'
 
 describe('auditPortalModules', () => {
@@ -125,5 +127,93 @@ describe('auditPortalModules', () => {
       }),
       'Essay 1',
     )
+  })
+
+  it('maps user account changed to Students or Faculties module', () => {
+    assert.equal(
+      resolveAuditPortalModule({
+        activityType: 'USER_ACCOUNT_CHANGED',
+        detailsObj: { targetRole: 'student', studentRecordId: 42 },
+      }),
+      ADMIN_PORTAL_MODULES.STUDENTS,
+    )
+    assert.equal(
+      resolveAuditPortalModule({
+        activityType: 'USER_ACCOUNT_CHANGED',
+        detailsObj: { targetRole: 'faculty' },
+      }),
+      ADMIN_PORTAL_MODULES.FACULTIES,
+    )
+    assert.equal(
+      resolveAuditPortalAffected({
+        activityType: 'USER_ACCOUNT_CHANGED',
+        detailsObj: { targetName: 'John Bantad' },
+      }),
+      'John Bantad',
+    )
+  })
+
+  it('maps terms accepted to Terms & Conditions module and affected user', () => {
+    assert.equal(
+      resolveAuditPortalModule({
+        activityType: 'TERMS_ACCEPTED',
+        detailsObj: { module: 'Dashboard' },
+      }),
+      TERMS_AND_CONDITIONS_MODULE,
+    )
+    assert.equal(
+      resolveAuditPortalAffected({
+        activityType: 'TERMS_ACCEPTED',
+        detailsObj: { userName: 'Derek John Bantad' },
+      }),
+      'Derek John Bantad',
+    )
+  })
+
+  it('maps login events to dashboard module and affected user', () => {
+    assert.equal(
+      resolveAuditPortalModule({
+        activityType: 'USER_SIGNED_IN',
+        userRole: 'student',
+        detailsObj: { userName: 'Derek John Bantad' },
+      }),
+      STUDENT_PORTAL_MODULES.DASHBOARD,
+    )
+    assert.equal(
+      resolveAuditPortalAffected({
+        activityType: 'USER_SIGNED_IN',
+        detailsObj: { userName: 'Derek John Bantad', userEmail: 'derek@example.com' },
+      }),
+      'Derek John Bantad',
+    )
+  })
+
+  it('dedupeLoginSessionEvents drops session rows when login exists for same user', () => {
+    const ts = '2026-06-23T08:00:00.000Z'
+    const events = [
+      {
+        activityType: 'USER_SIGNED_IN',
+        userId: 'user-1',
+        timestamp: ts,
+        detailsObj: { userName: 'Derek John Bantad' },
+      },
+      {
+        activityType: 'USER_SESSION_STARTED',
+        userId: 'user-1',
+        timestamp: ts,
+        detailsObj: { userName: 'Derek John Bantad' },
+      },
+      {
+        activityType: 'USER_SESSION_STARTED',
+        userId: 'user-2',
+        timestamp: ts,
+        detailsObj: { userName: 'Solo Session' },
+      },
+    ]
+    const deduped = dedupeLoginSessionEvents(events)
+    assert.equal(deduped.length, 2)
+    assert.equal(deduped.some((e) => e.activityType === 'USER_SIGNED_IN'), true)
+    assert.equal(deduped.some((e) => e.activityType === 'USER_SESSION_STARTED' && e.userId === 'user-1'), false)
+    assert.equal(deduped.some((e) => e.userId === 'user-2'), true)
   })
 })

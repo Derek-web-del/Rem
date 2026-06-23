@@ -1,7 +1,7 @@
 /** Map public.audit_logs.type → unified Monitoring Records labels. */
 
 export const LEDGER_EVENT_DISPLAY = {
-  LOGIN: 'Student Signed In',
+  LOGIN: 'Login',
   AUTH_LOCKOUT: 'Account Lockout',
   TERMS_ACCEPTED: 'Terms & Conditions Accepted',
   GRADE_OVERRIDE: 'Grade override',

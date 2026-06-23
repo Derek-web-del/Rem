@@ -708,20 +708,14 @@ export const auth = betterAuth({
                 method: p === '/sign-in/username' ? 'username' : 'email',
                 userRole: String(returned.user?.role || '').trim(),
                 username: String(returned.user?.username || '').trim(),
+                sessionId: String(returned.session?.id || returned.sessionId || ''),
+                userAgent: String(ctx.headers?.get?.('user-agent') || '').trim(),
               },
               {
                 userEmail: String(returned.user?.email || '').trim().toLowerCase(),
                 userRole: String(returned.user?.role || '').trim() || undefined,
               },
             )
-            await customActivityLogger.logUserSessionStarted(String(returned.user.id), {
-              sessionId: String(returned.session?.id || returned.sessionId || ''),
-              userName: String(returned.user?.name || '').trim(),
-              userEmail: String(returned.user?.email || '').trim().toLowerCase(),
-              userRole: String(returned.user?.role || '').trim(),
-              method: p === '/sign-in/username' ? 'username' : 'email',
-              userAgent: String(ctx.headers?.get?.('user-agent') || '').trim(),
-            })
             await recordStudentLoginAudit(returned.user, '')
           } catch {
             /* ignore log failures */

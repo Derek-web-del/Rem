@@ -411,7 +411,16 @@ function collectTargetUserIdsFromAuthEvent(e) {
   if (tid) ids.push(String(tid))
   const uid = e?.userId ?? e?.user?.id ?? ed?.userId
   const type = String(e?.eventType || e?.event_type || e?.type || '').toLowerCase()
-  if (uid && (type.includes('profile') || type.includes('user_updated') || type.includes('update_user'))) {
+  if (
+    uid &&
+    (type.includes('profile') ||
+      type.includes('user_updated') ||
+      type.includes('update_user') ||
+      type === 'user_signed_in' ||
+      type === 'session_created' ||
+      type === 'user_signed_out' ||
+      type === 'login')
+  ) {
     ids.push(String(uid))
   }
   return ids

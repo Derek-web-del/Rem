@@ -12,6 +12,7 @@ import { queryLocalAuditLogsPage, AUDIT_LOGS_CLEARED_TYPE } from '../lib/auditLo
 import { customActivityLogger } from '../services/CustomActivityLogger.js'
 import { getInstituteAuditStatistics } from '../lib/auditStatisticsService.js'
 import { pickAuditEventDate } from '../../shared/auditTime.js'
+import { dedupeLoginSessionEvents } from '../../shared/auditPortalModules.js'
 import { sendSafeServerError } from '../lib/safeApiError.js'
 
 function pickTime(e) {
@@ -386,9 +387,10 @@ export function createMonitoringRouter(express, auth) {
       }
       mergedAll.sort((a, b) => eventSortMs(b) - eventSortMs(a))
 
-      const merged = mergedAll.slice(filters.offset, filters.offset + filters.limit)
+      const dedupedAll = dedupeLoginSessionEvents(mergedAll)
+      const merged = dedupedAll.slice(filters.offset, filters.offset + filters.limit)
       // Local PostgreSQL counts (lms_activity_logs + audit_logs); avoid summing auth Infra total on top.
-      const total = Math.max(mergedAll.length, lmsTotal + ledgerTotal)
+      const total = Math.max(dedupedAll.length, lmsTotal + ledgerTotal)
 
       res.json({
         events: merged,

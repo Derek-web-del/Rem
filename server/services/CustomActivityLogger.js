@@ -6,7 +6,9 @@ import {
   STUDENT_PORTAL_MODULES,
   TEACHER_PORTAL_MODULES,
   dashboardModuleForRole,
+  resolveAccountChangedModule,
   resolveInstituteActivityModule,
+  termsAndConditionsModule,
 } from '../../shared/auditPortalModules.js'
 import {
   AUTH_PROFILE_UPDATE_DISPLAY_TYPE,
@@ -405,8 +407,7 @@ export class CustomActivityLogger {
     const name = String(userName || '').trim() || 'User'
     const email = String(userEmail || ctx.userEmail || '').trim().toLowerCase()
     const description = `${name} has accepted the Terms & Conditions`
-    const portalKey = String(portal || ctx.userRole || '').trim().toLowerCase()
-    const dashboardModule = dashboardModuleForRole(portalKey || ctx.userRole)
+    const termsModule = termsAndConditionsModule()
     return this._log({
       userId,
       activityType: 'TERMS_ACCEPTED',
@@ -419,9 +420,12 @@ export class CustomActivityLogger {
         acceptedAt,
         userName: name,
         userEmail: email,
+        targetName: name,
+        targetEmail: email,
+        target_label: name,
         displayType: 'Terms & Conditions Accepted',
         description,
-        module: dashboardModule,
+        module: termsModule,
       },
       userEmail: email,
       userRole: ctx.userRole,
@@ -964,23 +968,59 @@ export class CustomActivityLogger {
 
   async logUserSignedIn(
     userId,
-    { identifier = '', userName = '', userEmail = '', method = '', userRole = '', username = '' } = {},
+    {
+      identifier = '',
+      userName = '',
+      userEmail = '',
+      method = '',
+      userRole = '',
+      username = '',
+      sessionId = '',
+      userAgent = '',
+      signedInAt = '',
+    } = {},
     ctx = {},
   ) {
+    const name = String(userName || '').trim()
+    const email = String(userEmail || ctx.userEmail || '').trim().toLowerCase()
+    const role = String(userRole || ctx.userRole || '').trim()
+    const loginMethod = String(method || '').trim() || 'credentials'
+    const signedInIso = signedInAt ? String(signedInAt) : new Date().toISOString()
+    const ua = String(userAgent || '').trim().slice(0, 512) || 'unknown'
+    const loginModule = dashboardModuleForRole(role)
+    const description = name
+      ? `${name} signed in via ${loginMethod}`
+      : `User signed in via ${loginMethod}`
+
     return this._log({
       userId,
       activityType: 'USER_SIGNED_IN',
-      resourceId: identifier ? String(identifier) : null,
+      resourceId: sessionId ? String(sessionId) : identifier ? String(identifier) : null,
       details: {
+        type: 'login',
+        eventType: 'login',
+        displayType: 'Login',
+        description,
         identifier,
-        userName,
-        userEmail,
-        method,
-        userRole: userRole ? String(userRole) : null,
+        userName: name,
+        name,
+        userEmail: email,
+        email,
+        targetName: name,
+        targetEmail: email,
+        target_label: name || email || null,
+        method: loginMethod,
+        login_method: loginMethod,
+        userRole: role || null,
+        role: role || null,
         username: username ? String(username) : null,
+        sessionId: sessionId ? String(sessionId) : null,
+        user_agent: ua,
+        signed_in_at: signedInIso,
+        module: loginModule,
       },
-      userEmail: userEmail || ctx.userEmail || null,
-      userRole: userRole || ctx.userRole || null,
+      userEmail: email || ctx.userEmail || null,
+      userRole: role || ctx.userRole || null,
     })
   }
 
@@ -1037,6 +1077,10 @@ export class CustomActivityLogger {
     const targetNameStr = userName ? String(userName).trim() : ''
     const targetEmailStr = userEmail ? String(userEmail).trim() : ''
     const targetRoleStr = targetRole ? String(targetRole).trim() : studentRecordId != null ? 'student' : ''
+    const accountModule = resolveAccountChangedModule({
+      targetRole: targetRoleStr,
+      studentRecordId,
+    })
 
     const payload = {
       userId: sid,
@@ -1082,6 +1126,8 @@ export class CustomActivityLogger {
         type: USER_ACCOUNT_CHANGED_EVENT_TYPE,
         eventType: USER_ACCOUNT_CHANGED_EVENT_TYPE,
         displayType: USER_ACCOUNT_CHANGED_DISPLAY,
+        module: accountModule,
+        target_label: targetNameStr || targetEmailStr || null,
         payload,
         updatedFields: fieldKeys,
         detailedDiffs: diffs,

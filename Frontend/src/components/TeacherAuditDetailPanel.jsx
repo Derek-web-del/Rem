@@ -281,9 +281,14 @@ export function auditRowAffectedLabel(event) {
   const ed = event?.detailsObj || event?.raw?.eventData || {}
   const raw = event?.raw || {}
   if (ed?.target_label) return String(ed.target_label)
-  const targetName = ed?.targetName || raw?.targetName || ''
-  const targetEmail = ed?.targetEmail || raw?.targetEmail || ''
+  const targetName = ed?.targetName || ed?.userName || ed?.name || raw?.targetName || ''
+  const targetEmail = ed?.targetEmail || ed?.userEmail || ed?.email || raw?.targetEmail || ''
   if (targetName || targetEmail) return targetName || targetEmail
+  const eventUserEmail = String(event?.userEmail || raw?.userEmail || '').trim()
+  if (eventUserEmail) {
+    const parenIdx = eventUserEmail.indexOf(' (')
+    return parenIdx > 0 ? eventUserEmail.slice(0, parenIdx).trim() : eventUserEmail
+  }
   if (raw?.resourceId) return String(raw.resourceId)
   if (ed?.summary) return String(ed.summary)
   if (ed?.description) return String(ed.description)
