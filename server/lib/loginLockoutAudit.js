@@ -1,5 +1,7 @@
 /** Shared helpers for login lockout / suspicious sign-in audit events. */
 
+import { dashboardModuleForRole } from '../../shared/auditPortalModules.js'
+
 export const LOCKOUT_REASON = 'Account Lockout for 5 Attempts failed'
 export const MAX_LOCKOUT_ATTEMPTS = 5
 
@@ -81,6 +83,30 @@ export function resolveUserAgent(ctx) {
 }
 
 /**
+ * Map login portal token to Better Auth role for dashboard module resolution.
+ * @param {string | null | undefined} portal
+ * @param {string | null | undefined} userRole
+ * @returns {string}
+ */
+export function roleFromPortal(portal, userRole = '') {
+  const p = normalizePortalToken(portal)
+  if (p === 'admin') return 'admin'
+  if (p === 'faculty') return 'teacher'
+  if (p === 'student') return 'student'
+  return String(userRole || '').trim()
+}
+
+/**
+ * Resolve portal sidebar Dashboard label for security auth audit rows.
+ * @param {string | null | undefined} portal
+ * @param {string | null | undefined} userRole
+ * @returns {string}
+ */
+export function dashboardModuleFromPortal(portal, userRole = '') {
+  return dashboardModuleForRole(roleFromPortal(portal, userRole))
+}
+
+/**
  * Build normalized audit payload for lockout and enriched login-failure events.
  * @param {object} params
  */
@@ -106,6 +132,8 @@ export function buildLockoutAuditPayload({
   const loginId = String(identifier || username || userEmail || '').trim()
   const portalToken = normalizePortalToken(portal)
   const portalLabel = portalDisplayLabel(portalToken)
+  const module = dashboardModuleFromPortal(portalToken, userRole)
+  const targetLabel = userName || loginId || userEmail || null
 
   const description = targetUserId
     ? `Suspicious sign-in: ${attempts} failed password attempts for ${accountType} account (${loginId || username || userEmail})`
@@ -124,6 +152,10 @@ export function buildLockoutAuditPayload({
     accountType,
     portal: portalToken,
     portalLabel: portalLabel || null,
+    module,
+    targetName: userName || null,
+    targetEmail: userEmail || null,
+    target_label: targetLabel,
     attempts,
     maxAttempts,
     lockedUntil: lockedUntil ? String(lockedUntil) : null,

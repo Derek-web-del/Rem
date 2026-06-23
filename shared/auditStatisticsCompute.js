@@ -6,7 +6,7 @@ export function statsEventType(e) {
   if (authType) return authType
   const lms = String(e.activityType || '').trim().toUpperCase()
   if (lms === 'USER_SIGNED_IN') return 'user_signed_in'
-  if (lms === 'AUTH_LOCKOUT') return 'login_failed'
+  if (lms === 'AUTH_LOCKOUT') return 'auth_lockout'
   if (lms === 'USER_CREATED') return 'user_created'
   return lms ? lms.toLowerCase() : ''
 }

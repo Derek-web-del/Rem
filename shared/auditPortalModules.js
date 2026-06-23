@@ -357,6 +357,31 @@ function moduleFromAccountChanged(event) {
   return resolveAccountChangedModule({ targetRole, studentRecordId })
 }
 
+function moduleFromSecurityAuth(event) {
+  const ed = pickEventDetails(event)
+  const activity = pickActivityType(event)
+  const eventType = pickEventType(event)
+  const isSecurity =
+    activity === 'LOGIN_FAILED' ||
+    activity === 'AUTH_LOCKOUT' ||
+    eventType === 'login_failed' ||
+    eventType === 'user_sign_in_failed' ||
+    eventType === 'auth_lockout'
+  if (!isSecurity) return null
+
+  const portal = String(ed?.portal || '').trim().toLowerCase()
+  const portalRole =
+    portal === 'admin' || portal === 'institute'
+      ? 'admin'
+      : portal === 'faculty' || portal === 'teacher'
+        ? 'teacher'
+        : portal === 'student'
+          ? 'student'
+          : ''
+  const role = portalRole || pickUserRole(event)
+  return dashboardModuleForRole(role)
+}
+
 function moduleFromTermsOrLogin(event) {
   const ed = pickEventDetails(event)
   const activity = pickActivityType(event)
@@ -426,6 +451,9 @@ export function resolveAuditPortalModule(event) {
   const fromAccountChanged = moduleFromAccountChanged(event)
   if (fromAccountChanged) return fromAccountChanged
 
+  const fromSecurityAuth = moduleFromSecurityAuth(event)
+  if (fromSecurityAuth) return fromSecurityAuth
+
   const fromTermsOrLogin = moduleFromTermsOrLogin(event)
   if (fromTermsOrLogin) return fromTermsOrLogin
 
@@ -474,6 +502,19 @@ export function resolveAuditPortalAffected(event) {
       ed?.targetEmail || payload?.targetEmail || targetUser?.email || ed?.userEmail || '',
     ).trim()
     if (email) return email
+  }
+
+  if (
+    activity === 'LOGIN_FAILED' ||
+    activity === 'AUTH_LOCKOUT' ||
+    eventType === 'login_failed' ||
+    eventType === 'user_sign_in_failed' ||
+    eventType === 'auth_lockout'
+  ) {
+    const identityLabel = pickLoginAffectedLabel(event, ed)
+    if (identityLabel) return identityLabel
+    const loginId = String(ed?.loginId || ed?.identifier || '').trim()
+    if (loginId) return loginId
   }
 
   if (

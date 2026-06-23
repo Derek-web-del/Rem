@@ -776,7 +776,7 @@ function unifiedActivityLabel(e) {
   if (t === 'USER_SESSION_STARTED') return 'Session started'
   if (t === 'USER_ACCOUNT_CHANGED') return 'Profile Updated (Account)'
   if (t === 'USER_PROFILE_UPDATED') return 'Profile updated (account)'
-  if (t === 'AUTH_LOCKOUT') return 'Account Locked'
+  if (t === 'AUTH_LOCKOUT') return 'Account Lockout'
   if (t === 'SUSPICIOUS_INPUT_DETECTED') return 'Security Alert'
   if (t === 'BACKUP_CREATED') return 'Backup Created'
   if (t === 'BACKUP_RESTORED') return 'Data Restored'

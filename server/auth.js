@@ -23,6 +23,7 @@ import {
   MAX_LOCKOUT_ATTEMPTS,
   accountTypeFromRole,
   buildLockoutAuditPayload,
+  dashboardModuleFromPortal,
   resolveClientIp,
   resolveLoginPortal,
   resolveUserAgent,
@@ -48,7 +49,6 @@ function assertStrongPassword(password, label = 'Password') {
   }
 }
 
-const MAX_FAILED = 5
 /** Account lockout duration after repeated failed sign-ins (tests override via AUTH_LOCK_MS). */
 const LOCK_MS = Number(process.env.AUTH_LOCK_MS || 5 * 60 * 1000)
 
@@ -822,7 +822,7 @@ export const auth = betterAuth({
       const prev = Number(user.failedLoginAttempts || 0)
       const next = prev + 1
       const patch = { failedLoginAttempts: next }
-      if (next >= MAX_FAILED) {
+      if (next >= MAX_LOCKOUT_ATTEMPTS) {
         const until = new Date(Date.now() + LOCK_MS)
         patch.lockedUntil = until
         try {
@@ -833,7 +833,7 @@ export const auth = betterAuth({
 
         // Emit a Monitoring Records event once, at the moment the threshold is crossed.
         // This makes lockouts visible even if Infra audit logs are delayed/unavailable.
-        if (prev < MAX_FAILED) {
+        if (prev < MAX_LOCKOUT_ATTEMPTS) {
           const identifier =
             p === '/sign-in/username'
               ? String(body.username || '').trim()
@@ -843,7 +843,7 @@ export const auth = betterAuth({
             user,
             identifier,
             attempts: next,
-            maxAttempts: MAX_FAILED,
+            maxAttempts: MAX_LOCKOUT_ATTEMPTS,
             lockedUntil: until.toISOString(),
             portal,
             ipAddress: resolveClientIp(ctx),
@@ -851,6 +851,7 @@ export const auth = betterAuth({
             cooldownMs: LOCK_MS,
             reason: LOCKOUT_REASON,
           })
+          const lockModule = dashboardModuleFromPortal(lockPayload.portal, lockPayload.userRole)
           try {
             await customActivityLogger.logAuthLockout(
               user.id,
@@ -860,12 +861,23 @@ export const auth = betterAuth({
                 userRole: lockPayload.userRole || undefined,
               },
             )
-            await insertAuditLogRecord('AUTH_LOCKOUT', {
-              ...lockPayload,
-              userId: String(user.id),
-              displayType: 'Account Lockout',
-              action: 'auth_lockout',
-            })
+            await insertAuditLogRecord(
+              'AUTH_LOCKOUT',
+              {
+                ...lockPayload,
+                userId: String(user.id),
+                displayType: 'Account Lockout',
+                action: 'auth_lockout',
+                module: lockModule,
+              },
+              {
+                module: lockModule,
+                action: 'auth_lockout',
+                performed_by: String(user.id),
+                performed_by_name: lockPayload.userName || lockPayload.userEmail || '',
+                target_label: lockPayload.target_label || lockPayload.userName || lockPayload.loginId || null,
+              },
+            )
           } catch {}
         }
       }
@@ -892,9 +904,9 @@ export const auth = betterAuth({
           userAgent: resolveUserAgent(ctx),
           suspiciousLoginDetected: true,
           reason:
-            next >= MAX_FAILED
+            next >= MAX_LOCKOUT_ATTEMPTS
               ? LOCKOUT_REASON
-              : `Failed sign-in (${next}/${MAX_FAILED} attempts)`,
+              : `Failed sign-in (${next}/${MAX_LOCKOUT_ATTEMPTS} attempts)`,
         })
       } catch {
         /* ignore */

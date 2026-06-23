@@ -188,6 +188,39 @@ describe('auditPortalModules', () => {
     )
   })
 
+  it('maps security auth events to portal dashboard module and affected user', () => {
+    assert.equal(
+      resolveAuditPortalModule({
+        activityType: 'LOGIN_FAILED',
+        userRole: 'student',
+        detailsObj: { portal: 'student', userName: 'Trap Hook', loginId: 'trap.hook' },
+      }),
+      STUDENT_PORTAL_MODULES.DASHBOARD,
+    )
+    assert.equal(
+      resolveAuditPortalModule({
+        activityType: 'AUTH_LOCKOUT',
+        userRole: 'admin',
+        detailsObj: { portal: 'admin', userName: 'Admin User' },
+      }),
+      ADMIN_PORTAL_MODULES.DASHBOARD,
+    )
+    assert.equal(
+      resolveAuditPortalAffected({
+        activityType: 'LOGIN_FAILED',
+        detailsObj: { userName: 'Trap Hook', loginId: 'trap.hook' },
+      }),
+      'Trap Hook',
+    )
+    assert.equal(
+      resolveAuditPortalAffected({
+        activityType: 'AUTH_LOCKOUT',
+        detailsObj: { userName: 'Admin User' },
+      }),
+      'Admin User',
+    )
+  })
+
   it('maps session started and revoked to dashboard module by role', () => {
     assert.equal(
       resolveAuditPortalModule({

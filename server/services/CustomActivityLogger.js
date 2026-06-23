@@ -16,6 +16,7 @@ import {
   USER_ACCOUNT_CHANGED_DISPLAY,
   USER_ACCOUNT_CHANGED_EVENT_TYPE,
 } from '../lib/profileAudit.js'
+import { dashboardModuleFromPortal } from '../lib/loginLockoutAudit.js'
 
 /** PostgreSQL DDL (also applied at runtime via `init()`). CamelCase columns match prior schema mirror. */
 export const LMS_ACTIVITY_LOGS_SCHEMA_SQL = `
@@ -535,6 +536,9 @@ export class CustomActivityLogger {
   } = {}) {
     const loginId = String(identifier || username || '').trim()
     const accountLabel = accountType ? String(accountType) : ''
+    const name = String(userName || '').trim()
+    const email = String(userEmail || '').trim()
+    const securityModule = dashboardModuleFromPortal(portal, userRole)
     const description = targetUserId
       ? `Failed login attempt for ${accountLabel || 'account'} (${loginId || username || userEmail})`
       : loginId
@@ -559,6 +563,10 @@ export class CustomActivityLogger {
         userRole: userRole ? String(userRole) : null,
         accountType: accountLabel || null,
         portal: portal ? String(portal) : null,
+        module: securityModule,
+        targetName: name || null,
+        targetEmail: email || null,
+        target_label: name || email || loginId || null,
         attempts: attempts != null ? Number(attempts) : null,
         ipAddress: String(ipAddress || ''),
         userAgent: String(userAgent || '').slice(0, 512),
@@ -880,6 +888,9 @@ export class CustomActivityLogger {
     const resolvedLoginId = String(loginId || identifier || username || '').trim()
     const resolvedTargetId = String(targetUserId || userId || '').trim()
     const lockReason = reason || 'Account locked after repeated failed sign-in attempts'
+    const name = String(userName || '').trim()
+    const email = String(userEmail || '').trim()
+    const securityModule = dashboardModuleFromPortal(portal, userRole)
 
     return this._log({
       userId: resolvedTargetId || String(userId || 'system'),
@@ -888,6 +899,7 @@ export class CustomActivityLogger {
       details: {
         type: 'auth_lockout',
         eventType: 'auth_lockout',
+        activityType: 'AUTH_LOCKOUT',
         displayType: 'Account Lockout',
         description:
           description ||
@@ -898,12 +910,16 @@ export class CustomActivityLogger {
         loginId: resolvedLoginId || null,
         targetUserId: resolvedTargetId || null,
         username: username ? String(username) : null,
-        userName: userName ? String(userName) : null,
-        userEmail: userEmail ? String(userEmail) : null,
+        userName: name || null,
+        userEmail: email || null,
+        targetName: name || null,
+        targetEmail: email || null,
+        target_label: name || email || resolvedLoginId || null,
         userRole: userRole ? String(userRole) : null,
         accountType: accountType ? String(accountType) : null,
         portal: portal ? String(portal) : null,
         portalLabel: portalLabel ? String(portalLabel) : null,
+        module: securityModule,
         attempts,
         maxAttempts,
         lockedUntil,
@@ -939,6 +955,9 @@ export class CustomActivityLogger {
   ) {
     const resolvedLoginId = String(loginId || identifier || username || '').trim()
     const lockReason = reason || 'Sign-in blocked: account is in lockout cooldown'
+    const name = String(userName || '').trim()
+    const email = String(userEmail || '').trim()
+    const securityModule = dashboardModuleFromPortal(portal, userRole)
 
     return this._log({
       userId: String(userId || 'unknown'),
@@ -955,12 +974,16 @@ export class CustomActivityLogger {
         loginId: resolvedLoginId || null,
         targetUserId: String(userId || ''),
         username: username ? String(username) : null,
-        userName: userName ? String(userName) : null,
-        userEmail: userEmail ? String(userEmail) : null,
+        userName: name || null,
+        userEmail: email || null,
+        targetName: name || null,
+        targetEmail: email || null,
+        target_label: name || email || resolvedLoginId || null,
         userRole: userRole ? String(userRole) : null,
         accountType: accountType ? String(accountType) : null,
         portal: portal ? String(portal) : null,
         portalLabel: portalLabel ? String(portalLabel) : null,
+        module: securityModule,
         lockedUntil: lockedUntil ? String(lockedUntil) : null,
         ipAddress: String(ipAddress || ''),
         userAgent: String(userAgent || '').slice(0, 512),

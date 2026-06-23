@@ -17,9 +17,9 @@ describe('computeAuditStatistics', () => {
 
     assert.equal(stats.totalEventsToday, 3)
     assert.equal(stats.signInsToday, 1)
-    assert.equal(stats.failedSignIns, 1)
+    assert.equal(stats.failedSignIns, 0)
     assert.equal(stats.accountsCreatedThisWeek, 1)
     assert.ok(stats.signInsByHour.some((h) => h.value === 1))
-    assert.ok(stats.topTypes.length > 0)
+    assert.ok(stats.topTypes.some((row) => row.key === 'auth_lockout'))
   })
 })

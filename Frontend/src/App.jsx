@@ -138,6 +138,7 @@ export default function App() {
   const [otpCode, setOtpCode] = useState('')
   const [otpDestinationEmail, setOtpDestinationEmail] = useState('')
   const [otpFailedAttempts, setOtpFailedAttempts] = useState(0)
+  const [otpResendCooldown, setOtpResendCooldown] = useState(0)
   const [authError, setAuthError] = useState('')
   const [authBusy, setAuthBusy] = useState(false)
 
@@ -173,6 +174,12 @@ export default function App() {
   }, [view, loginStep])
 
   useEffect(() => {
+    if (otpResendCooldown <= 0) return undefined
+    const timer = setInterval(() => setOtpResendCooldown((v) => Math.max(0, v - 1)), 1000)
+    return () => clearInterval(timer)
+  }, [otpResendCooldown])
+
+  useEffect(() => {
     setShowPassword(false)
     setAuthError('')
     setLoginHint('')
@@ -181,6 +188,7 @@ export default function App() {
     setOtpCode('')
     setOtpDestinationEmail('')
     setOtpFailedAttempts(0)
+    setOtpResendCooldown(0)
     setIdentifier('')
   }, [roleId, view])
 
@@ -190,6 +198,7 @@ export default function App() {
     setOtpCode('')
     setOtpDestinationEmail('')
     setOtpFailedAttempts(0)
+    setOtpResendCooldown(0)
     setAuthError('')
 
     const sessionData = await waitForEstablishedSession()
@@ -313,6 +322,8 @@ export default function App() {
           if (send?.error) {
             setAuthError(formatAuthError(send.error) || 'Could not send email code.')
             setLoginStep('credentials')
+          } else {
+            setOtpResendCooldown(30)
           }
         } catch (e) {
           setAuthError(formatAuthError(e) || 'Could not send email code.')
@@ -322,6 +333,24 @@ export default function App() {
       }
 
       await handleAuthSuccess()
+    } finally {
+      setAuthBusy(false)
+    }
+  }
+
+  async function handleOtpResend() {
+    if (authBusy || otpResendCooldown > 0) return
+    setAuthError('')
+    setAuthBusy(true)
+    try {
+      const send = await authClient.twoFactor.sendOtp({})
+      if (send?.error) {
+        setAuthError(formatAuthError(send.error) || 'Could not resend verification code.')
+        return
+      }
+      setOtpResendCooldown(30)
+    } catch (e) {
+      setAuthError(formatAuthError(e) || 'Could not resend verification code.')
     } finally {
       setAuthBusy(false)
     }
@@ -381,6 +410,7 @@ export default function App() {
     setOtpCode('')
     setOtpDestinationEmail('')
     setOtpFailedAttempts(0)
+    setOtpResendCooldown(0)
     setAuthError('')
   }
 
@@ -596,9 +626,19 @@ export default function App() {
               {authError ? (
                 <p className="text-center text-sm text-red-200">{authError}</p>
               ) : null}
-              <p className="text-center text-xs text-white/70">
-                Didn&apos;t receive a code? Check your spam or junk folder.
-              </p>
+              <div className="flex flex-col items-center gap-2">
+                <p className="text-center text-xs text-white/70">
+                  Didn&apos;t receive a code? Check your spam or junk folder.
+                </p>
+                <button
+                  type="button"
+                  disabled={authBusy || otpResendCooldown > 0}
+                  onClick={() => handleOtpResend()}
+                  className="text-sm font-medium text-white/90 underline-offset-2 hover:underline disabled:cursor-not-allowed disabled:text-white/50 disabled:no-underline"
+                >
+                  {otpResendCooldown > 0 ? `Resend in ${otpResendCooldown}s` : 'Resend Code'}
+                </button>
+              </div>
               <button
                 type="submit"
                 disabled={authBusy}
