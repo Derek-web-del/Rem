@@ -35,7 +35,7 @@ const EVENT_LABELS = {
   profile_image_updated: 'User changes their avatar',
   user_profile_image_updated: 'User changes their avatar',
   user_deleted: 'User account deleted',
-  user_signed_in: 'Login',
+  user_signed_in: 'Signed In',
   user_signed_out: 'User signs out',
   user_sign_in_failed: 'Sign In Failed',
   password_reset_requested: 'Password Reset Requested',
@@ -45,7 +45,7 @@ const EVENT_LABELS = {
   email_verified: 'Email Verified',
   two_factor_enabled: '2FA Enabled',
   two_factor_disabled: '2FA Disabled',
-  session_created: 'Login',
+  session_created: 'Session started',
   session_revoked: 'Single session revoked',
   user_banned: 'User Banned',
   user_unbanned: 'User Unbanned',
@@ -79,7 +79,7 @@ const EVENTS_DROPDOWN = [
   { id: 'profile_updated', label: 'User updates their profile' },
   { id: 'user_account_changed', label: 'Profile Updated (Account)' },
   { id: 'profile_image_updated', label: 'User changes their avatar' },
-  { id: 'user_signed_in', label: 'Login' },
+  { id: 'user_signed_in', label: 'Signed In' },
   { id: 'user_signed_out', label: 'User signs out' },
   { id: 'user_sign_in_failed', label: 'Sign In Failed' },
   { id: 'password_reset_requested', label: 'Password Reset Requested' },
@@ -89,7 +89,7 @@ const EVENTS_DROPDOWN = [
   { id: 'email_verified', label: 'Email Verified' },
   { id: 'two_factor_enabled', label: '2FA Enabled' },
   { id: 'two_factor_disabled', label: '2FA Disabled' },
-  { id: 'session_created', label: 'Login' },
+  { id: 'session_created', label: 'Session started' },
   { id: 'session_revoked', label: 'Single session revoked' },
   { id: 'user_banned', label: 'User Banned' },
   { id: 'user_unbanned', label: 'User Unbanned' },
@@ -755,7 +755,14 @@ function normalizeLmsEvent(raw) {
 
 function unifiedActivityLabel(e) {
   const d = profileEventDetails(e)
-  if (d?.displayType && !isUserAccountChangedEvent(e)) return String(d.displayType)
+  if (d?.displayType && !isUserAccountChangedEvent(e)) {
+    const rawLabel = String(d.displayType)
+    const activity = String(e?.activityType || d?.activityType || '').toUpperCase()
+    if (rawLabel === 'Login' && (activity === 'USER_SIGNED_IN' || activity === 'LOGIN')) {
+      return 'Signed In'
+    }
+    return rawLabel
+  }
   const mapped = getEventLabel(e?.eventType, e?.activityType)
   if (mapped) return mapped
   if (isUserAccountChangedEvent(e)) {
@@ -765,8 +772,8 @@ function unifiedActivityLabel(e) {
   if (d?.displayType) return String(d.displayType)
   if (e?.source === 'auth') return humanEventTypeExtended(e?.eventType)
   const t = String(e?.activityType || '')
-  if (t === 'USER_SIGNED_IN') return 'Login'
-  if (t === 'USER_SESSION_STARTED') return 'Login'
+  if (t === 'USER_SIGNED_IN') return 'Signed In'
+  if (t === 'USER_SESSION_STARTED') return 'Session started'
   if (t === 'USER_ACCOUNT_CHANGED') return 'Profile Updated (Account)'
   if (t === 'USER_PROFILE_UPDATED') return 'Profile updated (account)'
   if (t === 'AUTH_LOCKOUT') return 'Account Locked'

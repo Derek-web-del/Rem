@@ -12,7 +12,7 @@ import { formatAuditModalEventDataJson } from '../Frontend/src/lib/formatAuditMo
 describe('auditLedgerDisplay', () => {
   it('maps LOGIN ledger type to sign-in activity and label', () => {
     assert.equal(ledgerTypeToActivityType('LOGIN'), 'USER_SIGNED_IN')
-    assert.equal(resolveLedgerDisplayType('LOGIN'), 'Login')
+    assert.equal(resolveLedgerDisplayType('LOGIN'), 'Signed In')
     assert.equal(isNonProfileLedgerType('LOGIN'), true)
     assert.equal(isNonProfileLedgerType('user_account_changed'), false)
   })
@@ -33,9 +33,9 @@ describe('auditLedgerDisplay', () => {
 
     assert.equal(mapped.eventType, 'LOGIN')
     assert.equal(mapped.activityType, 'USER_SIGNED_IN')
-    assert.equal(mapped.eventData.displayType, 'Login')
+    assert.equal(mapped.eventData.displayType, 'Signed In')
     assert.notEqual(mapped.eventData.displayType, 'Profile Updated (Account)')
-    assert.equal(getEventLabel(mapped.eventType, mapped.activityType), 'Login')
+    assert.equal(getEventLabel(mapped.eventType, mapped.activityType), 'Signed In')
   })
 
   it('formatAuditModalEventDataJson formats LOGIN ledger as sign-in not account changed', () => {
@@ -47,16 +47,16 @@ describe('auditLedgerDisplay', () => {
         userId: 'uid-trap',
         detailsObj: {
           type: 'LOGIN',
-          displayType: 'Login',
+          displayType: 'Signed In',
           userName: 'Trap Hook',
           userEmail: 'trap@school.edu',
           description: 'Student logged in',
         },
       },
-      'Login',
+      'Signed In',
     )
     const data = JSON.parse(json)
-    assert.equal(data.event, 'Login')
+    assert.equal(data.event, 'Signed In')
     assert.equal(data.user?.name, 'Trap Hook')
     assert.equal(data.actor, undefined)
     assert.equal(data.target, undefined)

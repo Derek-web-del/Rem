@@ -9,11 +9,11 @@ import {
 
 describe('auditEventDisplay', () => {
   it('getEventLabel maps session and auth event types', () => {
-    assert.equal(getEventLabel('session_created', ''), 'Login')
-    assert.equal(getEventLabel('', 'USER_SESSION_STARTED'), 'Login')
-    assert.equal(getEventLabel('', 'SESSION_CREATED'), 'Login')
-    assert.equal(getEventLabel('', 'USER_SIGNED_IN'), 'Login')
-    assert.equal(getEventLabel('user_signed_in', ''), 'Login')
+    assert.equal(getEventLabel('session_created', ''), 'Session started')
+    assert.equal(getEventLabel('', 'USER_SESSION_STARTED'), 'Session started')
+    assert.equal(getEventLabel('', 'SESSION_CREATED'), 'Session started')
+    assert.equal(getEventLabel('', 'USER_SIGNED_IN'), 'Signed In')
+    assert.equal(getEventLabel('user_signed_in', ''), 'Signed In')
     assert.equal(getEventLabel('user_sign_in_failed', ''), 'Login failed')
     assert.equal(getEventLabel('', 'AUTH_LOCKOUT'), 'Account Lockout')
     assert.equal(getEventLabel('auth_lockout', ''), 'Account Lockout')

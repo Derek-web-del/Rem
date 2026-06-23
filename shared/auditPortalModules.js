@@ -45,17 +45,21 @@ export function termsAndConditionsModule() {
   return TERMS_AND_CONDITIONS_MODULE
 }
 
-const LOGIN_ACTIVITY_TYPES = new Set([
-  'USER_SIGNED_IN',
-  'LOGIN',
-  'USER_SESSION_STARTED',
-  'SESSION_CREATED',
-])
+const SIGN_IN_ACTIVITY_TYPES = new Set(['USER_SIGNED_IN', 'LOGIN'])
+const SIGN_IN_EVENT_TYPES = new Set(['user_signed_in', 'login'])
 
-const LOGIN_EVENT_TYPES = new Set(['user_signed_in', 'session_created', 'login'])
+export function isSignInAuditActivity(activityType) {
+  return SIGN_IN_ACTIVITY_TYPES.has(String(activityType || '').trim().toUpperCase())
+}
+
+export function isSignInAuditEventType(eventType) {
+  return SIGN_IN_EVENT_TYPES.has(String(eventType || '').trim().toLowerCase())
+}
 
 export function isLoginAuditActivity(activityType) {
-  return LOGIN_ACTIVITY_TYPES.has(String(activityType || '').trim().toUpperCase())
+  return (
+    isSignInAuditActivity(activityType) || isSessionOnlyAuditActivity(activityType)
+  )
 }
 
 export function isSessionOnlyAuditActivity(activityType) {
@@ -69,7 +73,16 @@ export function isSessionOnlyAuditEventType(eventType) {
 }
 
 export function isLoginAuditEventType(eventType) {
-  return LOGIN_EVENT_TYPES.has(String(eventType || '').trim().toLowerCase())
+  const type = String(eventType || '').trim().toLowerCase()
+  return isSignInAuditEventType(type) || isSessionOnlyAuditEventType(type)
+}
+
+export function isSessionAuditActivity(activityType) {
+  return isSessionOnlyAuditActivity(activityType)
+}
+
+export function isSessionAuditEventType(eventType) {
+  return isSessionOnlyAuditEventType(eventType) || String(eventType || '').trim().toLowerCase() === 'session_revoked'
 }
 
 /**
@@ -254,6 +267,7 @@ function moduleFromActivityType(activity, role) {
       activity === 'USER_SIGNED_OUT' ||
       activity === 'USER_SESSION_STARTED' ||
       activity === 'SESSION_CREATED' ||
+      activity === 'SESSION_REVOKED' ||
       activity === 'USER_SIGNED_IN' ||
       activity === 'LOGIN'
     ) {
@@ -270,6 +284,7 @@ function moduleFromActivityType(activity, role) {
     activity === 'USER_SIGNED_OUT' ||
     activity === 'USER_SESSION_STARTED' ||
     activity === 'SESSION_CREATED' ||
+    activity === 'SESSION_REVOKED' ||
     activity === 'USER_SIGNED_IN' ||
     activity === 'LOGIN'
   ) {
@@ -352,10 +367,16 @@ function moduleFromTermsOrLogin(event) {
   }
 
   if (
-    isLoginAuditActivity(activity) ||
-    isLoginAuditEventType(eventType) ||
-    eventType === 'user_signed_in'
+    isSessionOnlyAuditActivity(activity) ||
+    isSessionOnlyAuditEventType(eventType) ||
+    activity === 'SESSION_REVOKED' ||
+    eventType === 'session_revoked'
   ) {
+    const role = pickUserRole(event)
+    return dashboardModuleForRole(role)
+  }
+
+  if (isSignInAuditActivity(activity) || isSignInAuditEventType(eventType)) {
     const role = pickUserRole(event)
     return dashboardModuleForRole(role)
   }
@@ -456,12 +477,15 @@ export function resolveAuditPortalAffected(event) {
   }
 
   if (
-    isLoginAuditActivity(activity) ||
-    isLoginAuditEventType(eventType) ||
-    eventType === 'user_signed_in'
+    isSignInAuditActivity(activity) ||
+    isSignInAuditEventType(eventType) ||
+    isSessionOnlyAuditActivity(activity) ||
+    isSessionOnlyAuditEventType(eventType) ||
+    activity === 'SESSION_REVOKED' ||
+    eventType === 'session_revoked'
   ) {
-    const loginLabel = pickLoginAffectedLabel(event, ed)
-    if (loginLabel) return loginLabel
+    const identityLabel = pickLoginAffectedLabel(event, ed)
+    if (identityLabel) return identityLabel
   }
 
   if (activity === 'TERMS_ACCEPTED' || eventType === 'terms_accepted') {

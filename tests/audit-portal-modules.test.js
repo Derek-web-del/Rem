@@ -188,6 +188,32 @@ describe('auditPortalModules', () => {
     )
   })
 
+  it('maps session started and revoked to dashboard module by role', () => {
+    assert.equal(
+      resolveAuditPortalModule({
+        activityType: 'USER_SESSION_STARTED',
+        userRole: 'student',
+        detailsObj: { module: 'Dashboard' },
+      }),
+      STUDENT_PORTAL_MODULES.DASHBOARD,
+    )
+    assert.equal(
+      resolveAuditPortalModule({
+        activityType: 'SESSION_REVOKED',
+        userRole: 'admin',
+        detailsObj: {},
+      }),
+      ADMIN_PORTAL_MODULES.DASHBOARD,
+    )
+    assert.equal(
+      resolveAuditPortalAffected({
+        activityType: 'USER_SESSION_STARTED',
+        detailsObj: { userName: 'Derek John Bantad' },
+      }),
+      'Derek John Bantad',
+    )
+  })
+
   it('dedupeLoginSessionEvents drops session rows when login exists for same user', () => {
     const ts = '2026-06-23T08:00:00.000Z'
     const events = [

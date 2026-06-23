@@ -15,7 +15,7 @@ export const EVENT_LABELS = {
   profile_image_updated: 'User changes their avatar',
   user_profile_image_updated: 'User changes their avatar',
   user_deleted: 'User account deleted',
-  user_signed_in: 'Login',
+  user_signed_in: 'Signed In',
   user_signed_out: 'User signs out',
   user_sign_in_failed: 'Sign In Failed',
   login_failed: 'Sign In Failed',
@@ -23,7 +23,7 @@ export const EVENT_LABELS = {
   password_reset_completed: 'Password Reset Completed',
   password_reset: 'Password Reset',
   password_changed: 'Password updated',
-  session_created: 'Login',
+  session_created: 'Session started',
   session_revoked: 'Single session revoked',
 }
 

@@ -1,13 +1,15 @@
 /** Display helpers for Audit Logs (Monitoring Records). */
 
 const EVENT_LABELS = {
-  session_created: 'Login',
-  USER_SESSION_STARTED: 'Login',
-  SESSION_CREATED: 'Login',
-  USER_SIGNED_IN: 'Login',
-  user_signed_in: 'Login',
-  LOGIN: 'Login',
-  login: 'Login',
+  session_created: 'Session started',
+  USER_SESSION_STARTED: 'Session started',
+  SESSION_CREATED: 'Session started',
+  USER_SIGNED_IN: 'Signed In',
+  user_signed_in: 'Signed In',
+  LOGIN: 'Signed In',
+  login: 'Signed In',
+  SESSION_REVOKED: 'Session Revoked',
+  session_revoked: 'Session Revoked',
   TERMS_ACCEPTED: 'Terms & Conditions Accepted',
   terms_accepted: 'Terms & Conditions Accepted',
   LOGIN_FAILED: 'Login failed',

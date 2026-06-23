@@ -612,14 +612,13 @@ export class CustomActivityLogger {
     const email = String(userEmail || '').trim().toLowerCase()
     const role = String(userRole || '').trim().toLowerCase()
     const loginMethod = String(method || '').trim() || 'credentials'
-    const roleLabel =
-      role === 'admin' ? 'Admin' : role === 'teacher' || role === 'faculty' ? 'Faculty' : role === 'student' ? 'Student' : role
-    const displayType = roleLabel ? `${roleLabel} Session Started` : 'Session Started'
+    const displayType = 'Session started'
     const signedInIso = signedInAt ? String(signedInAt) : new Date().toISOString()
     const ua = String(userAgent || '').trim().slice(0, 512) || 'unknown'
     const description = name
       ? `${name} signed in via ${loginMethod}`
       : `User signed in via ${loginMethod}`
+    const sessionModule = dashboardModuleForRole(role || userRole)
 
     return this._log({
       userId: String(userId || 'unknown'),
@@ -628,12 +627,16 @@ export class CustomActivityLogger {
       details: {
         type: 'session_created',
         eventType: 'session_created',
+        activityType: 'USER_SESSION_STARTED',
         displayType,
         description,
         name,
         userName: name,
         email,
         userEmail: email,
+        targetName: name,
+        targetEmail: email,
+        target_label: name || email || null,
         role: userRole ? String(userRole) : null,
         userRole: userRole ? String(userRole) : null,
         login_method: loginMethod,
@@ -641,7 +644,7 @@ export class CustomActivityLogger {
         user_agent: ua,
         signed_in_at: signedInIso,
         sessionId: sessionId ? String(sessionId) : null,
-        module: dashboardModuleForRole(role || userRole),
+        module: sessionModule,
       },
       userEmail: email || null,
       userRole: userRole ? String(userRole) : null,
@@ -655,8 +658,9 @@ export class CustomActivityLogger {
 
   async logSessionRevoked(
     actorUserId,
-    { targetUserId = '', sessionId = '', actorName = '', actorEmail = '', actorRole = 'admin' } = {},
+    { targetUserId = '', sessionId = '', actorName = '', actorEmail = '', actorRole = 'admin', targetUserRole = '' } = {},
   ) {
+    const role = String(targetUserRole || actorRole || 'admin').trim()
     return this._log({
       userId: String(actorUserId || 'system'),
       activityType: 'SESSION_REVOKED',
@@ -664,12 +668,15 @@ export class CustomActivityLogger {
       details: {
         type: 'session_revoked',
         eventType: 'session_revoked',
+        activityType: 'SESSION_REVOKED',
         displayType: 'Session Revoked',
         targetUserId: targetUserId ? String(targetUserId) : null,
         sessionId: sessionId ? String(sessionId) : null,
         actorName: actorName ? String(actorName) : null,
         actorEmail: actorEmail ? String(actorEmail) : null,
         actorRole: actorRole ? String(actorRole) : 'admin',
+        userRole: role || null,
+        module: dashboardModuleForRole(role),
       },
       userEmail: actorEmail ? String(actorEmail) : null,
       userRole: actorRole ? String(actorRole) : 'admin',
@@ -997,9 +1004,9 @@ export class CustomActivityLogger {
       activityType: 'USER_SIGNED_IN',
       resourceId: sessionId ? String(sessionId) : identifier ? String(identifier) : null,
       details: {
-        type: 'login',
-        eventType: 'login',
-        displayType: 'Login',
+        type: 'user_signed_in',
+        eventType: 'user_signed_in',
+        displayType: 'Signed In',
         description,
         identifier,
         userName: name,
