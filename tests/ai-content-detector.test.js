@@ -7,11 +7,14 @@ describe('aiContentDetector', () => {
     const empty = detectAiContent('')
     assert.equal(empty.verdict, 'Unknown')
     assert.equal(empty.probability, null)
+    assert.equal(empty.lexical_score, null)
+    assert.equal(empty.semantic_score, null)
     assert.deepEqual(empty.sentences, [])
 
     const short = detectAiContent('Too short for analysis.')
     assert.equal(short.verdict, 'Unknown')
     assert.equal(short.probability, null)
+    assert.equal(short.lexical_score, null)
   })
 
   it('getAiVerdict maps score bands', () => {
@@ -32,6 +35,13 @@ describe('aiContentDetector', () => {
     const result = detectAiContent(text)
     assert.ok(Array.isArray(result.sentences))
     assert.ok(result.sentences.length >= 1)
+    assert.ok(result.lexical_score != null)
+    assert.ok(result.semantic_score != null)
+    assert.ok(result.probability != null)
+    assert.equal(
+      result.probability,
+      Math.round((result.lexical_score * 0.4 + result.semantic_score * 0.6) * 10) / 10,
+    )
     for (const item of result.sentences) {
       assert.ok(item.sentence.length >= 20)
       assert.ok(item.classification === 'ai' || item.classification === 'human')

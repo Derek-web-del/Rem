@@ -194,6 +194,8 @@ export default function TeacherOriginalityReportView() {
     report.aiDetectionEnabled === true ||
     report.aiProbability != null
   const aiProbability = report.aiProbability != null ? Number(report.aiProbability) : null
+  const aiLexicalScore = report.aiLexicalScore != null ? Number(report.aiLexicalScore) : null
+  const aiSemanticScore = report.aiSemanticScore != null ? Number(report.aiSemanticScore) : null
   const aiStyle = getAiVerdictStyle(aiProbability, report.aiVerdict)
   const aiSentences = report.aiSentenceResults || []
   const aiFlaggedCount = aiSentences.filter((s) => s.classification === 'ai').length
@@ -383,7 +385,7 @@ export default function TeacherOriginalityReportView() {
 
                 <div className="space-y-3 px-4 py-3 md:px-5">
                   <div>
-                    <p className="text-xs text-neutral-500">Overall AI probability score</p>
+                    <p className="text-xs text-neutral-500">Overall AI probability score (40% lexical + 60% semantic)</p>
                     <div className="mt-2 flex items-center gap-3">
                       <div className="h-2 flex-1 overflow-hidden rounded-full bg-neutral-200">
                         <div
@@ -400,6 +402,25 @@ export default function TeacherOriginalityReportView() {
                     </div>
                   </div>
 
+                  {aiLexicalScore != null || aiSemanticScore != null ? (
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                      {aiLexicalScore != null ? (
+                        <div className="rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2">
+                          <p className="text-xs text-neutral-500">Lexical AI probability</p>
+                          <p className="mt-1 text-lg font-bold tabular-nums text-neutral-900">{aiLexicalScore.toFixed(1)}%</p>
+                          <p className="mt-0.5 text-xs text-neutral-500">Vocabulary and function-word patterns</p>
+                        </div>
+                      ) : null}
+                      {aiSemanticScore != null ? (
+                        <div className="rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2">
+                          <p className="text-xs text-neutral-500">Semantic AI probability</p>
+                          <p className="mt-1 text-lg font-bold tabular-nums text-neutral-900">{aiSemanticScore.toFixed(1)}%</p>
+                          <p className="mt-0.5 text-xs text-neutral-500">Sentence flow and burstiness patterns</p>
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
+
                   {aiProbability != null && aiProbability >= 70 ? (
                     <div
                       className="flex items-start gap-2 rounded-lg px-3 py-2 text-sm"
@@ -414,7 +435,7 @@ export default function TeacherOriginalityReportView() {
                   ) : null}
 
                   {[
-                    ['Detection method', 'Perplexity + Burstiness analysis'],
+                    ['Detection method', 'Lexical + semantic authorship analysis (40% / 60%)'],
                     ['AI provider used', 'Local AI (on-server)'],
                     [
                       'Sentences flagged as AI',
@@ -547,14 +568,14 @@ export default function TeacherOriginalityReportView() {
                   ['Analysis Method', report.analysisMethod || 'TF-IDF + Cosine Similarity'],
                   ['AI Provider', formatAiProviderLabel(report.aiProvider)],
                   ...(report.lexicalScore != null
-                    ? [['Lexical Score', `${Number(report.lexicalScore).toFixed(1)}%`]]
+                    ? [['Plagiarism lexical score', `${Number(report.lexicalScore).toFixed(1)}%`]]
                     : []),
                   ...(report.semanticScore != null
-                    ? [['Semantic Score', `${Number(report.semanticScore).toFixed(1)}%`]]
+                    ? [['Plagiarism semantic score', `${Number(report.semanticScore).toFixed(1)}%`]]
                     : []),
                   ...(aiRan
                     ? [
-                        ['AI detection method', 'Perplexity + Burstiness scoring'],
+                        ['AI detection method', 'Lexical + semantic authorship analysis (40% / 60%)'],
                         ['AI provider', 'Local AI (on-server)'],
                       ]
                     : []),
@@ -582,106 +603,64 @@ export default function TeacherOriginalityReportView() {
                 Interpretation Guide
               </h3>
               <div className="mt-2">
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-[480px] text-left text-sm">
-                    <thead className="border-b border-neutral-200 text-xs font-semibold uppercase tracking-wide text-neutral-600">
-                      <tr>
-                        <th className="w-1/2 px-2 py-2.5 align-bottom">Plagiarism risk levels</th>
-                        <th className="w-1/2 px-2 py-2.5 align-bottom">AI verdict guide</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr className="border-b border-neutral-100 align-top">
-                        <td className="px-2 py-2.5 md:py-3">
-                          <InterpretationRow
-                            range="0–30%"
-                            tone="green"
-                            title="Low Risk"
-                            body="Minimal similarity detected. Content appears original."
-                            compact
-                          />
-                        </td>
-                        <td className="px-2 py-2.5 md:py-3">
-                          <VerdictGuideRow
-                            title="Likely Human"
-                            body="Writing patterns consistent with human authorship."
-                            compact
-                          />
-                        </td>
-                      </tr>
-                      <tr className="border-b border-neutral-100 align-top">
-                        <td className="px-2 py-2.5 md:py-3">
-                          <InterpretationRow
-                            range="31–70%"
-                            tone="yellow"
-                            title="Medium Risk"
-                            body="Moderate similarity. Review flagged sections."
-                            compact
-                          />
-                        </td>
-                        <td className="px-2 py-2.5 md:py-3">
-                          <VerdictGuideRow
-                            title="Mixed"
-                            body="Combination of human and AI writing patterns detected."
-                            compact
-                          />
-                        </td>
-                      </tr>
-                      <tr className="border-b border-neutral-100 align-top">
-                        <td className="px-2 py-2.5 md:py-3">
-                          <InterpretationRow
-                            range="71–100%"
-                            tone="red"
-                            title="High Risk"
-                            body="High similarity detected. Requires immediate attention."
-                            compact
-                          />
-                        </td>
-                        <td className="px-2 py-2.5 md:py-3">
-                          <VerdictGuideRow
-                            title="Likely AI-generated"
-                            body="Writing patterns strongly consistent with AI generation tools such as ChatGPT or Gemini."
-                            compact
-                          />
-                        </td>
-                      </tr>
-                      <tr className="align-top">
-                        <td className="px-2 py-2.5 md:py-3" />
-                        <td className="px-2 py-2.5 md:py-3">
-                          <VerdictGuideRow
-                            title="Unknown"
-                            body="Insufficient text to determine AI involvement reliably."
-                            compact
-                          />
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-
-                <div className="my-4 border-t border-neutral-200" />
-
                 <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-500">
-                  AI probability guide
+                  Similarity score (plagiarism risk)
                 </p>
-                <AiGuideRow
+                <InterpretationRow
                   range="0–30%"
-                  variant="human"
-                  title="Likely human"
-                  body="Text shows natural human writing patterns. Low AI involvement."
+                  tone="green"
+                  title="Low Risk"
+                  body="Minimal similarity detected. Content appears original."
                 />
-                <AiGuideRow
-                  range="31–69%"
-                  variant="mixed"
-                  title="Mixed / AI-assisted"
-                  body="Moderate AI patterns detected. May have been AI-assisted or edited."
+                <InterpretationRow
+                  range="31–70%"
+                  tone="yellow"
+                  title="Medium Risk"
+                  body="Moderate similarity. Review flagged sections."
                 />
-                <AiGuideRow
-                  range="70–100%"
-                  variant="ai"
-                  title="Likely AI-generated"
-                  body="Strong AI writing patterns detected. Content may be fully AI-generated."
+                <InterpretationRow
+                  range="71–100%"
+                  tone="red"
+                  title="High Risk"
+                  body="High similarity detected. Requires immediate attention."
                 />
+
+                {aiRan ? (
+                  <>
+                    <div className="my-4 border-t border-neutral-200" />
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-500">
+                      AI probability (AI-generated content detection)
+                    </p>
+                    <p className="mb-3 text-xs leading-relaxed text-neutral-500">
+                      Overall AI probability combines lexical authorship signals (40%) and semantic flow signals
+                      (60%). Higher scores indicate greater likelihood of AI-generated or AI-assisted writing.
+                    </p>
+                    <AiGuideRow
+                      range="0–30%"
+                      variant="human"
+                      title="Likely human"
+                      body="Text shows natural human writing patterns. Low AI involvement."
+                    />
+                    <AiGuideRow
+                      range="31–69%"
+                      variant="mixed"
+                      title="Mixed / AI-assisted"
+                      body="Moderate AI patterns detected. May have been AI-assisted or edited."
+                    />
+                    <AiGuideRow
+                      range="70–100%"
+                      variant="ai"
+                      title="Likely AI-generated"
+                      body="Strong AI writing patterns detected. Content may be fully AI-generated."
+                    />
+                    <AiGuideRow
+                      range="—"
+                      variant="human"
+                      title="Unknown"
+                      body="Insufficient text to determine AI involvement reliably."
+                    />
+                  </>
+                ) : null}
               </div>
             </section>
           </div>

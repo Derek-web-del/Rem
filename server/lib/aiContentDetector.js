@@ -10,6 +10,10 @@ const FUNCTION_WORDS = new Set([
   'there', 'their', 'they', 'them', 'we', 'our', 'you', 'your', 'he', 'she', 'his', 'her',
 ])
 
+const LEXICAL_WEIGHT = 0.4
+const SEMANTIC_WEIGHT = 0.6
+const AI_SENTENCE_THRESHOLD = 0.55
+
 function splitWords(text) {
   return String(text || '')
     .toLowerCase()
@@ -46,28 +50,31 @@ function normalize(value, min, max) {
   return clamp((value - min) / (max - min), 0, 1)
 }
 
+function roundScore(value) {
+  return Math.round(Number(value) * 10) / 10
+}
+
 /**
- * Per-sentence AI-likeness score (0 = human-like, 1 = AI-like).
- * Uses predictability proxies: uniform length, low burstiness, low vocab richness, high function-word ratio.
+ * Lexical AI-likeness: surface vocabulary and function-word patterns.
+ * Semantic AI-likeness: sentence-length uniformity and low burstiness (flow predictability).
  */
-function scoreSentence(features, docBurstiness, meanTokenCount) {
+function scoreSentenceComponents(features, docBurstiness, meanTokenCount) {
   const { tokenCount, avgWordLength, vocabRichness, functionWordRatio } = features
-  if (tokenCount === 0) return 0.5
+  if (tokenCount === 0) {
+    return { lexical: 0.5, semantic: 0.5, combined: 0.5 }
+  }
 
   const lengthUniformity = 1 - normalize(Math.abs(tokenCount - meanTokenCount), 0, Math.max(meanTokenCount, 8))
   const lowBurstiness = 1 - normalize(docBurstiness, 0, 80)
   const lowRichness = 1 - normalize(vocabRichness, 0.35, 0.95)
   const highFunctionWords = normalize(functionWordRatio, 0.35, 0.75)
-  const moderateWordLength = 1 - Math.abs(avgWordLength - 5.2) / 5.2
+  const moderateWordLength = clamp(1 - Math.abs(avgWordLength - 5.2) / 5.2, 0, 1)
 
-  const aiScore =
-    lengthUniformity * 0.28 +
-    lowBurstiness * 0.22 +
-    lowRichness * 0.22 +
-    highFunctionWords * 0.18 +
-    moderateWordLength * 0.1
+  const lexical = clamp(lowRichness * 0.44 + highFunctionWords * 0.36 + moderateWordLength * 0.2, 0, 1)
+  const semantic = clamp(lengthUniformity * 0.56 + lowBurstiness * 0.44, 0, 1)
+  const combined = clamp(lexical * LEXICAL_WEIGHT + semantic * SEMANTIC_WEIGHT, 0, 1)
 
-  return clamp(aiScore, 0, 1)
+  return { lexical, semantic, combined }
 }
 
 export function getAiVerdict(probability) {
@@ -78,19 +85,26 @@ export function getAiVerdict(probability) {
 }
 
 /**
- * Local AI-generated content detection via perplexity + burstiness proxies.
+ * Local AI-generated content detection with lexical + semantic probability sub-scores.
+ * Overall AI probability = 40% lexical + 60% semantic (0–100 scale).
  * @param {string} text
- * @returns {{ probability: number|null, verdict: string, sentences: Array<{ sentence: string, classification: 'ai'|'human', confidence: number }> }}
+ * @returns {{
+ *   probability: number|null,
+ *   lexical_score: number|null,
+ *   semantic_score: number|null,
+ *   verdict: string,
+ *   sentences: Array<{ sentence: string, classification: 'ai'|'human', confidence: number }>
+ * }}
  */
 export function detectAiContent(text) {
   const trimmed = String(text || '').trim()
   if (trimmed.length < 50) {
-    return { probability: null, verdict: 'Unknown', sentences: [] }
+    return { probability: null, lexical_score: null, semantic_score: null, verdict: 'Unknown', sentences: [] }
   }
 
   const rawSentences = splitIntoSentences(trimmed)
   if (!rawSentences.length) {
-    return { probability: null, verdict: 'Unknown', sentences: [] }
+    return { probability: null, lexical_score: null, semantic_score: null, verdict: 'Unknown', sentences: [] }
   }
 
   const featureList = rawSentences.map((sentence) => ({
@@ -105,21 +119,28 @@ export function detectAiContent(text) {
   const docBurstiness = variance(tokenCounts)
 
   const scored = featureList.map(({ sentence, features }) => {
-    const aiScore = scoreSentence(features, docBurstiness, meanTokenCount)
-    const confidence = Math.abs(aiScore - 0.5) * 2
-    const classification = aiScore >= 0.55 ? 'ai' : 'human'
-    return { sentence, classification, confidence: Math.round(confidence * 100) / 100, aiScore }
+    const { lexical, semantic, combined } = scoreSentenceComponents(features, docBurstiness, meanTokenCount)
+    const confidence = Math.abs(combined - 0.5) * 2
+    const classification = combined >= AI_SENTENCE_THRESHOLD ? 'ai' : 'human'
+    return { sentence, classification, confidence: Math.round(confidence * 100) / 100, lexical, semantic, combined }
   })
 
-  let weightedSum = 0
+  let lexicalSum = 0
+  let semanticSum = 0
   let weightTotal = 0
   for (const item of scored) {
     const weight = Math.max(item.confidence, 0.1)
-    weightedSum += item.aiScore * 100 * weight
+    lexicalSum += item.lexical * 100 * weight
+    semanticSum += item.semantic * 100 * weight
     weightTotal += weight
   }
 
-  const probability = weightTotal > 0 ? Math.round((weightedSum / weightTotal) * 10) / 10 : null
+  const lexical_score = weightTotal > 0 ? roundScore(lexicalSum / weightTotal) : null
+  const semantic_score = weightTotal > 0 ? roundScore(semanticSum / weightTotal) : null
+  const probability =
+    lexical_score != null && semantic_score != null
+      ? roundScore(lexical_score * LEXICAL_WEIGHT + semantic_score * SEMANTIC_WEIGHT)
+      : null
   const verdict = getAiVerdict(probability)
 
   const sentences = scored.map(({ sentence, classification, confidence }) => ({
@@ -128,5 +149,5 @@ export function detectAiContent(text) {
     confidence,
   }))
 
-  return { probability, verdict, sentences }
+  return { probability, lexical_score, semantic_score, verdict, sentences }
 }

@@ -3,8 +3,6 @@ import { getRiskLevel, splitIntoSentences } from './plagiarismEngine.js'
 const FLAG_THRESHOLD = 0.35
 const LEXICAL_WEIGHT = 0.4
 const SEMANTIC_WEIGHT = 0.6
-const SCORE_DISAGREEMENT_THRESHOLD = 35
-const PARAPHRASE_SUSPECTED_FLAG = 'Paraphrase suspected — review flagged sentences'
 
 const DEFAULT_OPENAI_MODEL = 'text-embedding-3-small'
 const DEFAULT_LOCAL_MODEL = 'Xenova/all-MiniLM-L6-v2'
@@ -275,11 +273,7 @@ export function mergePlagiarismResults(lexical, semantic, aiProvider = 'none') {
   }
 
   const semanticScore = Number(semantic.similarity_score ?? 0) || 0
-  const scoreGap = Math.abs(lexicalScore - semanticScore)
-  const paraphraseSuspected = scoreGap >= SCORE_DISAGREEMENT_THRESHOLD
-  const mergedScore = paraphraseSuspected
-    ? Math.round(Math.max(lexicalScore, semanticScore) * 10) / 10
-    : Math.round((LEXICAL_WEIGHT * lexicalScore + SEMANTIC_WEIGHT * semanticScore) * 10) / 10
+  const mergedScore = Math.round((LEXICAL_WEIGHT * lexicalScore + SEMANTIC_WEIGHT * semanticScore) * 10) / 10
 
   return {
     similarity_score: mergedScore,
@@ -293,6 +287,5 @@ export function mergePlagiarismResults(lexical, semantic, aiProvider = 'none') {
     ai_provider: aiProvider,
     lexical_score: lexicalScore,
     semantic_score: semanticScore,
-    flag: paraphraseSuspected ? PARAPHRASE_SUSPECTED_FLAG : null,
   }
 }

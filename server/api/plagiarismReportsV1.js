@@ -220,6 +220,8 @@ export function createPlagiarismReportsV1Router(express, auth) {
         semanticScore: analysis.semantic_score,
         aiDetectionEnabled: runAiDetection,
         aiProbability: aiDetectionResult?.probability ?? null,
+        aiLexicalScore: aiDetectionResult?.lexical_score ?? null,
+        aiSemanticScore: aiDetectionResult?.semantic_score ?? null,
         aiVerdict: aiDetectionResult?.verdict ?? null,
         aiSentenceResults: aiDetectionResult?.sentences ?? null,
       })
@@ -261,6 +263,8 @@ export function createPlagiarismReportsV1Router(express, auth) {
         file_name: fileName,
         ai_detection_ran: runAiDetection,
         ai_probability: report.aiProbability ?? null,
+        ai_lexical_score: report.aiLexicalScore ?? null,
+        ai_semantic_score: report.aiSemanticScore ?? null,
         ai_verdict: report.aiVerdict ?? null,
         ai_sentence_results: report.aiSentenceResults ?? [],
       })

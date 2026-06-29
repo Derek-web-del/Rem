@@ -75,6 +75,18 @@ export function mapReportRow(row) {
         : row.ai_probability != null
           ? Number(row.ai_probability)
           : null,
+    aiLexicalScore:
+      row.aiLexicalScore != null
+        ? Number(row.aiLexicalScore)
+        : row.ai_lexical_score != null
+          ? Number(row.ai_lexical_score)
+          : null,
+    aiSemanticScore:
+      row.aiSemanticScore != null
+        ? Number(row.aiSemanticScore)
+        : row.ai_semantic_score != null
+          ? Number(row.ai_semantic_score)
+          : null,
     aiVerdict: row.aiVerdict ?? row.ai_verdict ?? null,
     aiSentenceResults: parseAiSentenceResults(row.aiSentenceResults ?? row.ai_sentence_results),
     aiDetectionEnabled:

@@ -89,18 +89,17 @@ describe('plagiarismAiEngine', () => {
     }
 
     const merged = mergePlagiarismResults(lexical, semantic, 'local')
-    assert.equal(merged.similarity_score, 80)
+    assert.equal(merged.similarity_score, 56)
     assert.equal(merged.analysis_method, 'AI Embeddings + TF-IDF + Cosine Similarity')
     assert.equal(merged.ai_provider, 'local')
     assert.equal(merged.lexical_score, 20)
     assert.equal(merged.semantic_score, 80)
-    assert.equal(merged.flag, 'Paraphrase suspected — review flagged sentences')
     assert.equal(merged.flagged_sentences.length, 1)
     assert.equal(merged.web_sources.length, 2)
-    assert.equal(merged.risk_level, 'High')
+    assert.equal(merged.risk_level, 'Medium')
   })
 
-  it('mergePlagiarismResults uses weighted blend when lexical and semantic agree within 35', () => {
+  it('mergePlagiarismResults uses weighted blend when lexical and semantic are close', () => {
     const lexical = {
       similarity_score: 40,
       risk_level: 'Medium',
@@ -116,7 +115,6 @@ describe('plagiarismAiEngine', () => {
 
     const merged = mergePlagiarismResults(lexical, semantic, 'local')
     assert.equal(merged.similarity_score, 46)
-    assert.equal(merged.flag, null)
     assert.equal(merged.risk_level, 'Medium')
   })
 

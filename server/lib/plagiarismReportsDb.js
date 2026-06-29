@@ -2,7 +2,8 @@ const REPORT_COLUMNS = `
   id, faculty_id, content, input_type, file_name, similarity_score, risk_level,
   flagged_sentences, web_sources, sources_checked, processing_time_ms,
   analysis_method, ai_provider, lexical_score, semantic_score,
-  ai_probability, ai_verdict, ai_sentence_results, ai_detection_enabled, created_at
+  ai_probability, ai_lexical_score, ai_semantic_score, ai_verdict, ai_sentence_results,
+  ai_detection_enabled, created_at
 `
 
 export async function ensurePlagiarismReportsSchema(pool) {
@@ -59,6 +60,14 @@ export async function ensurePlagiarismReportsSchema(pool) {
   await pool.query(`
     ALTER TABLE plagiarism_reports
       ADD COLUMN IF NOT EXISTS ai_detection_enabled BOOLEAN DEFAULT FALSE
+  `)
+  await pool.query(`
+    ALTER TABLE plagiarism_reports
+      ADD COLUMN IF NOT EXISTS ai_lexical_score NUMERIC(5, 2) DEFAULT NULL
+  `)
+  await pool.query(`
+    ALTER TABLE plagiarism_reports
+      ADD COLUMN IF NOT EXISTS ai_semantic_score NUMERIC(5, 2) DEFAULT NULL
   `)
   await pool.query(
     `CREATE INDEX IF NOT EXISTS idx_plagiarism_reports_faculty_id ON plagiarism_reports (faculty_id)`,
@@ -163,6 +172,8 @@ export function mapPlagiarismReportRow(row) {
     lexicalScore: row.lexical_score != null ? Number(row.lexical_score) : null,
     semanticScore: row.semantic_score != null ? Number(row.semantic_score) : null,
     aiProbability: row.ai_probability != null ? Number(row.ai_probability) : null,
+    aiLexicalScore: row.ai_lexical_score != null ? Number(row.ai_lexical_score) : null,
+    aiSemanticScore: row.ai_semantic_score != null ? Number(row.ai_semantic_score) : null,
     aiVerdict: row.ai_verdict != null ? String(row.ai_verdict).trim() || null : null,
     aiSentenceResults: parseAiSentenceResults(row.ai_sentence_results),
     aiDetectionEnabled: Boolean(row.ai_detection_enabled),
@@ -296,6 +307,8 @@ export async function fetchPlagiarismReportById(pool, id, facultyId) {
  *   lexicalScore?: number|null,
  *   semanticScore?: number|null,
  *   aiProbability?: number|null,
+ *   aiLexicalScore?: number|null,
+ *   aiSemanticScore?: number|null,
  *   aiVerdict?: string|null,
  *   aiSentenceResults?: object[]|null,
  *   aiDetectionEnabled?: boolean,
@@ -309,8 +322,8 @@ export async function createPlagiarismReport(pool, facultyId, analysis) {
         faculty_id, content, input_type, file_name, similarity_score, risk_level,
         flagged_sentences, web_sources, sources_checked, processing_time_ms,
         analysis_method, ai_provider, lexical_score, semantic_score,
-        ai_probability, ai_verdict, ai_sentence_results, ai_detection_enabled
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9, $10, $11, $12, $13, $14, $15, $16, $17::jsonb, $18)
+        ai_probability, ai_lexical_score, ai_semantic_score, ai_verdict, ai_sentence_results, ai_detection_enabled
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19::jsonb, $20)
       RETURNING ${REPORT_COLUMNS}
     `,
     [
@@ -329,6 +342,8 @@ export async function createPlagiarismReport(pool, facultyId, analysis) {
       analysis.lexicalScore != null ? Number(analysis.lexicalScore) : null,
       analysis.semanticScore != null ? Number(analysis.semanticScore) : null,
       aiDetectionEnabled && analysis.aiProbability != null ? Number(analysis.aiProbability) : null,
+      aiDetectionEnabled && analysis.aiLexicalScore != null ? Number(analysis.aiLexicalScore) : null,
+      aiDetectionEnabled && analysis.aiSemanticScore != null ? Number(analysis.aiSemanticScore) : null,
       aiDetectionEnabled && analysis.aiVerdict ? String(analysis.aiVerdict).trim() : null,
       aiDetectionEnabled && Array.isArray(analysis.aiSentenceResults)
         ? JSON.stringify(analysis.aiSentenceResults)
