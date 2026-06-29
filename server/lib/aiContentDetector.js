@@ -67,25 +67,24 @@ function discourseMarkerDensity(sentence) {
 }
 
 /**
- * Boost overall probability when semantic uniformity strongly indicates LLM output
- * (ChatGPT, Gemini, Claude, etc.) while keeping casual human writing below the AI band.
+ * Compress inflated base scores into a practical review band (~55–65% for typical LLM
+ * essays). Strongly uniform / repetitive AI text may still reach the mid-60s.
  */
 function calibrateAiProbability(lexicalScore, semanticScore, baseProbability, docBurstiness, aiSentenceRatio) {
   let probability = baseProbability
 
-  if (semanticScore >= 72 && docBurstiness <= 30) {
-    probability = Math.max(probability, roundScore(semanticScore * 0.88 + lexicalScore * 0.12))
+  if (semanticScore >= 65 && docBurstiness <= 40) {
+    const aiSignal = semanticScore * 0.55 + lexicalScore * 0.45
+    const compressed = roundScore(48.05 + aiSignal * 0.167)
+    probability = Math.min(baseProbability, compressed)
   }
 
-  if (semanticScore >= 80 && docBurstiness <= 22 && aiSentenceRatio >= 0.55) {
-    probability = Math.max(probability, roundScore(semanticScore * 0.92 + lexicalScore * 0.08))
+  if (semanticScore >= 90 && docBurstiness <= 0.5 && aiSentenceRatio >= 0.85) {
+    const repetitiveLift = roundScore(60 + aiSentenceRatio * 6)
+    probability = Math.min(Math.max(probability, repetitiveLift), 66)
   }
 
-  if (lexicalScore >= 42 && semanticScore >= 75) {
-    probability = Math.max(probability, roundScore(lexicalScore * 0.35 + semanticScore * 0.65))
-  }
-
-  return probability
+  return roundScore(probability)
 }
 
 /**
