@@ -1,7 +1,7 @@
 /** Interpretation Guide bands for AI-generated content detection */
 export const AI_HUMAN_MAX = 30
 export const AI_MIXED_MIN = 31
-export const AI_LIKELY_MIN = 60
+export const AI_LIKELY_MIN = 70
 
 /** @param {number|null|undefined} score 0–100 @returns {'Likely Human' | 'Mixed' | 'Likely AI-generated' | 'Unknown'} */
 export function getAiVerdictFromScore(score) {

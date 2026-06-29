@@ -627,30 +627,44 @@ export default function TeacherOriginalityReportView() {
                   body="High similarity detected. Requires immediate attention."
                 />
 
-                {aiRan ? (
-                  <>
-                    <div className="my-4 border-t border-neutral-200" />
-                    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-500">
-                      AI probability (AI-generated content detection)
-                    </p>
-                    <p className="mb-3 text-xs leading-relaxed text-neutral-500">
-                      Overall AI probability combines lexical authorship signals (40%) and semantic flow signals (60%).
-                      Scores of {AI_LIKELY_MIN}% or higher indicate patterns typical of ChatGPT, Gemini, Claude, and
-                      similar generative tools. Lexical probability reflects vocabulary richness, function words, and
-                      formal discourse markers; semantic probability reflects sentence-length uniformity and low
-                      burstiness (predictable flow).
-                    </p>
-                    {AI_INTERPRETATION_GUIDE.map((row) => (
-                      <AiGuideRow
-                        key={row.title}
-                        range={row.range}
-                        variant={row.variant}
-                        title={row.title}
-                        body={row.body}
-                      />
-                    ))}
-                  </>
-                ) : null}
+                <div className="my-4 border-t border-neutral-200" />
+
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-500">
+                  AI probability guide
+                </p>
+                <p className="mb-3 text-xs leading-relaxed text-neutral-500">
+                  Overall AI probability combines lexical authorship signals (40%) and semantic flow signals (60%).
+                  Higher scores indicate greater likelihood of AI-generated or AI-assisted writing.
+                </p>
+                {AI_INTERPRETATION_GUIDE.filter((row) => row.range !== '—').map((row) => (
+                  <AiGuideRow
+                    key={row.title}
+                    range={row.range}
+                    variant={row.variant}
+                    title={row.title}
+                    body={row.body}
+                  />
+                ))}
+
+                <p className="mb-2 mt-4 text-xs font-semibold uppercase tracking-wide text-neutral-500">
+                  AI verdict guide
+                </p>
+                <VerdictGuideRow
+                  title="Likely Human"
+                  body="Writing patterns consistent with human authorship."
+                />
+                <VerdictGuideRow
+                  title="Mixed"
+                  body="Combination of human and AI writing patterns detected."
+                />
+                <VerdictGuideRow
+                  title="Likely AI-generated"
+                  body="Writing patterns strongly consistent with AI generation tools such as ChatGPT or Gemini."
+                />
+                <VerdictGuideRow
+                  title="Unknown"
+                  body="Insufficient text to determine AI involvement reliably."
+                />
               </div>
             </section>
           </div>
