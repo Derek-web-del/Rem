@@ -333,6 +333,55 @@ function resolveTwoFactorSkipVerificationOnEnable() {
   return process.env.AUTH_TWO_FACTOR_SKIP_VERIFY_ON_ENABLE === 'true'
 }
 
+const ACCOUNT_LOCKOUT_MESSAGE =
+  'Account temporarily locked after 5 failed sign-in attempts. Try again in 5 minutes.'
+
+function accountLockoutError() {
+  return APIError.from('FORBIDDEN', {
+    code: 'ACCOUNT_LOCKED',
+    message: ACCOUNT_LOCKOUT_MESSAGE,
+  })
+}
+
+/** Resolve auth user for lockout hooks (username, displayUsername, or email). */
+async function resolveSignInUser(ctx, path, body) {
+  if (path === '/sign-in/email' && body?.email) {
+    const row = await ctx.context.internalAdapter.findUserByEmail(body.email)
+    return row?.user ?? row ?? null
+  }
+  if (path === '/sign-in/username' && body?.username) {
+    const normalized = String(body.username).trim().toLowerCase()
+    if (!normalized) return null
+    let user = await ctx.context.adapter.findOne({
+      model: 'user',
+      where: [{ field: 'username', value: normalized }],
+    })
+    if (!user?.id) {
+      user = await ctx.context.adapter.findOne({
+        model: 'user',
+        where: [{ field: 'displayUsername', value: normalized }],
+      })
+    }
+    if (!user?.id && isPgConfigured()) {
+      try {
+        const pool = getPgPool()
+        const { rows } = await pool.query(
+          `SELECT id, "failedLoginAttempts", "lockedUntil", email, username, "displayUsername", name, role
+           FROM "user"
+           WHERE LOWER(username) = $1 OR LOWER("displayUsername") = $1
+           LIMIT 1`,
+          [normalized],
+        )
+        user = rows?.[0] ?? null
+      } catch {
+        /* ignore */
+      }
+    }
+    return user
+  }
+  return null
+}
+
 export const auth = betterAuth({
   baseURL,
   /** Session cookies, symmetric token crypto, and plugin field encryption derive from this secret. */
@@ -533,18 +582,7 @@ export const auth = betterAuth({
       const body = ctx.body
       if (!body) return
 
-      let user = null
-      if (p === '/sign-in/email' && body.email) {
-        const row = await ctx.context.internalAdapter.findUserByEmail(body.email)
-        user = row?.user ?? row
-      }
-      if (p === '/sign-in/username' && body.username) {
-        const normalized = String(body.username).toLowerCase()
-        user = await ctx.context.adapter.findOne({
-          model: 'user',
-          where: [{ field: 'username', value: normalized }],
-        })
-      }
+      const user = await resolveSignInUser(ctx, p, body)
 
       if (user?.lockedUntil) {
         const until = new Date(user.lockedUntil).getTime()
@@ -577,11 +615,7 @@ export const auth = betterAuth({
           } catch {
             /* ignore */
           }
-          throw APIError.from('FORBIDDEN', {
-            code: 'ACCOUNT_LOCKED',
-            message:
-              'Account temporarily locked after 5 failed sign-in attempts. Try again in 5 minutes.',
-          })
+          throw accountLockoutError()
         }
         // Lockout expired — reset counters so the user gets a fresh set of attempts.
         try {
@@ -594,6 +628,17 @@ export const auth = betterAuth({
         } catch {
           /* ignore */
         }
+      } else if (Number(user.failedLoginAttempts || 0) >= MAX_LOCKOUT_ATTEMPTS) {
+        // Repair stale rows where attempts reached the threshold but lockedUntil was not persisted.
+        const until = new Date(Date.now() + LOCK_MS)
+        try {
+          await ctx.context.internalAdapter.updateUser(user.id, {
+            lockedUntil: until,
+          })
+        } catch {
+          /* ignore */
+        }
+        throw accountLockoutError()
       }
     }),
     after: createAuthMiddleware(async (ctx) => {
@@ -806,17 +851,7 @@ export const auth = betterAuth({
       const body = ctx.body
       if (!body) return
 
-      let user = null
-      if (p === '/sign-in/email' && body.email) {
-        const row = await ctx.context.internalAdapter.findUserByEmail(body.email)
-        user = row?.user ?? row
-      } else if (p === '/sign-in/username' && body.username) {
-        const normalized = String(body.username).toLowerCase()
-        user = await ctx.context.adapter.findOne({
-          model: 'user',
-          where: [{ field: 'username', value: normalized }],
-        })
-      }
+      const user = await resolveSignInUser(ctx, p, body)
 
       if (!user?.id) {
         const identifier =
@@ -930,6 +965,17 @@ export const auth = betterAuth({
         })
       } catch {
         /* ignore */
+      }
+
+      if (next >= MAX_LOCKOUT_ATTEMPTS) {
+        return
+      }
+      if (isAPIError(returned) && returned.body && typeof returned.body === 'object') {
+        const left = MAX_LOCKOUT_ATTEMPTS - next
+        returned.body = {
+          ...returned.body,
+          message: `Invalid username or password. ${left} attempt(s) remaining before a 5-minute lockout.`,
+        }
       }
     }),
   },
