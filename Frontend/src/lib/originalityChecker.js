@@ -1,5 +1,6 @@
 import apiFetch from './apiClient.js'
 import { getRiskLevelFromScore } from '../../../shared/plagiarismRiskBands.js'
+import { AI_LIKELY_MIN, AI_MIXED_MIN } from '../../../shared/aiProbabilityBands.js'
 
 export { ORIGINALITY_FILE_MAX_BYTES as MAX_FILE_BYTES, ORIGINALITY_FILE_MAX_MSG } from './uploadLimits.js'
 
@@ -238,10 +239,10 @@ export function webSourceScoreClass(score) {
 export function getAiVerdictStyle(probability, verdict) {
   const p = probability != null ? Number(probability) : null
   const v = String(verdict || '').toLowerCase()
-  if (p != null && p >= 70) {
+  if (p != null && p >= AI_LIKELY_MIN) {
     return { bg: '#EEEDFE', color: '#534AB7', border: '#AFA9EC', icon: 'ti-robot', short: 'AI' }
   }
-  if (p != null && p >= 31) {
+  if (p != null && p >= AI_MIXED_MIN) {
     return { bg: '#FAEEDA', color: '#633806', border: '#EF9F27', icon: 'ti-alert-triangle', short: 'Mixed' }
   }
   if (p != null || v.includes('human')) {

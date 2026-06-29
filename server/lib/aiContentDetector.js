@@ -1,4 +1,5 @@
 import { splitIntoSentences } from './plagiarismEngine.js'
+import { getAiVerdictFromScore } from '../../shared/aiProbabilityBands.js'
 
 const FUNCTION_WORDS = new Set([
   'a', 'an', 'the', 'and', 'or', 'but', 'if', 'then', 'so', 'because', 'as', 'while', 'when',
@@ -12,7 +13,11 @@ const FUNCTION_WORDS = new Set([
 
 const LEXICAL_WEIGHT = 0.4
 const SEMANTIC_WEIGHT = 0.6
-const AI_SENTENCE_THRESHOLD = 0.55
+const AI_SENTENCE_THRESHOLD = 0.52
+
+/** Common transition and register markers in LLM-generated academic/essay text */
+const AI_DISCOURSE_PATTERN =
+  /\b(furthermore|moreover|additionally|in addition|it is important|overall|in conclusion|therefore|thus|consequently|significant|comprehensive|utilize|utilise|facilitate|enhance|crucial|essential|robust|landscape|delve|multifaceted|myriad|pivotal|underscores|highlights|notably|likewise|nevertheless|however|thereby|paramount|increasingly|transforming|integration|implementation|framework|paradigm|leverage|streamline|underscore|holistic|nuanced|meticulous|intricacies|stakeholders|enabling|potential|address|concerns|thoughtfully|equitable|outcomes|learners|institutions)\b/gi
 
 function splitWords(text) {
   return String(text || '')
@@ -54,11 +59,40 @@ function roundScore(value) {
   return Math.round(Number(value) * 10) / 10
 }
 
+function discourseMarkerDensity(sentence) {
+  const words = splitWords(sentence)
+  if (!words.length) return 0
+  const matches = String(sentence).match(AI_DISCOURSE_PATTERN) || []
+  return normalize(matches.length / Math.max(words.length / 10, 1), 0, 0.55)
+}
+
 /**
- * Lexical AI-likeness: surface vocabulary and function-word patterns.
+ * Boost overall probability when semantic uniformity strongly indicates LLM output
+ * (ChatGPT, Gemini, Claude, etc.) while keeping casual human writing below the AI band.
+ */
+function calibrateAiProbability(lexicalScore, semanticScore, baseProbability, docBurstiness, aiSentenceRatio) {
+  let probability = baseProbability
+
+  if (semanticScore >= 72 && docBurstiness <= 30) {
+    probability = Math.max(probability, roundScore(semanticScore * 0.88 + lexicalScore * 0.12))
+  }
+
+  if (semanticScore >= 80 && docBurstiness <= 22 && aiSentenceRatio >= 0.55) {
+    probability = Math.max(probability, roundScore(semanticScore * 0.92 + lexicalScore * 0.08))
+  }
+
+  if (lexicalScore >= 42 && semanticScore >= 75) {
+    probability = Math.max(probability, roundScore(lexicalScore * 0.35 + semanticScore * 0.65))
+  }
+
+  return probability
+}
+
+/**
+ * Lexical AI-likeness: discourse markers, function words, and moderate vocabulary richness.
  * Semantic AI-likeness: sentence-length uniformity and low burstiness (flow predictability).
  */
-function scoreSentenceComponents(features, docBurstiness, meanTokenCount) {
+function scoreSentenceComponents(features, docBurstiness, meanTokenCount, sentence) {
   const { tokenCount, avgWordLength, vocabRichness, functionWordRatio } = features
   if (tokenCount === 0) {
     return { lexical: 0.5, semantic: 0.5, combined: 0.5 }
@@ -66,11 +100,20 @@ function scoreSentenceComponents(features, docBurstiness, meanTokenCount) {
 
   const lengthUniformity = 1 - normalize(Math.abs(tokenCount - meanTokenCount), 0, Math.max(meanTokenCount, 8))
   const lowBurstiness = 1 - normalize(docBurstiness, 0, 80)
-  const lowRichness = 1 - normalize(vocabRichness, 0.35, 0.95)
-  const highFunctionWords = normalize(functionWordRatio, 0.35, 0.75)
+  // LLM essays often sit in a moderate richness band rather than very low richness.
+  const richnessAiSignature = 1 - Math.abs(vocabRichness - 0.58) / 0.42
+  const highFunctionWords = normalize(functionWordRatio, 0.38, 0.72)
   const moderateWordLength = clamp(1 - Math.abs(avgWordLength - 5.2) / 5.2, 0, 1)
+  const discourseDensity = discourseMarkerDensity(sentence)
 
-  const lexical = clamp(lowRichness * 0.44 + highFunctionWords * 0.36 + moderateWordLength * 0.2, 0, 1)
+  const lexical = clamp(
+    richnessAiSignature * 0.26 +
+      highFunctionWords * 0.3 +
+      moderateWordLength * 0.14 +
+      discourseDensity * 0.3,
+    0,
+    1,
+  )
   const semantic = clamp(lengthUniformity * 0.56 + lowBurstiness * 0.44, 0, 1)
   const combined = clamp(lexical * LEXICAL_WEIGHT + semantic * SEMANTIC_WEIGHT, 0, 1)
 
@@ -78,10 +121,7 @@ function scoreSentenceComponents(features, docBurstiness, meanTokenCount) {
 }
 
 export function getAiVerdict(probability) {
-  if (probability == null || Number.isNaN(probability)) return 'Unknown'
-  if (probability >= 70) return 'Likely AI-generated'
-  if (probability >= 31) return 'Mixed'
-  return 'Likely Human'
+  return getAiVerdictFromScore(probability)
 }
 
 /**
@@ -119,7 +159,12 @@ export function detectAiContent(text) {
   const docBurstiness = variance(tokenCounts)
 
   const scored = featureList.map(({ sentence, features }) => {
-    const { lexical, semantic, combined } = scoreSentenceComponents(features, docBurstiness, meanTokenCount)
+    const { lexical, semantic, combined } = scoreSentenceComponents(
+      features,
+      docBurstiness,
+      meanTokenCount,
+      sentence,
+    )
     const confidence = Math.abs(combined - 0.5) * 2
     const classification = combined >= AI_SENTENCE_THRESHOLD ? 'ai' : 'human'
     return { sentence, classification, confidence: Math.round(confidence * 100) / 100, lexical, semantic, combined }
@@ -137,9 +182,14 @@ export function detectAiContent(text) {
 
   const lexical_score = weightTotal > 0 ? roundScore(lexicalSum / weightTotal) : null
   const semantic_score = weightTotal > 0 ? roundScore(semanticSum / weightTotal) : null
-  const probability =
+  const baseProbability =
     lexical_score != null && semantic_score != null
       ? roundScore(lexical_score * LEXICAL_WEIGHT + semantic_score * SEMANTIC_WEIGHT)
+      : null
+  const aiSentenceRatio = scored.length ? scored.filter((s) => s.classification === 'ai').length / scored.length : 0
+  const probability =
+    baseProbability != null
+      ? calibrateAiProbability(lexical_score, semantic_score, baseProbability, docBurstiness, aiSentenceRatio)
       : null
   const verdict = getAiVerdict(probability)
 

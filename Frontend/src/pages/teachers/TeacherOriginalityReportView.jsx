@@ -12,6 +12,7 @@ import {
   sentenceText,
   webSourceScoreClass,
 } from '../../lib/originalityChecker.js'
+import { AI_INTERPRETATION_GUIDE, AI_LIKELY_MIN, AI_MIXED_MIN } from '../../../../shared/aiProbabilityBands.js'
 import { FACULTY_MSG, FACULTY_TOAST_ID, FACULTY_ANNOUNCEMENT_TOAST_MS, useFacultyNotify } from '../../lib/facultyNotify.js'
 import TeacherMainHeader from './TeacherMainHeader.jsx'
 import TeacherBackButton from './TeacherBackButton.jsx'
@@ -201,14 +202,14 @@ export default function TeacherOriginalityReportView() {
   const aiFlaggedCount = aiSentences.filter((s) => s.classification === 'ai').length
   const humanFlaggedCount = aiSentences.filter((s) => s.classification === 'human').length
   const aiProbColor =
-    aiProbability != null && aiProbability >= 70
+    aiProbability != null && aiProbability >= AI_LIKELY_MIN
       ? 'text-[#534AB7]'
-      : aiProbability != null && aiProbability >= 31
+      : aiProbability != null && aiProbability >= AI_MIXED_MIN
         ? 'text-[#633806]'
         : 'text-[#27500A]'
 
   const aiHeaderBadge =
-    aiProbability != null && aiProbability >= 70
+    aiProbability != null && aiProbability >= AI_LIKELY_MIN
       ? { label: 'AI detected', bg: '#EEEDFE', color: '#534AB7', border: '#AFA9EC' }
       : { label: 'Not detected', bg: '#EAF3DE', color: '#27500A', border: '#97C459' }
 
@@ -421,15 +422,16 @@ export default function TeacherOriginalityReportView() {
                     </div>
                   ) : null}
 
-                  {aiProbability != null && aiProbability >= 70 ? (
+                  {aiProbability != null && aiProbability >= AI_LIKELY_MIN ? (
                     <div
                       className="flex items-start gap-2 rounded-lg px-3 py-2 text-sm"
-                      style={{ background: '#FAEEDA', color: '#633806' }}
+                      style={{ background: '#EEEDFE', color: '#534AB7', border: '1px solid #AFA9EC' }}
                     >
-                      <i className="ti ti-alert-triangle mt-0.5 shrink-0" aria-hidden="true" />
+                      <i className="ti ti-robot mt-0.5 shrink-0" aria-hidden="true" />
                       <p>
-                        High probability that this content was generated or heavily assisted by AI tools such as
-                        ChatGPT or Gemini.
+                        Likely AI-generated ({AI_LIKELY_MIN}% or higher). Writing patterns match common output from
+                        tools such as ChatGPT, Gemini, or Claude. Use this as a review signal alongside your own
+                        judgment.
                       </p>
                     </div>
                   ) : null}
@@ -632,33 +634,21 @@ export default function TeacherOriginalityReportView() {
                       AI probability (AI-generated content detection)
                     </p>
                     <p className="mb-3 text-xs leading-relaxed text-neutral-500">
-                      Overall AI probability combines lexical authorship signals (40%) and semantic flow signals
-                      (60%). Higher scores indicate greater likelihood of AI-generated or AI-assisted writing.
+                      Overall AI probability combines lexical authorship signals (40%) and semantic flow signals (60%).
+                      Scores of {AI_LIKELY_MIN}% or higher indicate patterns typical of ChatGPT, Gemini, Claude, and
+                      similar generative tools. Lexical probability reflects vocabulary richness, function words, and
+                      formal discourse markers; semantic probability reflects sentence-length uniformity and low
+                      burstiness (predictable flow).
                     </p>
-                    <AiGuideRow
-                      range="0–30%"
-                      variant="human"
-                      title="Likely human"
-                      body="Text shows natural human writing patterns. Low AI involvement."
-                    />
-                    <AiGuideRow
-                      range="31–69%"
-                      variant="mixed"
-                      title="Mixed / AI-assisted"
-                      body="Moderate AI patterns detected. May have been AI-assisted or edited."
-                    />
-                    <AiGuideRow
-                      range="70–100%"
-                      variant="ai"
-                      title="Likely AI-generated"
-                      body="Strong AI writing patterns detected. Content may be fully AI-generated."
-                    />
-                    <AiGuideRow
-                      range="—"
-                      variant="human"
-                      title="Unknown"
-                      body="Insufficient text to determine AI involvement reliably."
-                    />
+                    {AI_INTERPRETATION_GUIDE.map((row) => (
+                      <AiGuideRow
+                        key={row.title}
+                        range={row.range}
+                        variant={row.variant}
+                        title={row.title}
+                        body={row.body}
+                      />
+                    ))}
                   </>
                 ) : null}
               </div>
