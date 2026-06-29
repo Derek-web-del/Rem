@@ -194,8 +194,8 @@ authDescribe('auth flows (PostgreSQL)', () => {
     }
 
     const locked = await postJson(`${base}/api/auth/sign-in/email`, { email, password: goodPassword })
-    assert.equal(locked.res.status, 401)
-    assert.ok(String(locked.text).includes('INVALID_EMAIL_OR_PASSWORD'))
+    assert.equal(locked.res.status, 403)
+    assert.ok(String(locked.text).includes('ACCOUNT_LOCKED'))
 
     await sleep(1400)
     const ok = await postJson(`${base}/api/auth/sign-in/email`, { email, password: goodPassword })

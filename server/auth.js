@@ -62,12 +62,11 @@ const infraApiUrl = (process.env.BETTER_AUTH_API_URL || '').trim()
 const infraKvUrl = (process.env.BETTER_AUTH_KV_URL || '').trim()
 
 // Infra Sentinel security checks call hosted endpoints like `/security/check`.
-// If Infra is having issues during local dev, it can spam 500 logs even though your app still works.
-// Keep enabled in production by default, but allow an explicit dev toggle.
+// LenLearn implements native per-account lockout (5 failures / 5 min) and express
+// rate limits, so Sentinel is opt-in only — it previously blocked sign-in at 3
+// attempts (credential stuffing) before native lockout could run at 5.
 const infraSecurityEnabled =
-  process.env.INFRA_SECURITY_ENABLED != null
-    ? String(process.env.INFRA_SECURITY_ENABLED).toLowerCase() === 'true'
-    : (process.env.NODE_ENV || 'development') === 'production' && !!infraApiKey
+  String(process.env.INFRA_SECURITY_ENABLED || '').toLowerCase() === 'true'
 
 const envSecret = (process.env.BETTER_AUTH_SECRET || '').trim()
 const DEV_DEFAULT_SECRET = 'lenlearn-local-dev-only-min-32-char-secret!'
@@ -340,6 +339,15 @@ export const auth = betterAuth({
   secret: authSecret,
   database: authPgPool,
   trustedOrigins,
+  // Better Auth defaults: 3 sign-in attempts per 10s (production). That fires before
+  // LenLearn account lockout (5 failures / 5 min). Express rate limits + lockout cover sign-in.
+  rateLimit: {
+    customRules: {
+      '/sign-in/username': false,
+      '/sign-in/email': false,
+      '/sign-in': false,
+    },
+  },
   experimental: {
     joins: true,
   },
@@ -569,10 +577,22 @@ export const auth = betterAuth({
           } catch {
             /* ignore */
           }
-          throw APIError.from('UNAUTHORIZED', {
-            code: 'INVALID_EMAIL_OR_PASSWORD',
-            message: 'Invalid email or password',
+          throw APIError.from('FORBIDDEN', {
+            code: 'ACCOUNT_LOCKED',
+            message:
+              'Account temporarily locked after 5 failed sign-in attempts. Try again in 5 minutes.',
           })
+        }
+        // Lockout expired — reset counters so the user gets a fresh set of attempts.
+        try {
+          await ctx.context.internalAdapter.updateUser(user.id, {
+            failedLoginAttempts: 0,
+            lockedUntil: null,
+          })
+          user.failedLoginAttempts = 0
+          user.lockedUntil = null
+        } catch {
+          /* ignore */
         }
       }
     }),
@@ -969,11 +989,11 @@ export const auth = betterAuth({
             apiUrl: infraApiUrl || undefined,
             kvUrl: infraKvUrl || undefined,
             security: {
+              // LenLearn already enforces per-account lockout (5 failures → 5 min).
+              // Disable Infra credential-stuffing IP limits so they do not block
+              // sign-in before the native lockout threshold is reached.
               credentialStuffing: {
-                enabled: true,
-                thresholds: { challenge: 3, block: 8 },
-                windowSeconds: 3600,
-                cooldownSeconds: 900,
+                enabled: false,
               },
               suspiciousIpBlocking: { action: 'challenge' },
               botBlocking: { action: 'challenge' },

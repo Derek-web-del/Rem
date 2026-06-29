@@ -112,7 +112,14 @@ function formatAuthError(error) {
   })()
 
   if (raw.includes('ACCOUNT_LOCKED') || error.code === 'ACCOUNT_LOCKED' || error.body?.code === 'ACCOUNT_LOCKED') {
-    return 'Sign-in temporarily unavailable. Please try again later.'
+    return 'Account temporarily locked after 5 failed sign-in attempts. Try again in 5 minutes.'
+  }
+  if (
+    raw.toLowerCase().includes('too many requests') ||
+    error.status === 429 ||
+    error.statusCode === 429
+  ) {
+    return 'Too many sign-in attempts from this network. Please wait a few minutes and try again.'
   }
   if (raw.includes('WEAK_PASSWORD') || error.code === 'WEAK_PASSWORD' || error.body?.code === 'WEAK_PASSWORD') {
     return passwordPolicyHint()

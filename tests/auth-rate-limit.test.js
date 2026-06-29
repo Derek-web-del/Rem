@@ -175,10 +175,10 @@ pgTest('account lockout still works (5 failed → locked) and expires', async (t
   }
 
   const locked = await postJson(`${base}/api/auth/sign-in/email`, { email, password: goodPassword })
-  assert.equal(locked.res.status, 401)
+  assert.equal(locked.res.status, 403)
   assert.ok(
-    JSON.stringify(locked.json || locked.text).includes('INVALID_EMAIL_OR_PASSWORD'),
-    `expected INVALID_EMAIL_OR_PASSWORD, got ${locked.text}`,
+    JSON.stringify(locked.json || locked.text).includes('ACCOUNT_LOCKED'),
+    `expected ACCOUNT_LOCKED, got ${locked.text}`,
   )
 
   await sleep(900)

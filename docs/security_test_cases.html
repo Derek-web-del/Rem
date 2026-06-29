@@ -3,348 +3,432 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>LenLearn LMS — Security Test Case Documentation</title>
+  <title>LenLearn LMS Security Test Cases</title>
   <style>
-    :root {
-      --navy: #0C447C;
-      --navy-light: #E6F1FB;
-      --border: #e5e5e5;
-      --bg-secondary: #f5f5f5;
-      --text: #1a1a1a;
-      --text-muted: #555;
-    }
-    * { box-sizing: border-box; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      font-family: "Segoe UI", system-ui, sans-serif;
-      font-size: 14px;
-      line-height: 1.55;
-      color: var(--text);
-      max-width: 1100px;
+      font-family: Calibri, "Segoe UI", Arial, sans-serif;
+      font-size: 11pt;
+      line-height: 1.45;
+      color: #000;
+      max-width: 1200px;
       margin: 0 auto;
-      padding: 24px 20px 48px;
+      padding: 32px 40px 48px;
+      background: #fff;
     }
-    h1 { color: var(--navy); border-bottom: 3px solid var(--navy); padding-bottom: 10px; }
-    h2 { color: var(--navy); margin-top: 36px; scroll-margin-top: 12px; }
-    h3 { margin-top: 20px; }
-    .meta, .policy, nav.toc {
-      background: var(--bg-secondary);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 16px 20px;
-      margin: 16px 0;
+    h1 {
+      font-size: 16pt;
+      font-weight: bold;
+      text-align: center;
+      margin-bottom: 20px;
     }
-    .policy { background: #fef3c7; border-left: 4px solid #d97706; }
-    nav.toc ul { columns: 2; margin: 8px 0 0; padding-left: 20px; }
-    nav.toc a { color: var(--navy); }
-    .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; margin: 12px 0 20px; }
-    table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 720px; }
-    thead th { background: var(--navy); color: #E6F1FB; padding: 10px 8px; text-align: left; }
-    tbody td { padding: 10px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
-    tbody tr:nth-child(even) { background: #fafafa; }
-    td.id { font-weight: 700; color: var(--navy); white-space: nowrap; }
-    .status { font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 999px; display: inline-block; }
-    .s-pending { background: #f3f4f6; color: #6b7280; border: 1px solid #d1d5db; }
-    .s-partial { background: #fef3c7; color: #b45309; }
-    .s-impl { background: #ffedd5; color: #c2410c; }
-    .s-na { background: #eef2ff; color: #4338ca; }
-    .s-pass { background: #e6f4ea; color: #1e7e34; }
-    .summary { font-size: 13px; color: var(--text-muted); background: var(--bg-secondary); padding: 12px; border-radius: 6px; margin-bottom: 24px; border-left: 4px solid #3B6D11; }
-    details { border: 1px solid var(--border); border-radius: 6px; margin: 8px 0; padding: 0; }
-    details summary { cursor: pointer; font-weight: 600; padding: 12px 16px; background: var(--navy-light); color: var(--navy); }
-    details .steps { padding: 12px 16px 16px; font-size: 13px; }
-    details ol, details ul { padding-left: 20px; }
-    details li { margin-bottom: 6px; }
-    code, pre { background: #1e293b; color: #e2e8f0; border-radius: 4px; font-size: 12px; }
-    code { padding: 2px 6px; }
-    pre { padding: 12px; overflow-x: auto; }
-    .pass-box { background: #e6f4ea; border: 1px solid #86efac; padding: 12px; border-radius: 6px; margin: 12px 0; font-size: 13px; }
+    .intro {
+      text-align: justify;
+      margin-bottom: 16px;
+    }
+    .intro p { margin-bottom: 10px; }
+    nav.toc {
+      border: 1px solid #000;
+      padding: 12px 16px;
+      margin: 16px 0 24px;
+      background: #fafafa;
+    }
+    nav.toc ul {
+      columns: 2;
+      margin: 8px 0 0 20px;
+    }
+    nav.toc a { color: #000; }
+    h2 {
+      font-size: 12pt;
+      font-weight: bold;
+      margin: 28px 0 8px;
+    }
+    .module-note {
+      font-size: 10pt;
+      color: #333;
+      margin-bottom: 10px;
+    }
+    .table-wrap {
+      overflow-x: auto;
+      margin: 8px 0 20px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 10pt;
+      min-width: 960px;
+    }
+    thead th {
+      background: #d9d9d9;
+      color: #000;
+      font-weight: bold;
+      padding: 8px 6px;
+      text-align: left;
+      border: 1px solid #000;
+      vertical-align: top;
+    }
+    tbody td {
+      padding: 8px 6px;
+      border: 1px solid #000;
+      vertical-align: top;
+      text-align: left;
+    }
+    td.id {
+      font-weight: bold;
+      white-space: nowrap;
+    }
+    @media print {
+      body { padding: 24px; }
+      nav.toc { break-after: avoid; }
+      h2 { break-after: avoid; }
+      table { font-size: 9pt; }
+    }
   </style>
 </head>
 <body>
 
-<h1>LenLearn LMS — Security Test Case Documentation</h1>
+<h1>LenLearn LMS Security Test Cases</h1>
 
-<div class="policy">
-  <strong>How to use:</strong> Run each test in <a href="#howto">How to Execute</a>. If what you see matches <strong>Actual Result</strong>, change <strong>Status</strong> to <span class="status s-pass">Passed</span> and save a screenshot. Do not mark Passed without running the test.
+<div class="intro">
+  <p>This document defines structured security test cases for <strong>LenLearn: A Secure LMS with Monitoring Records and AI-Powered Plagiarism Checker for Glendale School</strong>. Cases are aligned to the LenLearn Security Evaluation Matrix (research objectives, functional modules, FURPS evaluation areas, STRIDE threat categories, and expected Chapter 4 evidence sections). Each test follows the eight-column format used for capstone security evaluation documentation.</p>
+  <p><strong>Scope:</strong> Controlled security evaluation documentation aligned to the LenLearn Security Evaluation Matrix and STRIDE threat model. Test procedures target the Login/User Management, Records/Database Management, Logs/Monitoring, Reports/Protected Records/Session Controls, Core Services/Offline Framework, and Session Management modules. Evaluation environment: localhost:5173 (frontend), localhost:3001 (API), PostgreSQL. This document specifies test design only; execution results are recorded separately during evaluation.</p>
 </div>
 
 <nav class="toc">
   <strong>Contents</strong>
   <ul>
-    <li><a href="#table1">Table 1 — Authentication</a></li>
-    <li><a href="#table2">Table 2 — Session</a></li>
-    <li><a href="#table3">Table 3 — Input Validation</a></li>
-    <li><a href="#table4">Table 4 — SQL Injection</a></li>
-    <li><a href="#table5">Table 5 — RBAC</a></li>
-    <li><a href="#table6">Table 6 — Configuration</a></li>
-    <li><a href="#table7">Table 7 — Logging</a></li>
-    <li><a href="#table8">Table 8 — Data Protection</a></li>
-    <li><a href="#howto">How to Execute Tests</a></li>
-    <li><a href="#quickpass">Quick Pass Criteria</a></li>
+    <li><a href="#spoofing-threats">Spoofing Threats</a></li>
+    <li><a href="#tampering-threats">Tampering Threats</a></li>
+    <li><a href="#repudiation-threats">Repudiation Threats</a></li>
+    <li><a href="#information-disclosure-threats">Information Disclosure Threats</a></li>
+    <li><a href="#denial-of-service-threats">Denial of Service Threats</a></li>
+    <li><a href="#elevation-of-privilege-threats">Elevation of Privilege Threats</a></li>
   </ul>
 </nav>
 
-<h2 id="table1">Table 1. Authentication Lockout &amp; Login Security Testing Results</h2>
-<p><strong>Best Reference:</strong> OWASP ASVS + NIST</p>
+<h2 id="spoofing-threats">Spoofing Threats</h2>
+<p class="module-note"><strong>Module:</strong> Login / User Management Module &nbsp;|&nbsp; <strong>Chapter 4 Evidence:</strong> Authentication Security Results (Section 4.3.1)</p>
 <div class="table-wrap">
-<table>
-  <thead><tr><th>Test Case ID</th><th>Security Test Scenario</th><th>Expected Result</th><th>Actual Result</th><th>KPI Target</th><th>Status</th></tr></thead>
-  <tbody>
-    <tr><td class="id">AUTH-001</td><td>Multiple failed login attempts</td><td>Account lockout activated after threshold</td><td>Lockout triggered after 5 attempts</td><td>≤5 attempts</td><td><span class="status s-pending">Not Yet Tested</span></td></tr>
-    <tr><td class="id">AUTH-002</td><td>Login using invalid credentials</td><td>Access denied</td><td>Access denied with generic error message</td><td>100% denial</td><td><span class="status s-pending">Not Yet Tested</span></td></tr>
-    <tr><td class="id">AUTH-003</td><td>Direct access to protected page without login</td><td>Redirect to login page</td><td>Redirect to login page successful</td><td>100% blocked</td><td><span class="status s-pending">Not Yet Tested</span></td></tr>
-    <tr><td class="id">AUTH-004</td><td>Session expiration after inactivity</td><td>Session terminated automatically</td><td>Client idle sign-out after 30 minutes</td><td>Enabled</td><td><span class="status s-pending">Not Yet Tested</span></td></tr>
-    <tr><td class="id">AUTH-005</td><td>Role-based access restriction at login</td><td>Unauthorized role cannot access wrong portal</td><td>Access blocked at wrong portal</td><td>100% blocked</td><td><span class="status s-pending">Not Yet Tested</span></td></tr>
-  </tbody>
-</table>
+  <table>
+    <thead><tr>
+      <th>Test ID</th>
+      <th>Security Test Case</th>
+      <th>OWASP ASVS 4.0.3</th>
+      <th>Objective</th>
+      <th>Test Procedure</th>
+      <th>Expected Result</th>
+      <th>Metric</th>
+      <th>Acceptance Criteria</th>
+    </tr></thead>
+    <tbody>
+    <tr>
+      <td class="id">ST-01</td>
+      <td>Authentication System Response</td>
+      <td>V2 Authentication, V7 Error Handling and Logging</td>
+      <td>Ensure login response does not expose account validity or sensitive details</td>
+      <td>Enter incorrect Login ID/username, wrong password, and invalid account combinations in the LenLearn Admin, Faculty, and Student login forms</td>
+      <td>Generic error messages displayed</td>
+      <td>Information Disclosure Rate (%)</td>
+      <td>0% sensitive data exposure</td>
+    </tr>
+    <tr>
+      <td class="id">ST-02</td>
+      <td>Email OTP Validation</td>
+      <td>V2 Authentication, V9 Communication</td>
+      <td>Verify secure handling of email OTP delivery and verification</td>
+      <td>Replay an expired OTP code, alter the OTP value, or attempt to bypass OTP verification step</td>
+      <td>Invalid or expired OTP requests are rejected</td>
+      <td>OTP Validation Rate (%)</td>
+      <td>100% validation required</td>
+    </tr>
+    <tr>
+      <td class="id">ST-03</td>
+      <td>Multi-Factor Authentication Enforcement</td>
+      <td>V2 Authentication, V3 Session Management</td>
+      <td>Ensure MFA/Email OTP authentication is enforced</td>
+      <td>Attempt login using valid credentials but without entering OTP</td>
+      <td>Login denied unless valid OTP is provided</td>
+      <td>MFA Enforcement Rate (%)</td>
+      <td>100% MFA enforcement</td>
+    </tr>
+    <tr>
+      <td class="id">ST-04</td>
+      <td>Brute Force Login Protection</td>
+      <td>V2 Authentication, V7 Error Handling and Logging</td>
+      <td>Validate rate limiting triggering and temporary lockout</td>
+      <td>Repeatedly enter incorrect credentials beyond threshold (5 attempts)</td>
+      <td>Rate limit triggered and account temporarily restricted</td>
+      <td>Brute Force Prevention Rate (%)</td>
+      <td>≥95% prevention</td>
+    </tr>
+    <tr>
+      <td class="id">ST-05</td>
+      <td>Session Token Tampering Protection</td>
+      <td>V3 Session Management, V4 Access Control</td>
+      <td>Validate secure handling of session tokens and replay prevention</td>
+      <td>Modify session cookie value, attempt session reuse after logout, and replay expired session tokens</td>
+      <td>Invalid tokens rejected</td>
+      <td>Token Validation Enforcement Rate (%)</td>
+      <td>100% rejection</td>
+    </tr>
+    </tbody>
+  </table>
 </div>
-<p class="summary">Evaluated against OWASP ASVS and NIST lockout guidance. AUTH-004 is client idle logout only; server session cookie lasts 7 days.</p>
 
-<h2 id="table2">Table 2. Session Management Security Testing Results</h2>
-<p><strong>Best Reference:</strong> OWASP ASVS</p>
+<h2 id="tampering-threats">Tampering Threats</h2>
+<p class="module-note"><strong>Module:</strong> Records / Database Management Module &nbsp;|&nbsp; <strong>Chapter 4 Evidence:</strong> Input Validation Results (Section 4.3.2)</p>
 <div class="table-wrap">
-<table>
-  <thead><tr><th>Test Case ID</th><th>Security Test Scenario</th><th>Expected Result</th><th>Actual Result</th><th>KPI Target</th><th>Status</th></tr></thead>
-  <tbody>
-    <tr><td class="id">SESS-001</td><td>Session token invalidation on logout</td><td>Session cookie invalidated</td><td>Session invalidated; API returns 401 after logout</td><td>100% blocked after logout</td><td><span class="status s-partial">Partially Verified (Automated only)</span></td></tr>
-    <tr><td class="id">SESS-002</td><td>Session fixation resistance</td><td>New session ID after login</td><td>New session cookie issued after successful login</td><td>New session on auth</td><td><span class="status s-pending">Not Yet Tested</span></td></tr>
-    <tr><td class="id">SESS-003</td><td>Concurrent session handling</td><td>Behavior documented</td><td>Both browser sessions remain active (no limit coded)</td><td>N/A</td><td><span class="status s-na">Not Applicable</span></td></tr>
-  </tbody>
-</table>
+  <table>
+    <thead><tr>
+      <th>Test ID</th>
+      <th>Security Test Case</th>
+      <th>OWASP ASVS 4.0.3</th>
+      <th>Objective</th>
+      <th>Test Procedure</th>
+      <th>Expected Result</th>
+      <th>Metric</th>
+      <th>Acceptance Criteria</th>
+    </tr></thead>
+    <tbody>
+    <tr>
+      <td class="id">TT-01</td>
+      <td>Submission Identity Tampering Protection</td>
+      <td>V4 Access Control, V11 Business Logic</td>
+      <td>Prevent quiz or assignment submission attribution to another student via payload manipulation</td>
+      <td>Intercept quiz or assignment submission requests and modify the student_id field in the payload before sending to LenLearn API endpoints</td>
+      <td>Submission rejected or attributed to authenticated session student only</td>
+      <td>Identity Binding Enforcement Rate (%)</td>
+      <td>100% session-bound attribution</td>
+    </tr>
+    <tr>
+      <td class="id">TT-02</td>
+      <td>Grade Score Integrity Protection</td>
+      <td>V4 Access Control, V11 Business Logic</td>
+      <td>Ensure grade or score changes occur only through authorized faculty grading or admin-approved override flows</td>
+      <td>Attempt direct API score updates without faculty ownership, after deadline lock, or without admin override reason and confirmation</td>
+      <td>Unauthorized grade modifications rejected</td>
+      <td>Grade Integrity Enforcement Rate (%)</td>
+      <td>100% unauthorized modification blocked</td>
+    </tr>
+    <tr>
+      <td class="id">TT-03</td>
+      <td>SQL Injection Input Resistance</td>
+      <td>V5 Validation, V13 API and Web Service</td>
+      <td>Verify login, search, and form fields resist SQL injection payloads</td>
+      <td>Submit SQL injection strings in login credentials, institute search filters, and student or faculty record form fields</td>
+      <td>Malicious input rejected or safely parameterized with no SQL error leakage</td>
+      <td>SQL Injection Prevention Rate (%)</td>
+      <td>100% injection blocked</td>
+    </tr>
+    <tr>
+      <td class="id">TT-04</td>
+      <td>File Upload Integrity Validation</td>
+      <td>V5 Validation, V12 Files and Resources</td>
+      <td>Ensure disguised file types and oversized uploads are rejected on submission and material upload endpoints</td>
+      <td>Upload files with mismatched extensions, disallowed MIME types, and sizes exceeding configured limits on student submission and faculty material upload forms</td>
+      <td>Invalid or oversized uploads rejected</td>
+      <td>Upload Validation Rate (%)</td>
+      <td>100% invalid upload rejection</td>
+    </tr>
+    </tbody>
+  </table>
 </div>
 
-<h2 id="table3">Table 3. Input Validation Security Testing Results</h2>
-<p><strong>Best Reference:</strong> OWASP ASVS</p>
+<h2 id="repudiation-threats">Repudiation Threats</h2>
+<p class="module-note"><strong>Module:</strong> Logs / Monitoring Module &nbsp;|&nbsp; <strong>Chapter 4 Evidence:</strong> Logging &amp; Monitoring Results (Section 4.3.3)</p>
 <div class="table-wrap">
-<table>
-  <thead><tr><th>Test Case ID</th><th>Security Test Scenario</th><th>Expected Result</th><th>Actual Result</th><th>KPI Target</th><th>Status</th></tr></thead>
-  <tbody>
-    <tr><td class="id">INPUT-001</td><td>Malformed file upload rejection</td><td>Non-allowed file type rejected</td><td>Disallowed file type rejected (.exe / .jpg on PDF-only upload)</td><td>100% rejection</td><td><span class="status s-pending">Not Yet Tested</span></td></tr>
-    <tr><td class="id">INPUT-002</td><td>Oversized payload rejection</td><td>File over limit rejected</td><td>Oversized file rejected with size-limit error</td><td>Within configured MB caps</td><td><span class="status s-pending">Not Yet Tested</span></td></tr>
-    <tr><td class="id">INPUT-003</td><td>Script injection in text fields</td><td>Input sanitized or rejected</td><td>XSS payload stored as plain text; no script execution</td><td>100% safe render</td><td><span class="status s-pending">Not Yet Tested</span></td></tr>
-  </tbody>
-</table>
+  <table>
+    <thead><tr>
+      <th>Test ID</th>
+      <th>Security Test Case</th>
+      <th>OWASP ASVS 4.0.3</th>
+      <th>Objective</th>
+      <th>Test Procedure</th>
+      <th>Expected Result</th>
+      <th>Metric</th>
+      <th>Acceptance Criteria</th>
+    </tr></thead>
+    <tbody>
+    <tr>
+      <td class="id">RT-01</td>
+      <td>Login and Logout Audit Completeness</td>
+      <td>V7 Error Handling and Logging, V8 Data Protection</td>
+      <td>Ensure login, logout, and failed authentication events for all roles are recorded in audit logs</td>
+      <td>Perform successful login, failed login, and logout actions as Admin, Faculty, and Student users and review Monitoring Records audit entries</td>
+      <td>All authentication events logged with user, role, and timestamp</td>
+      <td>Authentication Audit Completeness Rate (%)</td>
+      <td>100% event logging</td>
+    </tr>
+    <tr>
+      <td class="id">RT-02</td>
+      <td>Quiz Submission Non-Repudiation</td>
+      <td>V7 Error Handling and Logging, V11 Business Logic</td>
+      <td>Verify audit trail proves which student submitted a quiz and when</td>
+      <td>Submit a quiz as an authenticated student and inspect LMS activity logs and submission records for attributable audit entries</td>
+      <td>Quiz submission logged with student identity and submission timestamp</td>
+      <td>Submission Traceability Rate (%)</td>
+      <td>100% submission attribution</td>
+    </tr>
+    <tr>
+      <td class="id">RT-03</td>
+      <td>Administrative Action Logging</td>
+      <td>V7 Error Handling and Logging, V4 Access Control</td>
+      <td>Ensure institute create, edit, archive, and restore actions produce audit records</td>
+      <td>Perform administrator create, update, archive, and restore operations on student, faculty, or institute records and review audit log entries</td>
+      <td>Each administrative action logged with actor and change context</td>
+      <td>Administrative Audit Coverage Rate (%)</td>
+      <td>100% action logging</td>
+    </tr>
+    </tbody>
+  </table>
 </div>
 
-<h2 id="table4">Table 4. SQL Injection Prevention Security Testing Results</h2>
-<p><strong>Best Reference:</strong> OWASP ASVS</p>
+<h2 id="information-disclosure-threats">Information Disclosure Threats</h2>
+<p class="module-note"><strong>Module:</strong> Reports / Protected Records / Session Controls &nbsp;|&nbsp; <strong>Chapter 4 Evidence:</strong> Data Protection Results (Section 4.3.4)</p>
 <div class="table-wrap">
-<table>
-  <thead><tr><th>Test Case ID</th><th>Security Test Scenario</th><th>Expected Result</th><th>Actual Result</th><th>KPI Target</th><th>Status</th></tr></thead>
-  <tbody>
-    <tr><td class="id">SQLI-001</td><td>Login form SQL injection attempt</td><td>Authentication fails safely</td><td>SQLi payload rejected; login fails; no SQL error in response</td><td>100% blocked</td><td><span class="status s-pending">Not Yet Tested</span></td></tr>
-    <tr><td class="id">SQLI-002</td><td>Search/filter field SQL injection attempt</td><td>Query handled safely</td><td>Search injection returns safe result; no data leak</td><td>100% blocked</td><td><span class="status s-pending">Not Yet Tested</span></td></tr>
-    <tr><td class="id">SQLI-003</td><td>URL parameter injection attempt</td><td>Invalid params rejected</td><td>Malicious URL param returns 400/404; no SQL execution</td><td>100% blocked</td><td><span class="status s-pending">Not Yet Tested</span></td></tr>
-  </tbody>
-</table>
+  <table>
+    <thead><tr>
+      <th>Test ID</th>
+      <th>Security Test Case</th>
+      <th>OWASP ASVS 4.0.3</th>
+      <th>Objective</th>
+      <th>Test Procedure</th>
+      <th>Expected Result</th>
+      <th>Metric</th>
+      <th>Acceptance Criteria</th>
+    </tr></thead>
+    <tbody>
+    <tr>
+      <td class="id">IT-01</td>
+      <td>Cross-Role Record Access Blocking</td>
+      <td>V4 Access Control, V8 Data Protection</td>
+      <td>Prevent students or faculty from accessing other users' protected grades, reports, or roster records</td>
+      <td>Attempt to retrieve another student's grades or another faculty member's protected records using authenticated student or faculty session tokens</td>
+      <td>Unauthorized cross-user data requests denied</td>
+      <td>Unauthorized Access Blocking Rate (%)</td>
+      <td>100% unauthorized access blocked</td>
+    </tr>
+    <tr>
+      <td class="id">IT-02</td>
+      <td>Server Error Message Sanitization</td>
+      <td>V7 Error Handling and Logging, V14 Configuration</td>
+      <td>Ensure server errors do not expose stack traces, SQL syntax, or internal paths to clients</td>
+      <td>Trigger invalid API requests, malformed payloads, and unhandled error conditions and inspect HTTP response bodies</td>
+      <td>Generic error messages returned without stack traces or database details</td>
+      <td>Error Sanitization Rate (%)</td>
+      <td>0% sensitive error exposure</td>
+    </tr>
+    <tr>
+      <td class="id">IT-03</td>
+      <td>Sensitive Field API Exposure Prevention</td>
+      <td>V6 Stored Cryptography, V8 Data Protection</td>
+      <td>Ensure password hashes and encrypted PII are not returned in API or session responses</td>
+      <td>Inspect authenticated API responses, profile endpoints, and session payloads for password fields, bcrypt hashes, or raw encrypted PII values</td>
+      <td>Sensitive credentials and encrypted fields omitted from client responses</td>
+      <td>Sensitive Data Exposure Rate (%)</td>
+      <td>0% sensitive data exposure</td>
+    </tr>
+    </tbody>
+  </table>
 </div>
 
-<h2 id="table5">Table 5. Access Control / RBAC Security Testing Results</h2>
-<p><strong>Best Reference:</strong> ISO 27001 + OWASP</p>
+<h2 id="denial-of-service-threats">Denial of Service Threats</h2>
+<p class="module-note"><strong>Module:</strong> Core Services / Offline Framework &nbsp;|&nbsp; <strong>Chapter 4 Evidence:</strong> Availability Results (Section 4.3.5)</p>
 <div class="table-wrap">
-<table>
-  <thead><tr><th>Test Case ID</th><th>Security Test Scenario</th><th>Expected Result</th><th>Actual Result</th><th>KPI Target</th><th>Status</th></tr></thead>
-  <tbody>
-    <tr><td class="id">ACCESS-001</td><td>Student attempting to access faculty routes</td><td>Access denied</td><td>Student redirected from /teacher/*; API returns 403</td><td>100% blocked</td><td><span class="status s-pending">Not Yet Tested</span></td></tr>
-    <tr><td class="id">ACCESS-002</td><td>Faculty attempting to access admin routes</td><td>Access denied</td><td>Faculty redirected from /admin/*; API returns 403</td><td>100% blocked</td><td><span class="status s-pending">Not Yet Tested</span></td></tr>
-    <tr><td class="id">ACCESS-003</td><td>Unauthenticated access to API endpoints</td><td>HTTP 401</td><td>Protected API returns 401 without session cookie</td><td>100% blocked</td><td><span class="status s-partial">Partially Verified (Automated only)</span></td></tr>
-  </tbody>
-</table>
+  <table>
+    <thead><tr>
+      <th>Test ID</th>
+      <th>Security Test Case</th>
+      <th>OWASP ASVS 4.0.3</th>
+      <th>Objective</th>
+      <th>Test Procedure</th>
+      <th>Expected Result</th>
+      <th>Metric</th>
+      <th>Acceptance Criteria</th>
+    </tr></thead>
+    <tbody>
+    <tr>
+      <td class="id">DT-01</td>
+      <td>API Rate Limiting Enforcement</td>
+      <td>V13 API and Web Service, V14 Configuration</td>
+      <td>Validate tiered API rate limiting under repeated rapid requests</td>
+      <td>Send rapid repeated sign-in attempts and authenticated API read or write requests beyond configured per-window thresholds</td>
+      <td>HTTP 429 returned and further requests temporarily blocked</td>
+      <td>Rate Limit Enforcement Rate (%)</td>
+      <td>≥95% limit enforcement</td>
+    </tr>
+    <tr>
+      <td class="id">DT-02</td>
+      <td>Database Connection Graceful Degradation</td>
+      <td>V14 Configuration, V7 Error Handling and Logging</td>
+      <td>Ensure database unavailability returns controlled errors instead of application crash</td>
+      <td>Simulate PostgreSQL unavailability and request health check and protected API endpoints</td>
+      <td>HTTP 503 with generic unavailable message returned without server crash</td>
+      <td>Graceful Degradation Rate (%)</td>
+      <td>100% controlled error response</td>
+    </tr>
+    <tr>
+      <td class="id">DT-03</td>
+      <td>Oversized Payload Rejection</td>
+      <td>V5 Validation, V12 Files and Resources</td>
+      <td>Prevent oversized request bodies and file uploads from exhausting server memory or storage</td>
+      <td>Submit API requests and file uploads exceeding configured Express body limits and per-type upload size caps on student submission and faculty material endpoints</td>
+      <td>Oversized payloads rejected before full server processing</td>
+      <td>Payload Limit Enforcement Rate (%)</td>
+      <td>100% oversized payload rejection</td>
+    </tr>
+    </tbody>
+  </table>
 </div>
 
-<h2 id="table6">Table 6. Secure Configuration Security Testing Results</h2>
-<p><strong>Best Reference:</strong> OWASP ASVS + ISO 27001</p>
+<h2 id="elevation-of-privilege-threats">Elevation of Privilege Threats</h2>
+<p class="module-note"><strong>Module:</strong> Session Management Module &nbsp;|&nbsp; <strong>Chapter 4 Evidence:</strong> Session Security Results (Section 4.3.6)</p>
 <div class="table-wrap">
-<table>
-  <thead><tr><th>Test Case ID</th><th>Security Test Scenario</th><th>Expected Result</th><th>Actual Result</th><th>KPI Target</th><th>Status</th></tr></thead>
-  <tbody>
-    <tr><td class="id">CONFIG-001</td><td>HTTPS enforcement check</td><td>All production traffic over HTTPS</td><td>HTTPS on production URL; Secure cookie flag in prod</td><td>HTTPS in production</td><td><span class="status s-impl">Pending Implementation (app redirect)</span></td></tr>
-    <tr><td class="id">CONFIG-002</td><td>Security headers (CSP, HSTS, X-Frame-Options)</td><td>Required headers present</td><td>CSP, nosniff, X-Frame-Options: SAMEORIGIN present</td><td>Headers present</td><td><span class="status s-pending">Not Yet Tested</span></td></tr>
-    <tr><td class="id">CONFIG-003</td><td>Debug error pages disabled in production</td><td>No stack traces to client</td><td>Generic error message only; /api/debug/* disabled in prod</td><td>No leakage</td><td><span class="status s-pending">Not Yet Tested</span></td></tr>
-  </tbody>
-</table>
+  <table>
+    <thead><tr>
+      <th>Test ID</th>
+      <th>Security Test Case</th>
+      <th>OWASP ASVS 4.0.3</th>
+      <th>Objective</th>
+      <th>Test Procedure</th>
+      <th>Expected Result</th>
+      <th>Metric</th>
+      <th>Acceptance Criteria</th>
+    </tr></thead>
+    <tbody>
+    <tr>
+      <td class="id">ET-01</td>
+      <td>Cross-Role API Access Enforcement</td>
+      <td>V4 Access Control, V13 API and Web Service</td>
+      <td>Ensure backend RBAC blocks student, faculty, and admin API access outside assigned role</td>
+      <td>Call administrator, faculty, and student API endpoints using session cookies from each role without matching authorization</td>
+      <td>Cross-role API requests return HTTP 401 or 403</td>
+      <td>RBAC Enforcement Rate (%)</td>
+      <td>100% unauthorized role blocked</td>
+    </tr>
+    <tr>
+      <td class="id">ET-02</td>
+      <td>Self-Privilege Escalation Prevention</td>
+      <td>V4 Access Control, V11 Business Logic</td>
+      <td>Prevent users from modifying their own role or privilege fields via profile update</td>
+      <td>Submit profile update requests containing role, is_admin, permissions, or twoFactorEnabled fields through authenticated self-service endpoints</td>
+      <td>Privilege fields ignored or update rejected</td>
+      <td>Privilege Escalation Prevention Rate (%)</td>
+      <td>100% escalation blocked</td>
+    </tr>
+    <tr>
+      <td class="id">ET-03</td>
+      <td>Destructive Admin Operation Authorization</td>
+      <td>V4 Access Control, V11 Business Logic</td>
+      <td>Ensure archive purge, restore, and audit log deletion require elevated authorization and explicit confirmation</td>
+      <td>Attempt destructive admin operations without confirmation tokens and audit log deletion without super-admin allowlist credentials</td>
+      <td>Unauthorized or unconfirmed destructive requests rejected</td>
+      <td>Destructive Action Authorization Rate (%)</td>
+      <td>100% unauthorized destructive action blocked</td>
+    </tr>
+    </tbody>
+  </table>
 </div>
-
-<h2 id="table7">Table 7. Logging and Monitoring Security Testing Results</h2>
-<p><strong>Best Reference:</strong> NIST + ISO 27001</p>
-<div class="table-wrap">
-<table>
-  <thead><tr><th>Test Case ID</th><th>Security Test Scenario</th><th>Expected Result</th><th>Actual Result</th><th>KPI Target</th><th>Status</th></tr></thead>
-  <tbody>
-    <tr><td class="id">LOG-001</td><td>Login attempt logging</td><td>Login events recorded</td><td>Failed/successful login rows appear in audit logs</td><td>100% logged</td><td><span class="status s-pending">Not Yet Tested</span></td></tr>
-    <tr><td class="id">LOG-002</td><td>Grade modification logging</td><td>Grade changes audited</td><td>Grade save shows old/new values in audit log</td><td>100% logged</td><td><span class="status s-pending">Not Yet Tested</span></td></tr>
-    <tr><td class="id">LOG-003</td><td>Log tamper detection</td><td>Non-admin cannot alter logs</td><td>Student/faculty cannot delete logs; super-admin can delete</td><td>Non-admin blocked</td><td><span class="status s-impl">Pending Implementation</span></td></tr>
-  </tbody>
-</table>
-</div>
-
-<h2 id="table8">Table 8. Data Protection Security Testing Results</h2>
-<p><strong>Best Reference:</strong> NIST + ISO 27001</p>
-<div class="table-wrap">
-<table>
-  <thead><tr><th>Test Case ID</th><th>Security Test Scenario</th><th>Expected Result</th><th>Actual Result</th><th>KPI Target</th><th>Status</th></tr></thead>
-  <tbody>
-    <tr><td class="id">DATA-001</td><td>PII field encryption verification</td><td>Student PII encrypted at rest</td><td>Student name/contact fields show enc:v1: prefix in DB</td><td>Listed fields encrypted</td><td><span class="status s-pending">Not Yet Tested</span></td></tr>
-    <tr><td class="id">DATA-002</td><td>Data in transit encryption (HTTPS)</td><td>TLS on production traffic</td><td>Valid TLS certificate on production HTTPS URL</td><td>TLS enabled</td><td><span class="status s-pending">Not Yet Tested</span></td></tr>
-    <tr><td class="id">DATA-003</td><td>Password storage verification</td><td>Passwords hashed, not plaintext</td><td>account.password starts with $2b$ (bcrypt)</td><td>bcrypt hashes only</td><td><span class="status s-partial">Partially Verified (Automated only)</span></td></tr>
-  </tbody>
-</table>
-</div>
-
-<h2 id="howto">How to Execute Security Test Cases</h2>
-
-<div class="meta">
-  <strong>Before every test session</strong>
-  <pre>cd c:\xampp\htdocs\LenLearn
-npm run dev</pre>
-  <p>API port <strong>3001</strong>, Vite <strong>5173</strong>. Use incognito for auth tests. If 429 errors: restart dev server.</p>
-  <p>Optional: <code>npm run security:evidence</code> → outputs in <code>docs/evidence/automated/</code></p>
-</div>
-
-<details open><summary>AUTH-001 — Multiple failed login attempts</summary>
-<div class="steps">
-<ol>
-  <li>Open <code>http://localhost:5173/login/student</code> with a <strong>test student account</strong>.</li>
-  <li>Enter correct username + wrong password <strong>5 times</strong>.</li>
-  <li>6th attempt should still fail (account locked ~5 minutes).</li>
-  <li>Check audit: <code>SELECT * FROM lms_activity_logs WHERE "activityType"='AUTH_LOCKOUT' ORDER BY "timestamp" DESC LIMIT 1;</code></li>
-</ol>
-<div class="pass-box"><strong>Mark Passed when:</strong> Lockout triggered after 5 attempts. Screenshot login error + audit row.</div>
-</div></details>
-
-<details><summary>AUTH-002 — Invalid credentials</summary>
-<div class="steps">
-<ol>
-  <li>Try valid username + wrong password → note error.</li>
-  <li>Try fake username + any password → note error.</li>
-</ol>
-<div class="pass-box"><strong>Mark Passed when:</strong> Same generic error both times (no user enumeration).</div>
-</div></details>
-
-<details><summary>AUTH-003 — Protected page without login</summary>
-<div class="steps">
-<ol>
-  <li>Incognito → visit <code>/admin/institute_dashboard</code>, <code>/student/dashboard</code>, <code>/teacher/dashboard</code> → all redirect to login.</li>
-  <li>Run: <code>curl -s -i http://127.0.0.1:3001/api/v1/student/terms-status</code> → HTTP 401.</li>
-</ol>
-<div class="pass-box"><strong>Mark Passed when:</strong> Redirect successful + API 401.</div>
-</div></details>
-
-<details><summary>AUTH-004 — Session expiration (idle)</summary>
-<div class="steps">
-<ol>
-  <li>Sign in, stay idle 30+ min with tab visible → auto sign-out.</li>
-  <li><strong>Quick test:</strong> Temporarily set <code>IDLE_MS = 60000</code> in <code>StudentLayout.jsx</code>, wait 1 min idle, revert after.</li>
-</ol>
-<div class="pass-box"><strong>Mark Passed when:</strong> Client idle sign-out after 30 minutes. Tell panel: server cookie is 7 days.</div>
-</div></details>
-
-<details><summary>AUTH-005 — Wrong portal login</summary>
-<div class="steps">
-<ol>
-  <li>Faculty login URL + student credentials → rejected.</li>
-  <li>Student login URL + faculty credentials → rejected.</li>
-</ol>
-<div class="pass-box"><strong>Mark Passed when:</strong> Access blocked at wrong portal.</div>
-</div></details>
-
-<details><summary>SESS-001 — Logout invalidates session</summary>
-<div class="steps">
-<ol>
-  <li>Sign in → Logout → try <code>/student/dashboard</code> → login required.</li>
-  <li>Or <code>curl</code> protected API after logout → 401.</li>
-</ol>
-<div class="pass-box"><strong>Mark Passed when:</strong> Session invalidated; 401 after logout.</div>
-</div></details>
-
-<details><summary>ACCESS-001 / ACCESS-002 — RBAC redirects</summary>
-<div class="steps">
-<ol>
-  <li><strong>ACCESS-001:</strong> Student signed in → go to <code>/teacher/dashboard</code> → redirected to student dashboard.</li>
-  <li><strong>ACCESS-002:</strong> Faculty signed in → go to <code>/admin/institute_dashboard</code> → redirected to teacher dashboard.</li>
-</ol>
-<div class="pass-box"><strong>Mark Passed when:</strong> 100% blocked cross-role access.</div>
-</div></details>
-
-<details><summary>ACCESS-003 — Unauthenticated API</summary>
-<div class="steps">
-<pre>curl -s -i http://127.0.0.1:3001/api/v1/student/terms-status</pre>
-<div class="pass-box"><strong>Mark Passed when:</strong> HTTP 401 + sign-in required message.</div>
-</div></details>
-
-<details><summary>INPUT-001 / INPUT-002 — File upload validation</summary>
-<div class="steps">
-<ol>
-  <li><strong>INPUT-001:</strong> Faculty → upload .jpg or .exe to PDF-only study materials → rejected.</li>
-  <li><strong>INPUT-002:</strong> Upload file &gt;10 MB (student) or &gt;25 MB (materials) → size error.</li>
-</ol>
-</div></details>
-
-<details><summary>INPUT-003 — XSS test</summary>
-<div class="steps">
-<ol>
-  <li>Enter <code>&lt;script&gt;alert('xss')&lt;/script&gt;</code> in announcement or name field.</li>
-  <li>Save and reopen → text shows literally, no alert popup.</li>
-</ol>
-</div></details>
-
-<details><summary>SQLI-001 — Login SQL injection</summary>
-<div class="steps">
-<ol>
-  <li>Username: <code>' OR '1'='1</code> Password: <code>' OR '1'='1</code></li>
-  <li>Login must fail with no SQL error in response.</li>
-</ol>
-</div></details>
-
-<details><summary>CONFIG-002 — Security headers</summary>
-<div class="steps">
-<pre>curl -s -I http://127.0.0.1:3001/health</pre>
-<p>Look for: content-security-policy, x-content-type-options: nosniff, x-frame-options: SAMEORIGIN</p>
-</div></details>
-
-<details><summary>LOG-001 / LOG-002 — Audit logging</summary>
-<div class="steps">
-<ol>
-  <li>Failed login + successful login → Admin → Audit Logs → events visible.</li>
-  <li>Faculty saves grade → audit row with old/new values.</li>
-</ol>
-</div></details>
-
-<details><summary>DATA-001 / DATA-003 — Encryption &amp; password hash</summary>
-<div class="steps">
-<pre>-- PII encryption
-SELECT LEFT(first_name,15), LEFT(last_name,15) FROM students ORDER BY id DESC LIMIT 3;
-
--- Password hash
-SELECT LEFT(a.password,7) FROM account a WHERE a."providerId"='credential' LIMIT 3;</pre>
-<p>PII should show <code>enc:v1:</code>. Password should show <code>$2b$12</code>.</p>
-</div></details>
-
-<h2 id="quickpass">Quick reference: when to mark Passed</h2>
-<div class="table-wrap">
-<table>
-  <thead><tr><th>ID</th><th>Mark Passed when you observe…</th></tr></thead>
-  <tbody>
-    <tr><td class="id">AUTH-001</td><td>Lockout after 5 wrong passwords</td></tr>
-    <tr><td class="id">AUTH-002</td><td>Same generic error for wrong user vs wrong password</td></tr>
-    <tr><td class="id">AUTH-003</td><td>Incognito redirect + API 401</td></tr>
-    <tr><td class="id">AUTH-004</td><td>Auto sign-out after idle timeout</td></tr>
-    <tr><td class="id">AUTH-005</td><td>Wrong portal login blocked</td></tr>
-    <tr><td class="id">SESS-001</td><td>401 / login required after logout</td></tr>
-    <tr><td class="id">ACCESS-001/002</td><td>Wrong role redirected</td></tr>
-    <tr><td class="id">ACCESS-003</td><td>curl → 401</td></tr>
-    <tr><td class="id">INPUT-001/002</td><td>Bad type or size rejected</td></tr>
-    <tr><td class="id">INPUT-003</td><td>No script execution</td></tr>
-    <tr><td class="id">SQLI-001</td><td>SQLi strings fail safely</td></tr>
-    <tr><td class="id">CONFIG-002</td><td>Helmet headers on /health</td></tr>
-    <tr><td class="id">LOG-001/002</td><td>Events in Audit Logs</td></tr>
-    <tr><td class="id">DATA-001</td><td>enc:v1: in DB</td></tr>
-    <tr><td class="id">DATA-003</td><td>bcrypt $2b$ in account table</td></tr>
-  </tbody>
-</table>
-</div>
-
-<p style="color:#555;font-size:12px;margin-top:32px;">Full step-by-step guide: <a href="SECURITY_TEST_CASES.md">SECURITY_TEST_CASES.md</a>. Update Status to <span class="status s-pass">Passed</span> only after live test + screenshot.</p>
 
 </body>
 </html>
