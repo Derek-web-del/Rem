@@ -67,6 +67,27 @@ function discourseMarkerDensity(sentence) {
 }
 
 /**
+ * Compress inflated base scores into a practical review band (~55–65% for typical LLM
+ * essays). Strongly uniform / repetitive AI text may still reach the mid-60s.
+ */
+function calibrateAiProbability(lexicalScore, semanticScore, baseProbability, docBurstiness, aiSentenceRatio) {
+  let probability = baseProbability
+
+  if (semanticScore >= 65 && docBurstiness <= 40) {
+    const aiSignal = semanticScore * 0.55 + lexicalScore * 0.45
+    const compressed = roundScore(48.05 + aiSignal * 0.167)
+    probability = Math.min(baseProbability, compressed)
+  }
+
+  if (semanticScore >= 90 && docBurstiness <= 0.5 && aiSentenceRatio >= 0.85) {
+    const repetitiveLift = roundScore(60 + aiSentenceRatio * 6)
+    probability = Math.min(Math.max(probability, repetitiveLift), 66)
+  }
+
+  return roundScore(probability)
+}
+
+/**
  * Lexical AI-likeness: discourse markers, function words, and moderate vocabulary richness.
  * Semantic AI-likeness: sentence-length uniformity and low burstiness (flow predictability).
  */
@@ -160,9 +181,14 @@ export function detectAiContent(text) {
 
   const lexical_score = weightTotal > 0 ? roundScore(lexicalSum / weightTotal) : null
   const semantic_score = weightTotal > 0 ? roundScore(semanticSum / weightTotal) : null
-  const probability =
+  const baseProbability =
     lexical_score != null && semantic_score != null
       ? roundScore(lexical_score * LEXICAL_WEIGHT + semantic_score * SEMANTIC_WEIGHT)
+      : null
+  const aiSentenceRatio = scored.length ? scored.filter((s) => s.classification === 'ai').length / scored.length : 0
+  const probability =
+    baseProbability != null
+      ? calibrateAiProbability(lexical_score, semantic_score, baseProbability, docBurstiness, aiSentenceRatio)
       : null
   const verdict = getAiVerdict(probability)
 
