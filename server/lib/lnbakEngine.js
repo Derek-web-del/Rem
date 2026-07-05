@@ -60,7 +60,7 @@ export const UPLOADS_DIR = uploadsRoot()
 export const SUBJECT_ASSETS_DIR = subjectAssetsRoot()
 
 /** Logged at restore start so deploy/runtime can be verified on DigitalOcean. */
-export const RESTORE_ENGINE_VERSION = '2026-07-05-nuclear-v9'
+export const RESTORE_ENGINE_VERSION = '2026-07-05-nuclear-v10'
 
 /** Tables excluded from pg_tables discovery (meta, ephemeral, legacy mirrors). */
 export const BACKUP_TABLE_EXCLUDE = new Set([
@@ -375,6 +375,54 @@ function quoteIdent(name) {
   return `"${String(name).replace(/"/g, '""')}"`
 }
 
+/** Hardcoded topic FKs — merged into capture so drop always targets these on DO. */
+const KNOWN_TOPIC_FK_CONSTRAINTS = [
+  {
+    table_name: 'subject_modules',
+    name: 'subject_modules_topic_id_fkey',
+    def: 'FOREIGN KEY (topic_id) REFERENCES public.subject_topics(id) ON DELETE SET NULL',
+  },
+  {
+    table_name: 'study_materials',
+    name: 'study_materials_topic_id_fkey',
+    def: 'FOREIGN KEY (topic_id) REFERENCES public.subject_topics(id) ON DELETE SET NULL',
+  },
+  {
+    table_name: 'assignments',
+    name: 'assignments_topic_id_fkey',
+    def: 'FOREIGN KEY (topic_id) REFERENCES public.subject_topics(id) ON DELETE SET NULL',
+  },
+  {
+    table_name: 'activities',
+    name: 'activities_topic_id_fkey',
+    def: 'FOREIGN KEY (topic_id) REFERENCES public.subject_topics(id) ON DELETE SET NULL',
+  },
+  {
+    table_name: 'quizzes',
+    name: 'quizzes_topic_id_fkey',
+    def: 'FOREIGN KEY (topic_id) REFERENCES public.subject_topics(id) ON DELETE SET NULL',
+  },
+]
+
+/** @param {{ name: string, table_name: string, def: string }[]} captured */
+function mergeKnownTopicForeignKeys(captured) {
+  const map = new Map((captured || []).map((r) => [r.name, r]))
+  for (const known of KNOWN_TOPIC_FK_CONSTRAINTS) {
+    if (!map.has(known.name)) map.set(known.name, known)
+  }
+  return [...map.values()]
+}
+
+/** Force-drop topic FK constraints (safe even if already dropped). */
+async function forceDropKnownTopicForeignKeys(client) {
+  for (const known of KNOWN_TOPIC_FK_CONSTRAINTS) {
+    const tableSql = tableSqlFromRelName(known.table_name)
+    await client.query(
+      `ALTER TABLE ${tableSql} DROP CONSTRAINT IF EXISTS ${quoteIdent(known.name)}`,
+    )
+  }
+}
+
 function tableSqlFromKey(tableKey) {
   return TABLE_FROM_SQL[tableKey] || (tableKey === 'user' ? '"user"' : `public.${quoteIdent(tableKey)}`)
 }
@@ -466,10 +514,26 @@ export async function restoreAllPublicForeignKeys(client, saved) {
       [row.name, row.table_name],
     )
     if (exists.length) continue
-    await client.query(
-      `ALTER TABLE ${tableSql} ADD CONSTRAINT ${quoteIdent(row.name)} ${row.def}`,
-    )
-    restored += 1
+    try {
+      if (KNOWN_TOPIC_FK_CONSTRAINTS.some((k) => k.name === row.name)) {
+        await scrubAllInvalidTopicIds(client)
+      }
+      await client.query(
+        `ALTER TABLE ${tableSql} ADD CONSTRAINT ${quoteIdent(row.name)} ${row.def}`,
+      )
+      restored += 1
+    } catch (e) {
+      if (KNOWN_TOPIC_FK_CONSTRAINTS.some((k) => k.name === row.name)) {
+        console.warn(`[BACKUP] FK ${row.name} add failed — scrubbing orphans and retrying:`, e?.message || e)
+        await scrubAllInvalidTopicIds(client)
+        await client.query(
+          `ALTER TABLE ${tableSql} ADD CONSTRAINT ${quoteIdent(row.name)} ${row.def}`,
+        )
+        restored += 1
+        continue
+      }
+      throw e
+    }
   }
   console.log(`[BACKUP] Restored ${restored} public FK constraint(s) (${saved.length} captured)`)
 }
@@ -1156,9 +1220,7 @@ export function collectRestorePreflightWarnings(parsed) {
     snapshotCurriculumCount = countCurriculumsInAppStateSnapshot(appRows)
   }
   if (curriculumCount === 0 && snapshotCurriculumCount === 0) {
-    warnings.push(
-      'Backup has no curriculum rows and no app_state curriculum guides — Curriculum page may be empty after restore.',
-    )
+    /* Curriculum module optional — do not warn on every backup/restore. */
   }
 
   const students = parsed?.data?.students
@@ -2158,19 +2220,22 @@ export async function restoreDatabaseFromParsed(parsed) {
   const client = await pool.connect()
   /** @type {{ name: string, table_name: string, def: string }[]} */
   let savedFks = []
+  const topicLinkPlan = captureTopicLinkPlan(parsed)
   console.log(`[BACKUP] restore_engine=${RESTORE_ENGINE_VERSION}`)
+  console.log(`[BACKUP] topic links deferred: ${topicLinkPlan.length} (topic_id omitted on INSERT)`)
   const tableOrder = await resolveBackupTableOrder(pool)
   const truncateOrder = [...tableOrder].reverse()
   logRestoreTableOrder(tableOrder)
 
   try {
-    savedFks = await captureAllPublicForeignKeys(client)
+    savedFks = mergeKnownTopicForeignKeys(await captureAllPublicForeignKeys(client))
 
     await client.query('BEGIN')
     console.log('[BACKUP] BEGIN')
     await client.query(`SET LOCAL statement_timeout = '600000'`)
     await client.query(`SET LOCAL lock_timeout = '120000'`)
     await dropAllPublicForeignKeys(client, savedFks)
+    await forceDropKnownTopicForeignKeys(client)
 
     for (const key of truncateOrder) {
       ensureDynamicTableRegistry(key)
@@ -2188,19 +2253,24 @@ export async function restoreDatabaseFromParsed(parsed) {
         console.warn(`[BACKUP] Skipping ${key} restore — no parent rows in backup`)
         continue
       }
+      if (key === 'subject_modules') {
+        await forceDropKnownTopicForeignKeys(client)
+      }
       const prepared = prepareRestoreRowsForInsert(parsed, key, rows)
       if (!prepared.length) continue
-      const insertCols = unionRowKeys(prepared)
+      const insertRows = omitRestoreInsertColumns(key, prepared)
+      const insertCols = unionRowKeys(insertRows)
       console.log(
-        `[BACKUP] INSERT ${key} rows=${prepared.length} cols=[${insertCols.join(', ')}]`,
+        `[BACKUP] INSERT ${key} rows=${insertRows.length} cols=[${insertCols.join(', ')}]`,
       )
       try {
-        await bulkInsert(client, key, prepared, pool, { insertAllColumns: true })
+        await bulkInsert(client, key, insertRows, pool)
       } catch (e) {
         throw enrichRestoreError(e, key)
       }
     }
 
+    await applyDeferredTopicIdsFromPlan(client, topicLinkPlan, pool)
     await scrubAllInvalidTopicIds(client)
     await restoreAllPublicForeignKeys(client, savedFks)
     await resetSerialSequences(client, pool, tableOrder)

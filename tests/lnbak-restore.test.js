@@ -389,7 +389,7 @@ describe('lnbak institute restore warnings', () => {
     assert.ok(warnings.some((w) => w.includes('no teacher auth')))
   })
 
-  test('collectRestorePreflightWarnings flags empty curriculum in backup', () => {
+  test('collectRestorePreflightWarnings does not warn on empty optional curriculum', () => {
     const warnings = collectRestorePreflightWarnings({
       data: {
         faculties: [],
@@ -398,7 +398,7 @@ describe('lnbak institute restore warnings', () => {
         user: [],
       },
     })
-    assert.ok(warnings.some((w) => w.includes('no curriculum')))
+    assert.ok(!warnings.some((w) => w.includes('no curriculum')))
   })
 
   test('collectRestorePreflightWarnings flags empty student roster', () => {

@@ -16,6 +16,8 @@ import {
   endRestoreSession,
   scrubAllInvalidTopicIds,
   prepareRestoreRowsForInsert,
+  omitRestoreInsertColumns,
+  applyDeferredTopicIdsFromPlan,
 } from '../server/lib/lnbakEngine.js'
 
 const url = process.env.TEST_DATABASE_URL || process.env.DATABASE_URL
@@ -112,15 +114,16 @@ async function checkFkFixtureRestore() {
     // Nuclear restore path: drop all FKs, insert with topic_id, scrub, re-add FKs
     const savedFks = await beginRestoreSession(client)
     const prepared = prepareRestoreRowsForInsert(parsed, 'subject_modules', parsed.data.subject_modules)
-    if (!prepared[0]?.topic_id) {
-      throw new Error('nuclear restore should insert topic_id on subject_modules rows')
+    const insertRows = omitRestoreInsertColumns('subject_modules', prepared)
+    if ('topic_id' in (insertRows[0] || {})) {
+      throw new Error('topic_id must be omitted from subject_modules INSERT')
     }
     await client.query(
-      `INSERT INTO public.subject_modules (id, subject_id, title, module_order, lesson_number, topic_id)
-       VALUES ($1, $2, $3, 0, 1, $4) ON CONFLICT (id) DO UPDATE SET topic_id = EXCLUDED.topic_id`,
-      [moduleId, subjectId, 'Verify Lesson', topicId],
+      `INSERT INTO public.subject_modules (id, subject_id, title, module_order, lesson_number)
+       VALUES ($1, $2, $3, 0, 1) ON CONFLICT (id) DO NOTHING`,
+      [moduleId, subjectId, 'Verify Lesson'],
     )
-    await scrubAllInvalidTopicIds(client)
+    await applyDeferredTopicIdsFromPlan(client, [{ tableKey: 'subject_modules', rowId: moduleId, topicId }], pool)
     await endRestoreSession(client, savedFks)
     const { rows } = await client.query(
       `SELECT topic_id::bigint AS topic_id FROM public.subject_modules WHERE id = $1`,

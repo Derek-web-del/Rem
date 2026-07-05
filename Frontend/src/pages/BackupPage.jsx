@@ -281,25 +281,6 @@ function moduleRestoreWarnings(result) {
     })
   }
 
-  const curriculumPg = Number(result.curriculum_rows_restored ?? result.row_counts?.curriculum ?? -1)
-  const curriculumState = Number(result.curriculums_in_app_state ?? -1)
-  if (curriculumPg === 0 && curriculumState === 0) {
-    warnings.push({
-      key: 'curriculum',
-      message:
-        'Curriculum shows 0 rows in PostgreSQL and app_state — the Curriculum page may be empty after restore.',
-    })
-  } else if (
-    restoreWarnings.some(
-      (w) => warningMatches(w, ['curriculum']) && warningMatches(w, ['empty', '0 rows', 'no curriculum']),
-    )
-  ) {
-    warnings.push({
-      key: 'curriculum',
-      message: 'Curriculum warnings were reported for this backup — verify the Curriculum page.',
-    })
-  }
-
   return warnings
 }
 
