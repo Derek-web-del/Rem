@@ -61,8 +61,8 @@ export const LNBAK_TABLE_ORDER = [
   'faculties',
   'faculty_sections',
   'subjects',
-  'subject_modules',
   'subject_topics',
+  'subject_modules',
   'students',
   'announcements',
   'study_materials',
@@ -401,6 +401,44 @@ export function sanitizeFacultySectionRows(rows, facultyIds, sectionIds) {
 
 const FACULTY_FK_NULL_ON_RESTORE = new Set(['subjects'])
 const FACULTY_FK_SKIP_ON_RESTORE = new Set(['assignments', 'activities', 'plagiarism_reports'])
+const TOPIC_ID_NULL_ON_RESTORE = new Set([
+  'subject_modules',
+  'study_materials',
+  'assignments',
+  'activities',
+  'quizzes',
+])
+
+/** Clear invalid topic_id before insert (FK → subject_topics). */
+export function sanitizeOptionalTopicIdRows(rows, topicIds) {
+  if (!Array.isArray(rows)) return { rows: [], nulled: 0 }
+  const out = []
+  let nulled = 0
+  for (const row of rows) {
+    const copy = { ...row }
+    const tid = copy.topic_id
+    if (
+      tid === '' ||
+      tid == null ||
+      tid === 'uncategorized' ||
+      tid === 'null' ||
+      tid === 'undefined'
+    ) {
+      if (tid != null && tid !== '') {
+        copy.topic_id = null
+        nulled += 1
+      }
+      out.push(copy)
+      continue
+    }
+    if (!idInNumericSet(topicIds, tid)) {
+      copy.topic_id = null
+      nulled += 1
+    }
+    out.push(copy)
+  }
+  return { rows: out, nulled }
+}
 
 /** @param {{ data?: Record<string, unknown[]> }} parsed */
 export function prepareRestoreRowsForInsert(parsed, tableKey, rawRows) {
@@ -499,23 +537,34 @@ export function prepareRestoreRowsForInsert(parsed, tableKey, rawRows) {
     return out
   }
 
-  if (tableKey === 'study_materials') {
-    const subjectIds = getEffectiveParentIds(parsed, 'subjects')
-    const out = []
-    let nulled = 0
-    for (const row of rawRows) {
-      const copy = { ...row }
-      const sid = copy.subject_id
-      if (sid != null && sid !== '' && !idInNumericSet(subjectIds, sid)) {
-        copy.subject_id = null
-        nulled += 1
-      }
-      out.push(copy)
-    }
+  if (TOPIC_ID_NULL_ON_RESTORE.has(tableKey)) {
+    const topicIds = getEffectiveParentIds(parsed, 'subject_topics')
+    const { rows, nulled } = sanitizeOptionalTopicIdRows(rawRows, topicIds)
     if (nulled > 0) {
-      console.warn(`[BACKUP] Cleared subject_id on ${nulled} study_materials row(s) — subject not in backup`)
+      console.warn(
+        `[BACKUP] Cleared topic_id on ${nulled} ${tableKey} row(s) — topic not in backup or invalid`,
+      )
     }
-    return out
+    if (tableKey === 'study_materials') {
+      const subjectIds = getEffectiveParentIds(parsed, 'subjects')
+      let subjectNulled = 0
+      const withSubject = rows.map((row) => {
+        const copy = { ...row }
+        const sid = copy.subject_id
+        if (sid != null && sid !== '' && !idInNumericSet(subjectIds, sid)) {
+          copy.subject_id = null
+          subjectNulled += 1
+        }
+        return copy
+      })
+      if (subjectNulled > 0) {
+        console.warn(
+          `[BACKUP] Cleared subject_id on ${subjectNulled} study_materials row(s) — subject not in backup`,
+        )
+      }
+      return withSubject
+    }
+    return rows
   }
 
   return rawRows.map((r) => ({ ...r }))

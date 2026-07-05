@@ -13,6 +13,7 @@ import {
   sanitizeFacultyFkRows,
   sanitizeFacultySectionRows,
   sanitizeChildFkRows,
+  sanitizeOptionalTopicIdRows,
   prepareRestoreRowsForInsert,
   buildNumericIdSetFromRows,
   idInNumericSet,
@@ -171,6 +172,40 @@ describe('lnbak FK sanitization on restore', () => {
     assert.ok(buildFacultyIdSet(parsed).has('f1'))
     assert.ok(buildSectionIdSet(parsed).has('10'))
   })
+
+  test('sanitizeOptionalTopicIdRows clears orphan or sentinel topic_id', () => {
+    const topicIds = buildNumericIdSetFromRows([{ id: 7 }])
+    const { rows, nulled } = sanitizeOptionalTopicIdRows(
+      [
+        { id: 1, topic_id: 7 },
+        { id: 2, topic_id: 99 },
+        { id: 3, topic_id: 'uncategorized' },
+      ],
+      topicIds,
+    )
+    assert.equal(nulled, 2)
+    assert.equal(rows.length, 3)
+    assert.equal(rows[0].topic_id, 7)
+    assert.equal(rows[1].topic_id, null)
+    assert.equal(rows[2].topic_id, null)
+  })
+
+  test('prepareRestoreRowsForInsert clears subject_modules orphan topic_id', () => {
+    const parsed = {
+      data: {
+        subjects: [{ id: 1 }],
+        subject_topics: [{ id: 10, subject_id: 1, title: 'T1' }],
+        subject_modules: [
+          { id: 100, subject_id: 1, title: 'L1', topic_id: 10 },
+          { id: 101, subject_id: 1, title: 'L2', topic_id: 999 },
+        ],
+      },
+    }
+    const out = prepareRestoreRowsForInsert(parsed, 'subject_modules', parsed.data.subject_modules)
+    assert.equal(out.length, 2)
+    assert.equal(out[0].topic_id, 10)
+    assert.equal(out[1].topic_id, null)
+  })
 })
 
 describe('lnbak app_state curriculum mirror', () => {
@@ -326,6 +361,13 @@ describe('lnbak institute restore warnings', () => {
 })
 
 describe('lnbak table order', () => {
+  test('subject_topics come before subject_modules', () => {
+    const ti = LNBAK_TABLE_ORDER.indexOf('subject_topics')
+    const mi = LNBAK_TABLE_ORDER.indexOf('subject_modules')
+    assert.ok(ti >= 0 && mi >= 0)
+    assert.ok(ti < mi)
+  })
+
   test('quiz definitions come before quiz_submissions', () => {
     const qi = LNBAK_TABLE_ORDER.indexOf('quizzes')
     const qsi = LNBAK_TABLE_ORDER.indexOf('quiz_submissions')
