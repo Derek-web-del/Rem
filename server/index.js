@@ -32,6 +32,7 @@ import {
   stopArchiveCleanupScheduler,
 } from './jobs/archiveCleanupScheduler.js'
 import { ensureBackupSchema, isBackupDbConfigured } from './lib/backupSchema.js'
+import { RESTORE_ENGINE_VERSION } from './lib/lnbakEngine.js'
 import { getPgPool } from './pgPool.js'
 import { toWebOrigin } from './lib/webOrigin.js'
 import { assertAesConfiguredForProduction } from './lib/aes256.js'
@@ -46,6 +47,7 @@ import {
 console.log('Current working directory:', process.cwd())
 console.log('[env] .env candidates (checked in order):', LENLEARN_DOTENV_CANDIDATES.join(' | '))
 console.log('[env] .env loaded from:', LENLEARN_DOTENV_LOADED_FROM)
+console.log('[backup] restore_engine=', RESTORE_ENGINE_VERSION)
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const dataDir = path.join(__dirname, '..', 'data')

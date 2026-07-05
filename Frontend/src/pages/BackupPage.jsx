@@ -38,7 +38,11 @@ function formatRestoreErrorMessage(errOrPayload) {
   const failedTable = p.failed_table || p.failedTable
   const reason = p.reason || p.constraint || null
   const detail = p.detail || p.message || String(errOrPayload?.message || errOrPayload || 'Restore failed')
+  const engine = p.restore_engine || p.restoreEngine
+  const phase = p.restore_phase || p.restorePhase
   const lines = ['Restore failed', '']
+  if (engine) lines.push(`Restore engine: ${engine}`)
+  if (phase) lines.push(`Failed during phase: ${phase}`)
   if (failedTable) lines.push(`Failed at: ${failedTable}`)
   if (reason) lines.push(`Reason: ${reason}`)
   else if (detail && !failedTable) lines.push(`Reason: ${detail}`)
@@ -55,9 +59,21 @@ function RestoreErrorPanel({ error, onDismiss }) {
   if (!error) return null
   const failedTable = error.failed_table || error.failedTable
   const reason = error.reason || error.constraint || error.detail || error.message
+  const engine = error.restore_engine || error.restoreEngine
+  const phase = error.restore_phase || error.restorePhase
   return (
     <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900">
       <p className="font-semibold">Restore failed</p>
+      {engine ? (
+        <p className="mt-2">
+          <span className="font-medium">Restore engine:</span> {engine}
+        </p>
+      ) : null}
+      {phase ? (
+        <p className="mt-1">
+          <span className="font-medium">Failed during:</span> {phase}
+        </p>
+      ) : null}
       {failedTable ? (
         <p className="mt-2">
           <span className="font-medium">Failed at:</span> {failedTable}
@@ -93,6 +109,9 @@ function attachRestoreErrorDetails(err, event) {
   e.reason = event?.reason ?? null
   e.detail = event?.detail ?? null
   e.hint = event?.hint ?? null
+  e.restore_engine = event?.restore_engine ?? null
+  e.restore_phase = event?.restore_phase ?? null
+  e.restore_debug = event?.restore_debug ?? null
   e.rolled_back = event?.rolled_back !== false
   return e
 }

@@ -59,6 +59,9 @@ export const BACKUP_UPLOADS_DIR = path.join(BACKUPS_DIR, '.uploads')
 export const UPLOADS_DIR = uploadsRoot()
 export const SUBJECT_ASSETS_DIR = subjectAssetsRoot()
 
+/** Logged at restore start so deploy/runtime can be verified on DigitalOcean. */
+export const RESTORE_ENGINE_VERSION = '2026-07-05-nuclear-v12'
+
 /** @param {string} hypothesisId @param {string} location @param {string} message @param {Record<string, unknown>} [data] */
 function dbgRestore(hypothesisId, location, message, data = {}) {
   const payload = {
@@ -76,9 +79,22 @@ function dbgRestore(hypothesisId, location, message, data = {}) {
     headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '127b1e' },
     body: JSON.stringify(payload),
   }).catch(() => {})
+  fsp.mkdir(path.join(process.cwd(), '.cursor'), { recursive: true }).catch(() => {})
   fsp.appendFile(path.join(process.cwd(), '.cursor', 'debug-127b1e.log'), `${JSON.stringify(payload)}\n`).catch(() => {})
+  fsp.appendFile(path.join(BACKUPS_DIR, 'restore-debug-127b1e.log'), `${JSON.stringify(payload)}\n`).catch(() => {})
   console.log('[DBG-127b1e]', JSON.stringify(payload))
   // #endregion
+}
+
+/** Latest restore debug snapshot — surfaced in API errors and diagnostics. */
+let _lastRestoreDebug = { engine: RESTORE_ENGINE_VERSION, phase: 'idle' }
+
+export function getLastRestoreDebug() {
+  return { ..._lastRestoreDebug }
+}
+
+function setRestoreDebug(patch) {
+  _lastRestoreDebug = { ..._lastRestoreDebug, engine: RESTORE_ENGINE_VERSION, ...patch }
 }
 
 async function subjectModulesTopicFkExists(client) {
@@ -102,9 +118,6 @@ async function countOrphanModuleTopicIds(client) {
   `)
   return Number(rows[0]?.c ?? 0)
 }
-
-/** Logged at restore start so deploy/runtime can be verified on DigitalOcean. */
-export const RESTORE_ENGINE_VERSION = '2026-07-05-nuclear-v11'
 
 /** Tables excluded from pg_tables discovery (meta, ephemeral, legacy mirrors). */
 export const BACKUP_TABLE_EXCLUDE = new Set([
@@ -723,7 +736,7 @@ export async function testRestoreFkBypassCapability(pool = getPgPool()) {
 export class RestoreFailedError extends Error {
   /**
    * @param {string} message
-   * @param {{ failed_table?: string, constraint?: string, pg_code?: string, rolled_back?: boolean, detail?: string }} details
+   * @param {{ failed_table?: string, constraint?: string, pg_code?: string, rolled_back?: boolean, detail?: string, restore_engine?: string, restore_phase?: string, restore_debug?: Record<string, unknown> }} details
    */
   constructor(message, details = {}) {
     super(message)
@@ -733,6 +746,9 @@ export class RestoreFailedError extends Error {
     this.pg_code = details.pg_code ?? null
     this.rolled_back = details.rolled_back ?? true
     this.detail = details.detail ?? message
+    this.restore_engine = details.restore_engine ?? RESTORE_ENGINE_VERSION
+    this.restore_phase = details.restore_phase ?? null
+    this.restore_debug = details.restore_debug ?? null
   }
 }
 
@@ -749,12 +765,19 @@ export function parsePostgresRestoreError(err, failedTable = null) {
   return { failed_table: table, constraint, pg_code, detail, rolled_back: true }
 }
 
-/** @param {unknown} err @param {string} failedTable */
-export function enrichRestoreError(err, failedTable) {
+/** @param {unknown} err @param {string | null} [failedTable] @param {Record<string, unknown>} [extra] */
+export function enrichRestoreError(err, failedTable, extra = {}) {
   const parsed = parsePostgresRestoreError(err, failedTable)
+  const debug = getLastRestoreDebug()
   const label = parsed.failed_table || failedTable || 'unknown'
   const message = `Restore failed at table: ${label}`
-  return new RestoreFailedError(message, parsed)
+  return new RestoreFailedError(message, {
+    ...parsed,
+    restore_engine: debug.engine,
+    restore_phase: debug.phase,
+    restore_debug: debug,
+    ...extra,
+  })
 }
 
 function compareMigrationFilename(a, b) {
@@ -2370,6 +2393,7 @@ export async function restoreDatabaseFromParsed(parsed) {
   let savedFks = []
   let restorePhase = 'init'
   const topicLinkPlan = captureTopicLinkPlan(parsed)
+  setRestoreDebug({ phase: 'init', topicLinkPlanCount: topicLinkPlan.length })
   console.log(`[BACKUP] restore_engine=${RESTORE_ENGINE_VERSION}`)
   console.log(`[BACKUP] topic links deferred: ${topicLinkPlan.length} (topic_id omitted on INSERT)`)
   const tableOrder = await resolveBackupTableOrder(pool)
@@ -2393,16 +2417,41 @@ export async function restoreDatabaseFromParsed(parsed) {
     await client.query('BEGIN')
     console.log('[BACKUP] BEGIN')
     restorePhase = 'drop_fks'
+    setRestoreDebug({ phase: restorePhase })
     await client.query(`SET LOCAL statement_timeout = '600000'`)
     await client.query(`SET LOCAL lock_timeout = '120000'`)
+    let replicaRoleActive = false
+    try {
+      await client.query(`SET LOCAL session_replication_role = replica`)
+      replicaRoleActive = true
+      console.log('[BACKUP] session_replication_role=replica (FK checks disabled for truncate/insert)')
+    } catch (replicaErr) {
+      console.warn(
+        '[BACKUP] session_replication_role=replica unavailable — relying on FK drop + topic_id omit:',
+        replicaErr?.message || replicaErr,
+      )
+    }
+    setRestoreDebug({ replicaRoleActive })
+    // #region agent log
+    dbgRestore('H6', 'lnbakEngine.js:restoreDatabaseFromParsed', 'replica role probe', {
+      replicaRoleActive,
+      runId: 'post-fix',
+    })
+    // #endregion
     await dropAllPublicForeignKeys(client, savedFks)
     await forceDropKnownTopicForeignKeys(client)
     const fkAfterDrop = await subjectModulesTopicFkExists(client)
+    setRestoreDebug({
+      phase: 'after_fk_drop',
+      fkAfterDrop,
+      savedFkCount: savedFks.length,
+    })
     // #region agent log
     dbgRestore('H2', 'lnbakEngine.js:restoreDatabaseFromParsed', 'after FK drop', {
       savedFkCount: savedFks.length,
       subjectModulesTopicFkStillExists: fkAfterDrop,
       hasTopicModuleFkInSaved: savedFks.some((f) => f.name === 'subject_modules_topic_id_fkey'),
+      replicaRoleActive,
     })
     // #endregion
 
@@ -2431,6 +2480,7 @@ export async function restoreDatabaseFromParsed(parsed) {
         continue
       }
       restorePhase = `insert:${key}`
+      setRestoreDebug({ phase: restorePhase })
       if (key === 'subject_modules') {
         await forceDropKnownTopicForeignKeys(client)
         const fkBeforeModules = await subjectModulesTopicFkExists(client)
@@ -2456,6 +2506,8 @@ export async function restoreDatabaseFromParsed(parsed) {
     }
 
     restorePhase = 'deferred_topic_link'
+    await client.query(`SET LOCAL session_replication_role = DEFAULT`)
+    console.log('[BACKUP] session_replication_role=DEFAULT (re-enabling FK checks for topic links)')
     await forceDropKnownTopicForeignKeys(client)
     await applyDeferredTopicIdsFromPlan(client, topicLinkPlan, pool)
     const orphansAfterLink = await countOrphanModuleTopicIds(client)
@@ -2472,6 +2524,7 @@ export async function restoreDatabaseFromParsed(parsed) {
     restorePhase = 'reset_sequences'
     await resetSerialSequences(client, pool, tableOrder)
     restorePhase = 'commit'
+    setRestoreDebug({ phase: restorePhase, ok: true })
     await client.query('COMMIT')
     console.log('[BACKUP] COMMIT')
     console.log('[BACKUP] Database restore committed')
@@ -2482,17 +2535,21 @@ export async function restoreDatabaseFromParsed(parsed) {
     await client.query('ROLLBACK').catch(() => {})
     console.log('[BACKUP] ROLLBACK')
     const pgErr = /** @type {Record<string, unknown>} */ (e || {})
-    // #region agent log
-    dbgRestore('H4', 'lnbakEngine.js:restoreDatabaseFromParsed', 'restore FAILED', {
+    const failDebug = {
       phase: restorePhase,
       error: String(pgErr.message || e),
       constraint: pgErr.constraint ?? null,
       table: pgErr.table ?? null,
       pgCode: pgErr.code ?? null,
+      fkExists: await subjectModulesTopicFkExists(client).catch(() => null),
+    }
+    setRestoreDebug({ phase: restorePhase, ok: false, ...failDebug })
+    // #region agent log
+    dbgRestore('H4', 'lnbakEngine.js:restoreDatabaseFromParsed', 'restore FAILED', {
+      ...failDebug,
       orphans: restorePhase === 'restore_fks' || restorePhase === 'deferred_topic_link'
         ? await countOrphanModuleTopicIds(client).catch(() => -1)
         : null,
-      fkExists: await subjectModulesTopicFkExists(client).catch(() => null),
     })
     // #endregion
     if (e instanceof RestoreFailedError) throw e
@@ -2875,7 +2932,11 @@ export async function runRestorePipeline({
     const rows = parsed.data?.[k]
     return Array.isArray(rows) && rows.length > 0
   }).length
-  emit(2, { message: 'Restoring database', detail: `${tablesCount} tables` })
+  emit(2, {
+    message: 'Restoring database',
+    detail: `${tablesCount} tables`,
+    restore_engine: RESTORE_ENGINE_VERSION,
+  })
 
   try {
     await restoreDatabaseFromParsed(parsed)

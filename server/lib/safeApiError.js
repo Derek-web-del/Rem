@@ -43,6 +43,9 @@ export function formatRestoreErrorPayload(err) {
     reason,
     rolled_back: e.rolled_back !== false,
     detail,
+    restore_engine: typeof e.restore_engine === 'string' ? e.restore_engine : null,
+    restore_phase: typeof e.restore_phase === 'string' ? e.restore_phase : null,
+    restore_debug: e.restore_debug && typeof e.restore_debug === 'object' ? e.restore_debug : null,
     hint: 'Your database was automatically rolled back. No data was lost. Try again or contact support.',
   }
 }

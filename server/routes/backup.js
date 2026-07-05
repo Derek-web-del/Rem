@@ -32,6 +32,7 @@ import {
   LNBAK_TABLE_ORDER,
   resolveBackupTableOrder,
   testRestoreFkBypassCapability,
+  getLastRestoreDebug,
 } from '../lib/lnbakEngine.js'
 import { getPgPool } from '../pgPool.js'
 
@@ -98,6 +99,9 @@ async function logRestoreFailure(actor, err, meta = {}) {
         reason: payload.reason,
         detail: payload.detail,
         rolled_back: payload.rolled_back,
+        restore_engine: payload.restore_engine,
+        restore_phase: payload.restore_phase,
+        restore_debug: payload.restore_debug,
         ...meta,
       },
     })
@@ -183,6 +187,7 @@ export function createBackupRouter(express, auth) {
         table_order: tableOrder,
         table_order_preview: tableOrder.slice(0, 20),
         fk_bypass: fkBypass,
+        last_restore_debug: getLastRestoreDebug(),
         storage: {
           backups_dir: BACKUPS_DIR,
           backups_writable: backupsWritable,
