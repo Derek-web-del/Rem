@@ -53,7 +53,7 @@ export const UPLOADS_DIR = uploadsRoot()
 export const SUBJECT_ASSETS_DIR = subjectAssetsRoot()
 
 /** Logged at restore start so deploy/runtime can be verified on DigitalOcean. */
-export const RESTORE_ENGINE_VERSION = '2026-07-05-defer-v2'
+export const RESTORE_ENGINE_VERSION = '2026-07-05-defer-v3'
 
 /** Tables excluded from pg_tables discovery (meta, ephemeral, legacy mirrors). */
 export const BACKUP_TABLE_EXCLUDE = new Set([
@@ -859,13 +859,30 @@ export async function applyDeferredTopicIds(client, parsed, pool = null) {
         cleared += 1
         continue
       }
-      await client.query(
-        `UPDATE ${fromSql} SET topic_id = $1::bigint
-         WHERE id = $2::bigint
-           AND EXISTS (SELECT 1 FROM public.subject_topics t WHERE t.id = $1::bigint)`,
-        [tid, rowId],
-      )
-      updated += 1
+      try {
+        const { rowCount } = await client.query(
+          `UPDATE ${fromSql} AS target SET topic_id = src.id
+           FROM public.subject_topics AS src
+           WHERE target.id = $1::bigint AND src.id = $2::bigint`,
+          [rowId, tid],
+        )
+        if (Number(rowCount || 0) > 0) {
+          updated += 1
+        } else {
+          await client.query(`UPDATE ${fromSql} SET topic_id = NULL WHERE id = $1::bigint`, [rowId])
+          cleared += 1
+        }
+      } catch (e) {
+        if (String(e?.code || '') === '23503') {
+          await client.query(`UPDATE ${fromSql} SET topic_id = NULL WHERE id = $1::bigint`, [rowId])
+          cleared += 1
+          console.warn(
+            `[BACKUP] Cleared topic_id on ${tableKey} id=${rowId} after FK error: ${e?.message || e}`,
+          )
+          continue
+        }
+        throw e
+      }
     }
   }
 
@@ -1848,12 +1865,17 @@ async function bulkInsert(client, tableKey, rows, pool = null) {
   const fromSql = TABLE_FROM_SQL[tableKey]
   if (!fromSql) return
 
-  let cols = unionRowKeys(rows)
+  const omitCols = new Set(RESTORE_DEFER_INSERT_COLUMNS[tableKey] || [])
+  let cols = unionRowKeys(rows).filter((c) => !omitCols.has(c))
   if (tableKey === 'faculties' && pool) {
     const colSet = await getFacultiesColumnSet(pool)
     cols = filterFacultyRowKeys(cols, colSet)
   }
   if (!cols.length) return
+
+  if (omitCols.size > 0) {
+    console.log(`[BACKUP] Insert ${tableKey} omitting columns: ${[...omitCols].join(', ')}`)
+  }
 
   const colCount = cols.length
   const colList = cols.map(quoteIdent).join(', ')
@@ -1941,11 +1963,11 @@ export async function restoreDatabaseFromParsed(parsed) {
 
     await applyDeferredTopicIds(client, parsed, pool)
     await resetSerialSequences(client, pool, tableOrder)
-    await endRestoreSession(client, fkBypassMode)
     await client.query('COMMIT')
+    await endRestoreSession(client, fkBypassMode)
   } catch (e) {
     await endRestoreSession(client, fkBypassMode).catch(() => {})
-    await client.query('ROLLBACK')
+    await client.query('ROLLBACK').catch(() => {})
     if (e instanceof RestoreFailedError) throw e
     throw enrichRestoreError(e, null)
   } finally {
