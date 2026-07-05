@@ -439,7 +439,7 @@ describe('lnbak table order', () => {
   })
 
   test('RESTORE_ENGINE_VERSION is set', () => {
-    assert.ok(String(RESTORE_ENGINE_VERSION).includes('simple'))
+    assert.ok(String(RESTORE_ENGINE_VERSION).includes('do-v'))
   })
 
   test('quiz definitions come before quiz_submissions', () => {

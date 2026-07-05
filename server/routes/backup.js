@@ -180,11 +180,14 @@ export function createBackupRouter(express, auth) {
         storage: {
           backups_dir: BACKUPS_DIR,
           backups_writable: backupsWritable,
-          uploads_dir: process.env.UPLOAD_DIR || '(default public/uploads)',
+          uploads_dir: process.env.UPLOAD_DIR || path.join(process.cwd(), 'public', 'uploads'),
           backup_dir_env_set: Boolean(String(process.env.BACKUP_DIR || process.env.BACKUPS_DIR || '').trim()),
+          upload_dir_env_set: Boolean(String(process.env.UPLOAD_DIR || '').trim()),
+          auto_backup_dir: !String(process.env.BACKUP_DIR || process.env.BACKUPS_DIR || '').trim() &&
+            Boolean(String(process.env.UPLOAD_DIR || '').trim()),
           hint: backupsWritable
             ? 'Backup directory is writable.'
-            : 'Mount a DigitalOcean Volume and set BACKUP_DIR to a path on that volume (e.g. /data/backups).',
+            : 'Mount a DigitalOcean Volume and set UPLOAD_DIR=/data/uploads (backups auto-use /data/backups) or set BACKUP_DIR explicitly.',
         },
       })
     } catch (e) {

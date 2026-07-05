@@ -4,7 +4,6 @@ import path from 'node:path'
 import { createHmac, timingSafeEqual, randomUUID, createHash } from 'node:crypto'
 import { PassThrough } from 'node:stream'
 import { finished, pipeline } from 'node:stream/promises'
-import { spawn } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { createRequire } from 'node:module'
 import { getPgPool } from '../pgPool.js'
@@ -27,6 +26,7 @@ import { uploadsRoot, subjectAssetsRoot, resolvePublicUploadPath } from './uploa
 const require = createRequire(import.meta.url)
 const archiverLib = require('archiver')
 const unzipperLib = require('unzipper')
+const tar = require('tar')
 
 function resolveArchiverFactory(mod) {
   if (typeof mod === 'function') return mod
@@ -50,6 +50,9 @@ const unzipper = unzipperLib.default ?? unzipperLib
 export const BACKUPS_DIR = (() => {
   const configured = String(process.env.BACKUP_DIR || process.env.BACKUPS_DIR || '').trim()
   if (configured) return path.resolve(configured)
+  // On DO/Railway: if UPLOAD_DIR is on a volume, keep backups on the same volume automatically.
+  const uploadDir = String(process.env.UPLOAD_DIR || '').trim()
+  if (uploadDir) return path.join(path.dirname(path.resolve(uploadDir)), 'backups')
   return path.join(process.cwd(), 'backups')
 })()
 export const BACKUP_UPLOADS_DIR = path.join(BACKUPS_DIR, '.uploads')
@@ -57,7 +60,7 @@ export const UPLOADS_DIR = uploadsRoot()
 export const SUBJECT_ASSETS_DIR = subjectAssetsRoot()
 
 /** Logged at restore start so deploy/runtime can be verified on DigitalOcean. */
-export const RESTORE_ENGINE_VERSION = '2026-07-05-simple-v6'
+export const RESTORE_ENGINE_VERSION = '2026-07-05-do-v7'
 
 /** Tables excluded from pg_tables discovery (meta, ephemeral, legacy mirrors). */
 export const BACKUP_TABLE_EXCLUDE = new Set([
@@ -2052,6 +2055,8 @@ export async function restoreDatabaseFromParsed(parsed) {
 
   try {
     await client.query('BEGIN')
+    await client.query(`SET LOCAL statement_timeout = '600000'`)
+    await client.query(`SET LOCAL lock_timeout = '120000'`)
     droppedTopicFks = await beginRestoreSession(client)
 
     for (const key of truncateOrder) {
@@ -2093,16 +2098,10 @@ export async function restoreDatabaseFromParsed(parsed) {
   }
 }
 
-async function extractTarGzFromPath(tarGzPath, uploadsDir = UPLOADS_DIR) {
-  await fsp.mkdir(uploadsDir, { recursive: true })
-  return new Promise((resolve, reject) => {
-    const child = spawn('tar', ['-xzf', tarGzPath, '-C', uploadsDir], { stdio: 'ignore' })
-    child.on('error', reject)
-    child.on('close', (code) => {
-      if (code === 0) resolve(true)
-      else reject(new Error(`tar extract exited with code ${code}`))
-    })
-  })
+async function extractTarGzFromPath(tarGzPath, destDir = UPLOADS_DIR) {
+  await fsp.mkdir(destDir, { recursive: true })
+  await tar.x({ file: tarGzPath, cwd: destDir, gzip: true, strict: false })
+  return true
 }
 
 async function extractTarGzToUploads(tarGzBuffer, uploadsDir = UPLOADS_DIR) {
@@ -2328,7 +2327,11 @@ export async function runRestorePipeline({
   let safetyBackup = null
   if (createSafety) {
     emit(1, { message: 'Creating safety snapshot' })
-    safetyBackup = await createSafetyBackup(createdBy)
+    try {
+      safetyBackup = await createSafetyBackup(createdBy)
+    } catch (e) {
+      console.warn('[BACKUP] Safety snapshot skipped (restore continues):', e?.message || e)
+    }
   }
 
   const tablesCount = LNBAK_TABLE_ORDER.filter((k) => {
