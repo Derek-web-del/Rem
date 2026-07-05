@@ -53,7 +53,7 @@ export const UPLOADS_DIR = uploadsRoot()
 export const SUBJECT_ASSETS_DIR = subjectAssetsRoot()
 
 /** Logged at restore start so deploy/runtime can be verified on DigitalOcean. */
-export const RESTORE_ENGINE_VERSION = '2026-07-05-defer-v5'
+export const RESTORE_ENGINE_VERSION = '2026-07-05-simple-v6'
 
 /** Tables excluded from pg_tables discovery (meta, ephemeral, legacy mirrors). */
 export const BACKUP_TABLE_EXCLUDE = new Set([
@@ -364,68 +364,78 @@ export async function resolveBackupTableOrder(pool) {
   return order
 }
 
-const SUBJECT_MODULES_TOPIC_FK = 'subject_modules_topic_id_fkey'
-
-async function dropSubjectModulesTopicFk(client) {
-  await client.query(`
-    ALTER TABLE public.subject_modules
-    DROP CONSTRAINT IF EXISTS ${SUBJECT_MODULES_TOPIC_FK}
+/**
+ * Drop all FK constraints pointing at subject_topics (non-deferrable on DO Postgres).
+ * @returns {Promise<{ name: string, table_name: string, def: string }[]>}
+ */
+async function dropSubjectTopicForeignKeys(client) {
+  const { rows } = await client.query(`
+    SELECT c.conname AS name,
+           r.relname AS table_name,
+           pg_get_constraintdef(c.oid) AS def
+    FROM pg_constraint c
+    JOIN pg_class r ON r.oid = c.conrelid
+    JOIN pg_namespace n ON n.oid = r.relnamespace
+    WHERE c.contype = 'f'
+      AND c.confrelid = 'public.subject_topics'::regclass
+      AND n.nspname = 'public'
+    ORDER BY r.relname, c.conname
   `)
+  for (const row of rows) {
+    const tableSql = `public.${quoteIdent(row.table_name)}`
+    await client.query(
+      `ALTER TABLE ${tableSql} DROP CONSTRAINT IF EXISTS ${quoteIdent(row.name)}`,
+    )
+  }
+  if (rows.length) {
+    console.log(
+      `[BACKUP] Dropped ${rows.length} subject_topics FK constraint(s): ${rows.map((r) => r.name).join(', ')}`,
+    )
+  }
+  return rows
 }
 
-async function restoreSubjectModulesTopicFk(client) {
-  const { rows } = await client.query(
-    `SELECT 1 FROM pg_constraint
-     WHERE conname = $1 AND conrelid = 'public.subject_modules'::regclass
-     LIMIT 1`,
-    [SUBJECT_MODULES_TOPIC_FK],
-  )
-  if (rows.length) return
-  await client.query(`
-    ALTER TABLE public.subject_modules
-    ADD CONSTRAINT ${SUBJECT_MODULES_TOPIC_FK}
-    FOREIGN KEY (topic_id) REFERENCES public.subject_topics(id) ON DELETE SET NULL
-  `)
+/** @param {{ name: string, table_name: string, def: string }[]} saved */
+async function restoreSubjectTopicForeignKeys(client, saved) {
+  if (!Array.isArray(saved) || !saved.length) return
+  for (const row of saved) {
+    const tableSql = `public.${quoteIdent(row.table_name)}`
+    const { rows: exists } = await client.query(
+      `SELECT 1 FROM pg_constraint
+       WHERE conname = $1 AND conrelid = $2::regclass LIMIT 1`,
+      [row.name, tableSql],
+    )
+    if (exists.length) continue
+    await client.query(
+      `ALTER TABLE ${tableSql} ADD CONSTRAINT ${quoteIdent(row.name)} ${row.def}`,
+    )
+  }
+  console.log(`[BACKUP] Restored ${saved.length} subject_topics FK constraint(s)`)
 }
 
-/** @returns {'deferred' | 'drop_topic_fk' | 'none'} */
+/**
+ * Reliable FK bypass for managed Postgres: drop topic FKs before insert, restore after.
+ * @returns {Promise<{ name: string, table_name: string, def: string }[]>}
+ */
 export async function beginRestoreSession(client) {
-  try {
-    await client.query('SET CONSTRAINTS ALL DEFERRED')
-    console.log('[BACKUP] Restore FK bypass: SET CONSTRAINTS ALL DEFERRED')
-    return 'deferred'
-  } catch (e) {
-    console.warn('[BACKUP] SET CONSTRAINTS ALL DEFERRED unavailable:', e?.message || e)
-    try {
-      await dropSubjectModulesTopicFk(client)
-      console.warn('[BACKUP] Restore FK bypass fallback: dropped subject_modules_topic_id_fkey')
-      return 'drop_topic_fk'
-    } catch (e2) {
-      console.warn('[BACKUP] FK bypass unavailable; relying on insert order + topic_id purge:', e2?.message || e2)
-      return 'none'
-    }
-  }
+  return await dropSubjectTopicForeignKeys(client)
 }
 
-/** @param {'deferred' | 'drop_topic_fk' | 'none'} mode */
-export async function endRestoreSession(client, mode) {
-  if (mode === 'deferred') {
-    await client.query('SET CONSTRAINTS ALL IMMEDIATE')
-  } else if (mode === 'drop_topic_fk') {
-    await restoreSubjectModulesTopicFk(client)
-  }
+/** @param {{ name: string, table_name: string, def: string }[]} droppedTopicFks */
+export async function endRestoreSession(client, droppedTopicFks) {
+  await restoreSubjectTopicForeignKeys(client, droppedTopicFks)
 }
 
-/** Probe whether DO Postgres allows replica role (for preflight diagnostics). */
+/** Probe drop/restore topic FK path (for preflight diagnostics). */
 export async function testRestoreFkBypassCapability(pool = getPgPool()) {
-  if (!pool) return { mode: 'none', error: 'DATABASE_NOT_CONFIGURED' }
+  if (!pool) return { mode: 'drop_topic_fk', ok: false, error: 'DATABASE_NOT_CONFIGURED' }
   const client = await pool.connect()
   try {
     await client.query('BEGIN')
-    const mode = await beginRestoreSession(client)
-    await endRestoreSession(client, mode)
+    const saved = await beginRestoreSession(client)
+    await endRestoreSession(client, saved)
     await client.query('ROLLBACK')
-    return { mode, ok: true }
+    return { mode: 'drop_topic_fk', ok: true, constraints: saved.length }
   } catch (e) {
     await client.query('ROLLBACK').catch(() => {})
     return { mode: 'none', ok: false, error: String(e?.message || e) }
@@ -2027,7 +2037,8 @@ async function resetSerialSequences(client, pool, tableOrder = LNBAK_TABLE_ORDER
 export async function restoreDatabaseFromParsed(parsed) {
   const pool = getPgPool()
   const client = await pool.connect()
-  let fkBypassMode = 'none'
+  /** @type {{ name: string, table_name: string, def: string }[]} */
+  let droppedTopicFks = []
   console.log(`[BACKUP] restore_engine=${RESTORE_ENGINE_VERSION}`)
   const tableOrder = await resolveBackupTableOrder(pool)
   const truncateOrder = [...tableOrder].reverse()
@@ -2037,7 +2048,7 @@ export async function restoreDatabaseFromParsed(parsed) {
 
   try {
     await client.query('BEGIN')
-    fkBypassMode = await beginRestoreSession(client)
+    droppedTopicFks = await beginRestoreSession(client)
 
     for (const key of truncateOrder) {
       ensureDynamicTableRegistry(key)
@@ -2066,10 +2077,10 @@ export async function restoreDatabaseFromParsed(parsed) {
 
     await applyDeferredTopicIdsFromPlan(client, topicLinkPlan, pool)
     await resetSerialSequences(client, pool, tableOrder)
-    await endRestoreSession(client, fkBypassMode)
+    await endRestoreSession(client, droppedTopicFks)
     await client.query('COMMIT')
   } catch (e) {
-    await endRestoreSession(client, fkBypassMode).catch(() => {})
+    await endRestoreSession(client, droppedTopicFks).catch(() => {})
     await client.query('ROLLBACK').catch(() => {})
     if (e instanceof RestoreFailedError) throw e
     throw enrichRestoreError(e, null)

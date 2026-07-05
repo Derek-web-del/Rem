@@ -439,7 +439,7 @@ describe('lnbak table order', () => {
   })
 
   test('RESTORE_ENGINE_VERSION is set', () => {
-    assert.ok(String(RESTORE_ENGINE_VERSION).includes('defer'))
+    assert.ok(String(RESTORE_ENGINE_VERSION).includes('simple'))
   })
 
   test('quiz definitions come before quiz_submissions', () => {
@@ -754,9 +754,9 @@ dbDescribe('lnbak export (PostgreSQL)', () => {
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
-      const mode = await beginRestoreSession(client)
-      assert.ok(['replica', 'deferred', 'none'].includes(mode))
-      await endRestoreSession(client, mode)
+      const dropped = await beginRestoreSession(client)
+      assert.ok(Array.isArray(dropped))
+      await endRestoreSession(client, dropped)
       await client.query('ROLLBACK')
     } finally {
       client.release()
