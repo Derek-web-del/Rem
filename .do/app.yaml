@@ -1,0 +1,17 @@
+# DigitalOcean App Platform spec — deploy the branch that includes backup restore v12.
+# In DO: Apps → your app → Settings → App Spec → Edit → paste or link this file, then redeploy.
+name: lenlearn
+region: sgp
+services:
+  - name: web
+    github:
+      repo: Derek-web-del/Rem
+      branch: release/railway-deploy
+      deploy_on_push: true
+    build_command: npm run build
+    run_command: npm start
+    http_port: 8080
+    instance_count: 1
+    instance_size_slug: basic-xxs
+    health_check:
+      http_path: /api/health
