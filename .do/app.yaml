@@ -1,14 +1,14 @@
-# DigitalOcean App Platform spec — deploy the branch that includes backup restore v12.
-# In DO: Apps → your app → Settings → App Spec → Edit → paste or link this file, then redeploy.
+# DigitalOcean App Platform spec — backup restore v12 (2026-07-05-nuclear-v12).
+# DO: Apps → LenLearn → Settings → App Spec → ensure branch + build_command match, then Force Rebuild.
 name: lenlearn
 region: sgp
 services:
   - name: web
     github:
       repo: Derek-web-del/Rem
-      branch: release/railway-deploy
+      branch: main
       deploy_on_push: true
-    build_command: npm run build
+    build_command: npm install --include=dev && npm run build
     run_command: npm start
     http_port: 8080
     instance_count: 1
