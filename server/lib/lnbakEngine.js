@@ -52,18 +52,43 @@ export const BACKUP_UPLOADS_DIR = path.join(BACKUPS_DIR, '.uploads')
 export const UPLOADS_DIR = uploadsRoot()
 export const SUBJECT_ASSETS_DIR = subjectAssetsRoot()
 
+/** Logged at restore start so deploy/runtime can be verified on DigitalOcean. */
+export const RESTORE_ENGINE_VERSION = '2026-07-05-defer-v2'
+
+/** Tables excluded from pg_tables discovery (meta, ephemeral, legacy mirrors). */
+export const BACKUP_TABLE_EXCLUDE = new Set([
+  'backups',
+  'backup_schedules',
+  'google_oauth_pending',
+  'session',
+  'verification',
+  'jwks',
+  'institute_sections',
+  'app_state',
+  'schema_migrations',
+  'twofactor',
+  'twoFactor',
+])
+
+/** Curated dependency order — merged with live pg_tables on export/restore. */
 export const LNBAK_TABLE_ORDER = [
   'user',
   'account',
+  'google_oauth_tokens',
   'curriculum',
   'curriculum_guides',
   'sections',
   'faculties',
+  'faculty_study_materials',
   'faculty_sections',
   'subjects',
+  'subject_grade_criteria',
+  'subject_grade_components',
   'subject_topics',
   'subject_modules',
+  'subject_module_subtopics',
   'students',
+  'subject_student_final_grades',
   'announcements',
   'study_materials',
   'subject_materials',
@@ -71,6 +96,7 @@ export const LNBAK_TABLE_ORDER = [
   'activities',
   'assignment_submissions',
   'activity_submissions',
+  'score_overwrite_requests',
   'quizzes',
   'quiz_password_access',
   'quiz_parts',
@@ -84,8 +110,6 @@ export const LNBAK_TABLE_ORDER = [
   'lms_activity_logs',
 ]
 
-const TRUNCATE_ORDER = [...LNBAK_TABLE_ORDER].reverse()
-
 /** Skip child restore when backup has no parent rows (older .lnbak files). */
 const RESTORE_PARENT_KEYS = {
   faculty_sections: 'faculties',
@@ -93,6 +117,12 @@ const RESTORE_PARENT_KEYS = {
   activity_submissions: 'activities',
   subject_modules: 'subjects',
   subject_topics: 'subjects',
+  subject_module_subtopics: 'subject_modules',
+  subject_grade_criteria: 'subjects',
+  subject_grade_components: 'subjects',
+  subject_student_final_grades: 'subjects',
+  score_overwrite_requests: 'students',
+  google_oauth_tokens: 'user',
   quiz_parts: 'quizzes',
   quiz_questions: 'quizzes',
   quiz_choices: 'quizzes',
@@ -111,9 +141,16 @@ const TABLE_FROM_SQL = {
   faculties: 'public.faculties',
   faculty_sections: 'public.faculty_sections',
   subjects: 'public.subjects',
-  subject_modules: 'public.subject_modules',
+  subject_grade_criteria: 'public.subject_grade_criteria',
+  subject_grade_components: 'public.subject_grade_components',
   subject_topics: 'public.subject_topics',
+  subject_modules: 'public.subject_modules',
+  subject_module_subtopics: 'public.subject_module_subtopics',
   students: 'public.students',
+  subject_student_final_grades: 'public.subject_student_final_grades',
+  faculty_study_materials: 'public.faculty_study_materials',
+  score_overwrite_requests: 'public.score_overwrite_requests',
+  google_oauth_tokens: 'public.google_oauth_tokens',
   announcements: 'public.announcements',
   study_materials: 'public.study_materials',
   subject_materials: 'public.subject_materials',
@@ -143,9 +180,16 @@ const TABLE_SELECT_SQL = {
   faculties: 'SELECT * FROM public.faculties ORDER BY updated_at DESC NULLS LAST, id',
   faculty_sections: 'SELECT * FROM public.faculty_sections ORDER BY faculty_id, section_id',
   subjects: 'SELECT * FROM public.subjects ORDER BY id',
-  subject_modules: 'SELECT * FROM public.subject_modules ORDER BY subject_id, module_order ASC, id ASC',
+  subject_grade_criteria: 'SELECT * FROM public.subject_grade_criteria ORDER BY subject_id',
+  subject_grade_components: 'SELECT * FROM public.subject_grade_components ORDER BY subject_id, component_order ASC, id ASC',
   subject_topics: 'SELECT * FROM public.subject_topics ORDER BY subject_id, topic_order ASC, id ASC',
+  subject_modules: 'SELECT * FROM public.subject_modules ORDER BY subject_id, module_order ASC, id ASC',
+  subject_module_subtopics: 'SELECT * FROM public.subject_module_subtopics ORDER BY module_id, subtopic_order ASC, id ASC',
   students: 'SELECT * FROM public.students ORDER BY id',
+  subject_student_final_grades: 'SELECT * FROM public.subject_student_final_grades ORDER BY subject_id, student_id',
+  faculty_study_materials: 'SELECT * FROM public.faculty_study_materials ORDER BY id',
+  score_overwrite_requests: 'SELECT * FROM public.score_overwrite_requests ORDER BY id',
+  google_oauth_tokens: 'SELECT * FROM public.google_oauth_tokens ORDER BY id',
   announcements: 'SELECT * FROM public.announcements ORDER BY created_at NULLS LAST, id',
   study_materials: 'SELECT * FROM public.study_materials ORDER BY id',
   subject_materials: 'SELECT * FROM public.subject_materials ORDER BY id',
@@ -170,9 +214,16 @@ const TABLES_WITH_SERIAL_ID = new Set([
   'curriculum',
   'sections',
   'subjects',
+  'subject_grade_criteria',
+  'subject_grade_components',
   'subject_modules',
   'subject_topics',
+  'subject_module_subtopics',
   'students',
+  'subject_student_final_grades',
+  'faculty_study_materials',
+  'score_overwrite_requests',
+  'google_oauth_tokens',
   'announcements',
   'study_materials',
   'subject_materials',
@@ -240,6 +291,138 @@ async function tableExists(pool, tableKey) {
   } catch {
     return false
   }
+}
+
+/** Register SQL mappings for tables discovered via pg_tables but not in the curated list. */
+export function ensureDynamicTableRegistry(tableKey) {
+  if (TABLE_FROM_SQL[tableKey]) return
+  const quoted = tableKey === 'user' ? '"user"' : `public.${tableKey}`
+  TABLE_FROM_SQL[tableKey] = quoted
+  if (!TABLE_SELECT_SQL[tableKey]) {
+    TABLE_SELECT_SQL[tableKey] = `SELECT * FROM ${quoted} ORDER BY id`
+  }
+  if (!RESTORE_PARENT_KEYS[tableKey]) {
+    /* unknown table — no parent skip rule */
+  }
+}
+
+/** All public tables minus excluded meta/ephemeral tables. */
+export async function discoverBackupTables(pool) {
+  const { rows } = await pool.query(`
+    SELECT tablename
+    FROM pg_tables
+    WHERE schemaname = 'public'
+    ORDER BY tablename
+  `)
+  return rows.map((r) => String(r.tablename)).filter((t) => !BACKUP_TABLE_EXCLUDE.has(t))
+}
+
+/** Curated dependency order + any newly discovered tables appended at the end. */
+export async function resolveBackupTableOrder(pool) {
+  let discovered = []
+  try {
+    discovered = await discoverBackupTables(pool)
+  } catch (e) {
+    console.warn('[BACKUP] pg_tables discovery failed; using curated order only:', e?.message || e)
+    return [...LNBAK_TABLE_ORDER]
+  }
+  const order = [...LNBAK_TABLE_ORDER]
+  const seen = new Set(order)
+  for (const tableKey of discovered) {
+    if (seen.has(tableKey)) continue
+    ensureDynamicTableRegistry(tableKey)
+    order.push(tableKey)
+    seen.add(tableKey)
+    console.warn(`[BACKUP] Unknown table "${tableKey}" appended to backup order (no curated position)`)
+  }
+  return order
+}
+
+/** @returns {'replica' | 'deferred' | 'none'} */
+export async function beginRestoreSession(client) {
+  try {
+    await client.query(`SET session_replication_role = 'replica'`)
+    console.log('[BACKUP] Restore FK bypass: session_replication_role=replica')
+    return 'replica'
+  } catch (e) {
+    const code = String(e?.code || '')
+    const msg = String(e?.message || e)
+    if (code === '42501' || /permission denied|superuser|replication/i.test(msg)) {
+      try {
+        await client.query('SET CONSTRAINTS ALL DEFERRED')
+        console.warn('[BACKUP] Restore FK bypass fallback: SET CONSTRAINTS ALL DEFERRED')
+        return 'deferred'
+      } catch (e2) {
+        console.warn('[BACKUP] FK bypass unavailable; relying on insert order:', e2?.message || e2)
+        return 'none'
+      }
+    }
+    throw e
+  }
+}
+
+/** @param {'replica' | 'deferred' | 'none'} mode */
+export async function endRestoreSession(client, mode) {
+  if (mode === 'replica') {
+    await client.query(`SET session_replication_role = 'origin'`)
+  } else if (mode === 'deferred') {
+    await client.query('SET CONSTRAINTS ALL IMMEDIATE')
+  }
+}
+
+/** Probe whether DO Postgres allows replica role (for preflight diagnostics). */
+export async function testRestoreFkBypassCapability(pool = getPgPool()) {
+  if (!pool) return { mode: 'none', error: 'DATABASE_NOT_CONFIGURED' }
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    const mode = await beginRestoreSession(client)
+    await endRestoreSession(client, mode)
+    await client.query('ROLLBACK')
+    return { mode, ok: true }
+  } catch (e) {
+    await client.query('ROLLBACK').catch(() => {})
+    return { mode: 'none', ok: false, error: String(e?.message || e) }
+  } finally {
+    client.release()
+  }
+}
+
+export class RestoreFailedError extends Error {
+  /**
+   * @param {string} message
+   * @param {{ failed_table?: string, constraint?: string, pg_code?: string, rolled_back?: boolean, detail?: string }} details
+   */
+  constructor(message, details = {}) {
+    super(message)
+    this.name = 'RestoreFailedError'
+    this.failed_table = details.failed_table ?? null
+    this.constraint = details.constraint ?? null
+    this.pg_code = details.pg_code ?? null
+    this.rolled_back = details.rolled_back ?? true
+    this.detail = details.detail ?? message
+  }
+}
+
+/** @param {unknown} err @param {string | null} [failedTable] */
+export function parsePostgresRestoreError(err, failedTable = null) {
+  const pgErr = /** @type {Record<string, unknown>} */ (err || {})
+  const table =
+    failedTable ||
+    (typeof pgErr.table === 'string' ? pgErr.table : null) ||
+    (typeof pgErr.failed_table === 'string' ? pgErr.failed_table : null)
+  const constraint = typeof pgErr.constraint === 'string' ? pgErr.constraint : null
+  const pg_code = typeof pgErr.code === 'string' ? pgErr.code : null
+  const detail = String(pgErr.message || pgErr.detail || err || 'Restore failed')
+  return { failed_table: table, constraint, pg_code, detail, rolled_back: true }
+}
+
+/** @param {unknown} err @param {string} failedTable */
+export function enrichRestoreError(err, failedTable) {
+  const parsed = parsePostgresRestoreError(err, failedTable)
+  const label = parsed.failed_table || failedTable || 'unknown'
+  const message = `Restore failed at table: ${label}`
+  return new RestoreFailedError(message, parsed)
 }
 
 function compareMigrationFilename(a, b) {
@@ -548,6 +731,47 @@ export function prepareRestoreRowsForInsert(parsed, tableKey, rawRows) {
     return rows
   }
 
+  if (tableKey === 'subject_module_subtopics') {
+    const moduleIds = getEffectiveParentIds(parsed, 'subject_modules')
+    const { rows, skipped } = sanitizeChildFkRows(rawRows, moduleIds, { parentColumn: 'module_id' })
+    if (skipped > 0) {
+      console.warn(`[BACKUP] Skipped ${skipped} subject_module_subtopics row(s) with invalid module_id`)
+    }
+    return rows
+  }
+
+  if (tableKey === 'subject_grade_criteria' || tableKey === 'subject_grade_components') {
+    const subjectIds = getEffectiveParentIds(parsed, 'subjects')
+    const { rows, skipped } = sanitizeChildFkRows(rawRows, subjectIds, { parentColumn: 'subject_id' })
+    if (skipped > 0) {
+      console.warn(`[BACKUP] Skipped ${skipped} ${tableKey} row(s) with invalid subject_id`)
+    }
+    return rows
+  }
+
+  if (tableKey === 'subject_student_final_grades') {
+    const subjectIds = getEffectiveParentIds(parsed, 'subjects')
+    const studentIds = buildNumericIdSetFromParsed(parsed, 'students')
+    const { rows, skipped } = sanitizeChildFkRows(rawRows, subjectIds, {
+      parentColumn: 'subject_id',
+      optionalColumn: 'student_id',
+      optionalIds: studentIds,
+    })
+    if (skipped > 0) {
+      console.warn(`[BACKUP] Skipped ${skipped} subject_student_final_grades row(s) with invalid parent ids`)
+    }
+    return rows
+  }
+
+  if (tableKey === 'score_overwrite_requests') {
+    const studentIds = buildNumericIdSetFromParsed(parsed, 'students')
+    const { rows, skipped } = sanitizeChildFkRows(rawRows, studentIds, { parentColumn: 'student_id' })
+    if (skipped > 0) {
+      console.warn(`[BACKUP] Skipped ${skipped} score_overwrite_requests row(s) with invalid student_id`)
+    }
+    return rows
+  }
+
   if (TOPIC_ID_NULL_ON_RESTORE.has(tableKey)) {
     const topicIds = getEffectiveParentIds(parsed, 'subject_topics')
     const { rows, nulled } = sanitizeOptionalTopicIdRows(rawRows, topicIds)
@@ -582,9 +806,17 @@ export function prepareRestoreRowsForInsert(parsed, tableKey, rawRows) {
 }
 
 /** Columns omitted on INSERT and applied in a second pass after parent rows exist. */
-const RESTORE_DEFER_INSERT_COLUMNS = {
-  subject_modules: ['topic_id'],
-}
+const TOPIC_ID_DEFER_TABLES = new Set([
+  'subject_modules',
+  'study_materials',
+  'assignments',
+  'activities',
+  'quizzes',
+])
+
+const RESTORE_DEFER_INSERT_COLUMNS = Object.fromEntries(
+  [...TOPIC_ID_DEFER_TABLES].map((t) => [t, ['topic_id']]),
+)
 
 export function omitRestoreInsertColumns(tableKey, rows) {
   const omit = RESTORE_DEFER_INSERT_COLUMNS[tableKey]
@@ -597,45 +829,58 @@ export function omitRestoreInsertColumns(tableKey, rows) {
   })
 }
 
-/** Apply subject_modules.topic_id after subject_topics rows are inserted (FK-safe). */
-export async function applyDeferredSubjectModuleTopicIds(client, parsed, pool = null) {
-  const pg = pool || getPgPool()
-  if (!(await tableExists(pg, 'subject_modules'))) return { updated: 0, cleared: 0 }
-  const raw = parsed?.data?.subject_modules
-  if (!Array.isArray(raw) || raw.length === 0) return { updated: 0, cleared: 0 }
+const DEFERRED_TOPIC_ID_TARGETS = [
+  { tableKey: 'subject_modules', fromSql: 'public.subject_modules' },
+  { tableKey: 'study_materials', fromSql: 'public.study_materials' },
+  { tableKey: 'assignments', fromSql: 'public.assignments' },
+  { tableKey: 'activities', fromSql: 'public.activities' },
+  { tableKey: 'quizzes', fromSql: 'public.quizzes' },
+]
 
-  const prepared = prepareRestoreRowsForInsert(parsed, 'subject_modules', raw)
+/** Apply topic_id on all curriculum item tables after subject_topics are inserted (FK-safe). */
+export async function applyDeferredTopicIds(client, parsed, pool = null) {
+  const pg = pool || getPgPool()
   const topicIds = getEffectiveParentIds(parsed, 'subject_topics')
   let updated = 0
   let cleared = 0
 
-  for (const row of prepared) {
-    const moduleId = row.id
-    if (moduleId == null || moduleId === '') continue
-    const tid = row.topic_id
-    if (tid == null || tid === '' || !idInNumericSet(topicIds, tid)) {
-      await client.query(`UPDATE public.subject_modules SET topic_id = NULL WHERE id = $1::bigint`, [
-        moduleId,
-      ])
-      cleared += 1
-      continue
+  for (const { tableKey, fromSql } of DEFERRED_TOPIC_ID_TARGETS) {
+    if (!(await tableExists(pg, tableKey))) continue
+    const raw = parsed?.data?.[tableKey]
+    if (!Array.isArray(raw) || raw.length === 0) continue
+
+    const prepared = prepareRestoreRowsForInsert(parsed, tableKey, raw)
+    for (const row of prepared) {
+      const rowId = row.id
+      if (rowId == null || rowId === '') continue
+      const tid = row.topic_id
+      if (tid == null || tid === '' || !idInNumericSet(topicIds, tid)) {
+        await client.query(`UPDATE ${fromSql} SET topic_id = NULL WHERE id = $1::bigint`, [rowId])
+        cleared += 1
+        continue
+      }
+      await client.query(
+        `UPDATE ${fromSql} SET topic_id = $1::bigint
+         WHERE id = $2::bigint
+           AND EXISTS (SELECT 1 FROM public.subject_topics t WHERE t.id = $1::bigint)`,
+        [tid, rowId],
+      )
+      updated += 1
     }
-    await client.query(
-      `UPDATE public.subject_modules SET topic_id = $1::bigint
-       WHERE id = $2::bigint
-         AND EXISTS (SELECT 1 FROM public.subject_topics t WHERE t.id = $1::bigint)`,
-      [tid, moduleId],
-    )
-    updated += 1
   }
 
   if (updated > 0) {
-    console.log(`[BACKUP] Applied topic_id on ${updated} subject_modules row(s) after parent topics insert`)
+    console.log(`[BACKUP] Applied deferred topic_id on ${updated} row(s) after parent topics insert`)
   }
   if (cleared > 0) {
-    console.warn(`[BACKUP] Cleared topic_id on ${cleared} subject_modules row(s) during deferred apply`)
+    console.warn(`[BACKUP] Cleared deferred topic_id on ${cleared} row(s)`)
   }
   return { updated, cleared }
+}
+
+/** @deprecated Use applyDeferredTopicIds */
+export async function applyDeferredSubjectModuleTopicIds(client, parsed, pool = null) {
+  return applyDeferredTopicIds(client, parsed, pool)
 }
 
 function warnOrphanFacultyRefsInParsed(parsed) {
@@ -1210,15 +1455,23 @@ export async function exportBackupData(pool, { createdBy = null } = {}) {
   const data = {}
   const row_counts = {}
   const export_warnings = []
+  const tableOrder = await resolveBackupTableOrder(pool)
 
-  for (const key of LNBAK_TABLE_ORDER) {
+  for (const key of tableOrder) {
+    ensureDynamicTableRegistry(key)
     if (!(await tableExists(pool, key))) {
       data[key] = []
       row_counts[key] = 0
       continue
     }
+    const selectSql = TABLE_SELECT_SQL[key]
+    if (!selectSql) {
+      data[key] = []
+      row_counts[key] = 0
+      continue
+    }
     try {
-      const { rows } = await pool.query(TABLE_SELECT_SQL[key])
+      const { rows } = await pool.query(selectSql)
       data[key] = (rows || []).map(rowToJson)
       row_counts[key] = data[key].length
     } catch (e) {
@@ -1313,7 +1566,7 @@ export async function exportBackupData(pool, { createdBy = null } = {}) {
     created_at: new Date().toISOString(),
     created_by: createdBy ? String(createdBy) : null,
     schema_version: getLatestMigrationFilename(),
-    table_count: LNBAK_TABLE_ORDER.length,
+    table_count: tableOrder.length,
     row_counts,
     ...(export_warnings.length ? { export_warnings } : {}),
   }
@@ -1627,8 +1880,8 @@ async function bulkInsert(client, tableKey, rows, pool = null) {
   }
 }
 
-async function resetSerialSequences(client, pool) {
-  for (const key of LNBAK_TABLE_ORDER) {
+async function resetSerialSequences(client, pool, tableOrder = LNBAK_TABLE_ORDER) {
+  for (const key of tableOrder) {
     if (!TABLES_WITH_SERIAL_ID.has(key)) continue
     const fromSql = TABLE_FROM_SQL[key]
     if (!fromSql || !(await tableExists(pool, key))) continue
@@ -1652,17 +1905,24 @@ async function resetSerialSequences(client, pool) {
 export async function restoreDatabaseFromParsed(parsed) {
   const pool = getPgPool()
   const client = await pool.connect()
+  let fkBypassMode = 'none'
+  console.log(`[BACKUP] restore_engine=${RESTORE_ENGINE_VERSION}`)
+  const tableOrder = await resolveBackupTableOrder(pool)
+  const truncateOrder = [...tableOrder].reverse()
+
   try {
     await client.query('BEGIN')
+    fkBypassMode = await beginRestoreSession(client)
 
-    for (const key of TRUNCATE_ORDER) {
+    for (const key of truncateOrder) {
+      ensureDynamicTableRegistry(key)
       const fromSql = TABLE_FROM_SQL[key]
       if (!fromSql) continue
       if (!(await tableExists(pool, key))) continue
       await client.query(`TRUNCATE ${fromSql} CASCADE`)
     }
 
-    for (const key of LNBAK_TABLE_ORDER) {
+    for (const key of tableOrder) {
       const rows = parsed.data?.[key]
       if (!Array.isArray(rows) || rows.length === 0) continue
       if (!(await tableExists(pool, key))) continue
@@ -1672,16 +1932,22 @@ export async function restoreDatabaseFromParsed(parsed) {
       }
       const prepared = prepareRestoreRowsForInsert(parsed, key, rows)
       if (!prepared.length) continue
-      await bulkInsert(client, key, omitRestoreInsertColumns(key, prepared), pool)
+      try {
+        await bulkInsert(client, key, omitRestoreInsertColumns(key, prepared), pool)
+      } catch (e) {
+        throw enrichRestoreError(e, key)
+      }
     }
 
-    await applyDeferredSubjectModuleTopicIds(client, parsed, pool)
-
-    await resetSerialSequences(client, pool)
+    await applyDeferredTopicIds(client, parsed, pool)
+    await resetSerialSequences(client, pool, tableOrder)
+    await endRestoreSession(client, fkBypassMode)
     await client.query('COMMIT')
   } catch (e) {
+    await endRestoreSession(client, fkBypassMode).catch(() => {})
     await client.query('ROLLBACK')
-    throw e
+    if (e instanceof RestoreFailedError) throw e
+    throw enrichRestoreError(e, null)
   } finally {
     client.release()
   }

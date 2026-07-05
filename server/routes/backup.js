@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import fsp from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import multer from 'multer'
-import { sendSafeServerError } from '../lib/safeApiError.js'
+import { sendSafeServerError, sendRestoreError, formatRestoreErrorPayload } from '../lib/safeApiError.js'
 import { BACKUP_RESTORE_MAX_BYTES } from '../lib/uploadLimitsConfig.js'
 import { isBackupDbConfigured, ensureBackupSchema } from '../lib/backupSchema.js'
 import {
@@ -102,7 +102,7 @@ async function executeStreamRestore(res, runner) {
     writeEvent({
       type: 'error',
       success: false,
-      message: String(e?.message || e),
+      ...formatRestoreErrorPayload(e),
     })
     res.end()
   }
@@ -326,7 +326,7 @@ export function createBackupRouter(express, auth) {
         return
       }
       if (!res.headersSent) {
-        sendSafeServerError(res, e, 'POST /api/backup/restore-upload')
+        sendRestoreError(res, e, 'POST /api/backup/restore-upload')
       }
     } finally {
       if (uploadPath) {
@@ -539,7 +539,7 @@ export function createBackupRouter(express, auth) {
         ...restoreDetails,
       })
     } catch (e) {
-      sendSafeServerError(res, e, 'POST /api/backup/:id/restore')
+      sendRestoreError(res, e, 'POST /api/backup/:id/restore')
     }
   })
 

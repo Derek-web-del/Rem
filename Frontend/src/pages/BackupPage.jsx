@@ -33,6 +33,32 @@ const RESTORE_STEPS = [
   'Complete',
 ]
 
+function formatRestoreErrorMessage(errOrPayload) {
+  const p = errOrPayload?.restoreDetails || errOrPayload || {}
+  const failedTable = p.failed_table || p.failedTable
+  const constraint = p.constraint
+  const detail = p.detail || p.message || String(errOrPayload?.message || errOrPayload || 'Restore failed')
+  const lines = ['Restore failed']
+  if (failedTable) lines.push(`Failed at table: ${failedTable}`)
+  if (constraint) lines.push(`Constraint: ${constraint}`)
+  if (detail && detail !== lines[0]) lines.push(String(detail))
+  if (p.rolled_back !== false) {
+    lines.push('The database has been rolled back to its previous state. No data was lost.')
+  }
+  lines.push('Contact your administrator with these details if the problem persists.')
+  return lines.join('\n')
+}
+
+function attachRestoreErrorDetails(err, event) {
+  const e = new Error(String(event?.message || err?.message || 'Restore failed'))
+  e.failed_table = event?.failed_table ?? null
+  e.constraint = event?.constraint ?? null
+  e.pg_code = event?.pg_code ?? null
+  e.detail = event?.detail ?? null
+  e.rolled_back = event?.rolled_back !== false
+  return e
+}
+
 async function runStreamRestore(url, { method = 'POST', body = null, onStep } = {}) {
   const headers = { Accept: 'application/x-ndjson' }
   if (body && !(body instanceof FormData)) {
@@ -46,11 +72,11 @@ async function runStreamRestore(url, { method = 'POST', body = null, onStep } = 
   })
   if (!res.ok && !res.body) {
     const err = await res.json().catch(() => ({}))
-    throw new Error(String(err.message || err.error || `Restore failed (${res.status})`))
+    throw attachRestoreErrorDetails(new Error(), err)
   }
   if (!res.body) {
     const data = await res.json().catch(() => ({}))
-    if (!res.ok) throw new Error(String(data.message || data.error || 'Restore failed'))
+    if (!res.ok) throw attachRestoreErrorDetails(new Error(), data)
     return data
   }
 
@@ -82,7 +108,7 @@ async function runStreamRestore(url, { method = 'POST', body = null, onStep } = 
       } else if (event.type === 'complete') {
         finalResult = event
       } else if (event.type === 'error') {
-        streamError = new Error(String(event.message || 'Restore failed'))
+        streamError = attachRestoreErrorDetails(new Error(), event)
       }
     }
   }
@@ -524,7 +550,7 @@ export default function BackupPage() {
       dispatchAuditLogsRefresh({ reason: 'backup_restored' })
       dispatchBackupRestored(data)
     } catch (err) {
-      setRestoreError(String(err?.message || err))
+      setRestoreError(formatRestoreErrorMessage(err))
       setRestoreStep(0)
     } finally {
       setIsRestoring(false)
@@ -656,7 +682,7 @@ export default function BackupPage() {
       dispatchBackupRestored(data)
       toast.updated('Data restored from backup.', { title: 'Restored', durationMs: 6000 })
     } catch (err) {
-      toast.error(String(err?.message || err), { title: 'Restore failed' })
+      toast.error(formatRestoreErrorMessage(err), { title: 'Restore failed', durationMs: 12000 })
       setRestoreStep(0)
     } finally {
       setHistoryRestoreSubmitting(false)

@@ -4,6 +4,8 @@ import pg from 'pg'
 import '../server/env-bootstrap.js'
 import {
   LNBAK_TABLE_ORDER,
+  RESTORE_ENGINE_VERSION,
+  BACKUP_TABLE_EXCLUDE,
   computeBackupHmac,
   validateLnbakParsed,
   exportBackupData,
@@ -15,13 +17,22 @@ import {
   sanitizeChildFkRows,
   sanitizeOptionalTopicIdRows,
   omitRestoreInsertColumns,
+  applyDeferredTopicIds,
   applyDeferredSubjectModuleTopicIds,
   prepareRestoreRowsForInsert,
   buildNumericIdSetFromRows,
   idInNumericSet,
   collectRestorePreflightWarnings,
   countSectionsRows,
+  discoverBackupTables,
+  resolveBackupTableOrder,
+  beginRestoreSession,
+  endRestoreSession,
+  parsePostgresRestoreError,
+  enrichRestoreError,
+  RestoreFailedError,
 } from '../server/lib/lnbakEngine.js'
+import { formatRestoreErrorPayload } from '../server/lib/safeApiError.js'
 import { BETTER_AUTH_SECRET_FOR_TESTS } from './load-test-env.js'
 import {
   facultyPgRowToAppStateMirror,
@@ -217,6 +228,13 @@ describe('lnbak FK sanitization on restore', () => {
     assert.equal(omitRestoreInsertColumns('subjects', rows), rows)
   })
 
+  test('omitRestoreInsertColumns strips topic_id on all curriculum item tables', () => {
+    for (const table of ['study_materials', 'assignments', 'activities', 'quizzes']) {
+      const out = omitRestoreInsertColumns(table, [{ id: 1, topic_id: 5 }])
+      assert.equal(out[0].topic_id, undefined, table)
+    }
+  })
+
   test('prepareRestoreRowsForInsert skips subject_topics with invalid subject_id', () => {
     const parsed = {
       data: {
@@ -393,6 +411,17 @@ describe('lnbak table order', () => {
     assert.ok(ti < mi)
   })
 
+  test('subject_module_subtopics come after subject_modules', () => {
+    assert.ok(
+      LNBAK_TABLE_ORDER.indexOf('subject_module_subtopics') >
+        LNBAK_TABLE_ORDER.indexOf('subject_modules'),
+    )
+  })
+
+  test('RESTORE_ENGINE_VERSION is set', () => {
+    assert.ok(String(RESTORE_ENGINE_VERSION).includes('defer'))
+  })
+
   test('quiz definitions come before quiz_submissions', () => {
     const qi = LNBAK_TABLE_ORDER.indexOf('quizzes')
     const qsi = LNBAK_TABLE_ORDER.indexOf('quiz_submissions')
@@ -414,6 +443,57 @@ describe('lnbak table order', () => {
 
   test('lms_activity_logs comes after audit_logs', () => {
     assert.ok(LNBAK_TABLE_ORDER.indexOf('lms_activity_logs') > LNBAK_TABLE_ORDER.indexOf('audit_logs'))
+  })
+})
+
+describe('lnbak restore error helpers', () => {
+  test('parsePostgresRestoreError extracts table and constraint', () => {
+    const parsed = parsePostgresRestoreError(
+      {
+        code: '23503',
+        constraint: 'subject_modules_topic_id_fkey',
+        table: 'subject_modules',
+        message: 'insert or update on table "subject_modules" violates foreign key constraint',
+      },
+      null,
+    )
+    assert.equal(parsed.failed_table, 'subject_modules')
+    assert.equal(parsed.constraint, 'subject_modules_topic_id_fkey')
+    assert.equal(parsed.pg_code, '23503')
+    assert.equal(parsed.rolled_back, true)
+  })
+
+  test('enrichRestoreError produces RestoreFailedError', () => {
+    const err = enrichRestoreError(
+      { code: '23503', constraint: 'subject_modules_topic_id_fkey', message: 'fk fail' },
+      'subject_modules',
+    )
+    assert.ok(err instanceof RestoreFailedError)
+    assert.equal(err.failed_table, 'subject_modules')
+    assert.match(err.message, /subject_modules/)
+  })
+
+  test('formatRestoreErrorPayload builds admin-visible response', () => {
+    const payload = formatRestoreErrorPayload(
+      new RestoreFailedError('Restore failed at table: subject_modules', {
+        failed_table: 'subject_modules',
+        constraint: 'subject_modules_topic_id_fkey',
+        pg_code: '23503',
+        detail: 'fk violation',
+      }),
+    )
+    assert.equal(payload.error, 'RESTORE_FAILED')
+    assert.equal(payload.failed_table, 'subject_modules')
+    assert.equal(payload.constraint, 'subject_modules_topic_id_fkey')
+    assert.equal(payload.rolled_back, true)
+  })
+})
+
+describe('lnbak table discovery', () => {
+  test('BACKUP_TABLE_EXCLUDE omits meta tables', () => {
+    assert.ok(BACKUP_TABLE_EXCLUDE.has('backups'))
+    assert.ok(BACKUP_TABLE_EXCLUDE.has('backup_schedules'))
+    assert.ok(BACKUP_TABLE_EXCLUDE.has('session'))
   })
 })
 
@@ -591,7 +671,7 @@ dbDescribe('lnbak export (PostgreSQL)', () => {
         },
       }
 
-      const { updated } = await applyDeferredSubjectModuleTopicIds(client, parsed, pool)
+      const { updated } = await applyDeferredTopicIds(client, parsed, pool)
       assert.equal(updated, 1)
 
       const { rows } = await client.query(
@@ -601,6 +681,47 @@ dbDescribe('lnbak export (PostgreSQL)', () => {
       assert.equal(rows[0]?.topic_id, topicId)
     } finally {
       await client.query('ROLLBACK').catch(() => {})
+      client.release()
+      await pool.end()
+    }
+  })
+
+  test('discoverBackupTables excludes backups and backup_schedules', async () => {
+    process.env.BETTER_AUTH_SECRET = BETTER_AUTH_SECRET_FOR_TESTS
+    const pool = new pg.Pool({ connectionString: PG_TEST_URL })
+    try {
+      const tables = await discoverBackupTables(pool)
+      assert.ok(Array.isArray(tables) && tables.length > 0)
+      assert.ok(!tables.includes('backups'))
+      assert.ok(!tables.includes('backup_schedules'))
+    } finally {
+      await pool.end()
+    }
+  })
+
+  test('resolveBackupTableOrder starts with curated order', async () => {
+    process.env.BETTER_AUTH_SECRET = BETTER_AUTH_SECRET_FOR_TESTS
+    const pool = new pg.Pool({ connectionString: PG_TEST_URL })
+    try {
+      const order = await resolveBackupTableOrder(pool)
+      assert.ok(order.indexOf('subject_topics') < order.indexOf('subject_modules'))
+      assert.ok(order.indexOf('user') >= 0)
+    } finally {
+      await pool.end()
+    }
+  })
+
+  test('beginRestoreSession and endRestoreSession run without error', async () => {
+    process.env.BETTER_AUTH_SECRET = BETTER_AUTH_SECRET_FOR_TESTS
+    const pool = new pg.Pool({ connectionString: PG_TEST_URL })
+    const client = await pool.connect()
+    try {
+      await client.query('BEGIN')
+      const mode = await beginRestoreSession(client)
+      assert.ok(['replica', 'deferred', 'none'].includes(mode))
+      await endRestoreSession(client, mode)
+      await client.query('ROLLBACK')
+    } finally {
       client.release()
       await pool.end()
     }
