@@ -12,6 +12,10 @@ import {
   resolveBackupTableOrder,
   LNBAK_TABLE_ORDER,
   validateLnbakParsed,
+  beginRestoreSession,
+  endRestoreSession,
+  scrubAllInvalidTopicIds,
+  prepareRestoreRowsForInsert,
 } from '../server/lib/lnbakEngine.js'
 
 const url = process.env.TEST_DATABASE_URL || process.env.DATABASE_URL
@@ -33,6 +37,9 @@ async function checkDiagnostics() {
   console.log(`[verify] restore_engine=${RESTORE_ENGINE_VERSION}`)
   console.log(`[verify] subject_topics index=${topicsIdx}, subject_modules index=${modulesIdx}`)
   console.log(`[verify] fk_bypass=${JSON.stringify(fk)}`)
+  if (fk.mode !== 'drop_all_public_fk') {
+    throw new Error(`expected fk_bypass mode drop_all_public_fk, got ${fk.mode}`)
+  }
   console.log(`[verify] table_order count=${order.length}, topics before modules=${order.indexOf('subject_topics') < order.indexOf('subject_modules')}`)
   return { fk, order }
 }
@@ -42,7 +49,16 @@ async function checkExport() {
   validateLnbakParsed({ meta, data, manifest })
   const topicRows = data.subject_topics?.length ?? 0
   const moduleRows = data.subject_modules?.length ?? 0
-  console.log(`[verify] export ok — subject_topics=${topicRows}, subject_modules=${moduleRows}, tables=${Object.keys(data).length}`)
+  const keys = Object.keys(data)
+  const topicsIdx = keys.indexOf('subject_topics')
+  const modulesIdx = keys.indexOf('subject_modules')
+  if (topicsIdx < 0 || modulesIdx < 0 || topicsIdx >= modulesIdx) {
+    throw new Error('export data keys must list subject_topics before subject_modules')
+  }
+  if (!Array.isArray(meta?.table_order) || meta.table_order.length === 0) {
+    throw new Error('export meta.table_order missing')
+  }
+  console.log(`[verify] export ok — subject_topics=${topicRows}, subject_modules=${moduleRows}, tables=${keys.length}`)
   return { meta, data, manifest }
 }
 
@@ -93,33 +109,28 @@ async function checkFkFixtureRestore() {
       },
     }
 
-    // restoreDatabaseFromParsed truncates globally — use isolated insert path via engine exports
-    const { purgeTopicIdsFromBackupData, captureTopicLinkPlan, applyDeferredTopicIdsFromPlan, omitRestoreInsertColumns, prepareRestoreRowsForInsert } =
-      await import('../server/lib/lnbakEngine.js')
-
-    const plan = captureTopicLinkPlan(parsed)
-    purgeTopicIdsFromBackupData(parsed)
+    // Nuclear restore path: drop all FKs, insert with topic_id, scrub, re-add FKs
+    const savedFks = await beginRestoreSession(client)
     const prepared = prepareRestoreRowsForInsert(parsed, 'subject_modules', parsed.data.subject_modules)
-    const insertRows = omitRestoreInsertColumns('subject_modules', prepared)
-    if ('topic_id' in (insertRows[0] || {})) {
-      throw new Error('topic_id must be stripped from subject_modules insert rows')
+    if (!prepared[0]?.topic_id) {
+      throw new Error('nuclear restore should insert topic_id on subject_modules rows')
     }
-
     await client.query(
       `INSERT INTO public.subject_modules (id, subject_id, title, module_order, lesson_number, topic_id)
-       VALUES ($1, $2, $3, 0, 1, NULL) ON CONFLICT (id) DO UPDATE SET topic_id = NULL`,
-      [moduleId, subjectId, 'Verify Lesson'],
+       VALUES ($1, $2, $3, 0, 1, $4) ON CONFLICT (id) DO UPDATE SET topic_id = EXCLUDED.topic_id`,
+      [moduleId, subjectId, 'Verify Lesson', topicId],
     )
-    await applyDeferredTopicIdsFromPlan(client, plan, pool)
+    await scrubAllInvalidTopicIds(client)
+    await endRestoreSession(client, savedFks)
     const { rows } = await client.query(
       `SELECT topic_id::bigint AS topic_id FROM public.subject_modules WHERE id = $1`,
       [moduleId],
     )
     if (Number(rows[0]?.topic_id) !== topicId) {
-      throw new Error(`deferred topic link failed: expected ${topicId}, got ${rows[0]?.topic_id}`)
+      throw new Error(`topic_id not preserved: expected ${topicId}, got ${rows[0]?.topic_id}`)
     }
     await client.query('ROLLBACK')
-    console.log('[verify] FK fixture restore path ok (topic_id linked after insert, transaction rolled back)')
+    console.log('[verify] FK fixture restore path ok (nuclear drop/insert/re-add FK, transaction rolled back)')
   } finally {
     await client.query('ROLLBACK').catch(() => {})
     client.release()

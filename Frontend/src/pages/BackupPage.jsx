@@ -1305,6 +1305,22 @@ export default function BackupPage() {
                 </ul>
               </div>
             ) : null}
+            {restoreResult.restore_validation?.lines?.length > 0 ? (
+              <div
+                className={`mt-4 rounded-lg border px-3 py-3 ${
+                  restoreResult.restore_validation.validation_ok
+                    ? 'border-emerald-200 bg-emerald-50'
+                    : 'border-amber-200 bg-amber-50'
+                }`}
+              >
+                <p className="text-sm font-semibold text-neutral-900">Restore validation</p>
+                <ul className="mt-2 space-y-1 text-sm text-neutral-800">
+                  {restoreResult.restore_validation.lines.map((line) => (
+                    <li key={line}>{line}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
             <div className="mt-4">
               <p className="text-sm font-semibold text-neutral-800">Tables restored</p>
               <ul className="mt-2 max-h-48 space-y-1 overflow-y-auto text-sm text-neutral-700">

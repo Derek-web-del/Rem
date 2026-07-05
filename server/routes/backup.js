@@ -30,6 +30,7 @@ import {
   runRestorePipeline,
   RESTORE_ENGINE_VERSION,
   LNBAK_TABLE_ORDER,
+  resolveBackupTableOrder,
   testRestoreFkBypassCapability,
 } from '../lib/lnbakEngine.js'
 import { getPgPool } from '../pgPool.js'
@@ -159,6 +160,7 @@ export function createBackupRouter(express, auth) {
       if (!(await requireAdmin(req, res))) return
       const pool = getPgPool()
       const fkBypass = await testRestoreFkBypassCapability(pool)
+      const tableOrder = pool ? await resolveBackupTableOrder(pool) : [...LNBAK_TABLE_ORDER]
       let backupsWritable = false
       let backupsFreeBytes = null
       try {
@@ -176,6 +178,10 @@ export function createBackupRouter(express, auth) {
         subject_topics_before_modules:
           LNBAK_TABLE_ORDER.indexOf('subject_topics') <
           LNBAK_TABLE_ORDER.indexOf('subject_modules'),
+        subject_topics_index: tableOrder.indexOf('subject_topics'),
+        subject_modules_index: tableOrder.indexOf('subject_modules'),
+        table_order: tableOrder,
+        table_order_preview: tableOrder.slice(0, 20),
         fk_bypass: fkBypass,
         storage: {
           backups_dir: BACKUPS_DIR,

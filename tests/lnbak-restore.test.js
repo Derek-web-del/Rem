@@ -30,6 +30,10 @@ import {
   resolveBackupTableOrder,
   beginRestoreSession,
   endRestoreSession,
+  captureAllPublicForeignKeys,
+  buildOrderedBackupData,
+  logRestoreTableOrder,
+  validateRestoreIntegrity,
   parsePostgresRestoreError,
   enrichRestoreError,
   RestoreFailedError,
@@ -439,7 +443,7 @@ describe('lnbak table order', () => {
   })
 
   test('RESTORE_ENGINE_VERSION is set', () => {
-    assert.ok(String(RESTORE_ENGINE_VERSION).includes('fk-safe'))
+    assert.ok(String(RESTORE_ENGINE_VERSION).includes('nuclear'))
   })
 
   test('quiz definitions come before quiz_submissions', () => {
@@ -756,11 +760,46 @@ dbDescribe('lnbak export (PostgreSQL)', () => {
       await client.query('BEGIN')
       const dropped = await beginRestoreSession(client)
       assert.ok(Array.isArray(dropped))
+      assert.ok(dropped.length > 0)
       await endRestoreSession(client, dropped)
       await client.query('ROLLBACK')
     } finally {
       client.release()
       await pool.end()
     }
+  })
+
+  test('captureAllPublicForeignKeys includes subject_modules_topic_id_fkey when present', async () => {
+    process.env.BETTER_AUTH_SECRET = BETTER_AUTH_SECRET_FOR_TESTS
+    const pool = new pg.Pool({ connectionString: PG_TEST_URL })
+    const client = await pool.connect()
+    try {
+      const fks = await captureAllPublicForeignKeys(client)
+      assert.ok(Array.isArray(fks))
+      const topicModuleFk = fks.find((f) => f.name === 'subject_modules_topic_id_fkey')
+      if (topicModuleFk) {
+        assert.equal(topicModuleFk.table_name, 'subject_modules')
+        assert.ok(String(topicModuleFk.def).includes('subject_topics'))
+      }
+    } finally {
+      client.release()
+      await pool.end()
+    }
+  })
+})
+
+describe('lnbak ordered export', () => {
+  test('buildOrderedBackupData puts subject_topics before subject_modules', () => {
+    const raw = {
+      subject_modules: [{ id: 1 }],
+      user: [{ id: 2 }],
+      subject_topics: [{ id: 3 }],
+      subjects: [{ id: 4 }],
+    }
+    const order = ['user', 'subjects', 'subject_topics', 'subject_modules']
+    const ordered = buildOrderedBackupData(raw, order)
+    const keys = Object.keys(ordered)
+    assert.ok(keys.indexOf('subject_topics') < keys.indexOf('subject_modules'))
+    assert.deepEqual(keys.slice(0, 4), order)
   })
 })
