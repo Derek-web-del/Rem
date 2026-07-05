@@ -159,6 +159,10 @@ export function createBackupRouter(express, auth) {
     return session
   }
 
+  router.get('/engine-version', (_req, res) => {
+    res.json({ ok: true, restore_engine: RESTORE_ENGINE_VERSION })
+  })
+
   router.get('/restore-diagnostics', async (req, res) => {
     try {
       if (!(await requireAdmin(req, res))) return

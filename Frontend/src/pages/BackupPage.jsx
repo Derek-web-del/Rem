@@ -389,6 +389,8 @@ export default function BackupPage() {
   const [restoreFailure, setRestoreFailure] = useState(null)
   const [isRestoring, setIsRestoring] = useState(false)
   const [restoreStep, setRestoreStep] = useState(0)
+  const [restoreEngineLive, setRestoreEngineLive] = useState(null)
+  const [deployedRestoreEngine, setDeployedRestoreEngine] = useState(null)
   const [showConfirm, setShowConfirm] = useState(false)
   const [restoreConfirmText, setRestoreConfirmText] = useState('')
   const [restoreResult, setRestoreResult] = useState(null)
@@ -401,12 +403,17 @@ export default function BackupPage() {
     setLoading(true)
     setLoadError('')
     try {
-      const [mainRes, schedRes] = await Promise.all([
+      const [mainRes, schedRes, engineRes] = await Promise.all([
         fetch(apiUrl('/api/backup'), { credentials: 'include' }),
         fetch(apiUrl('/api/backup/schedule'), { credentials: 'include' }),
+        fetch(apiUrl('/api/backup/engine-version')).catch(() => null),
       ])
       const main = await readJson(mainRes)
       const sched = await readJson(schedRes)
+      if (engineRes?.ok) {
+        const engine = await engineRes.json().catch(() => ({}))
+        if (engine?.restore_engine) setDeployedRestoreEngine(String(engine.restore_engine))
+      }
       setBackups(Array.isArray(main.backups) ? main.backups : [])
       setStats(main.stats || {})
       setSchedule(sched.schedule || schedule)
@@ -572,12 +579,16 @@ export default function BackupPage() {
     setIsRestoring(true)
     setRestoreStep(0)
     setRestoreFailure(null)
+    setRestoreEngineLive(null)
     try {
       const form = new FormData()
       form.append('file', droppedFile)
       const data = await runStreamRestore(apiUrl('/api/backup/restore-upload?stream=1'), {
         body: form,
-        onStep: (step) => setRestoreStep(step),
+        onStep: (step, event) => {
+          setRestoreStep(step)
+          if (event?.restore_engine) setRestoreEngineLive(String(event.restore_engine))
+        },
       })
       setRestoreStep(5)
       setRestoreResult(data)
@@ -704,13 +715,17 @@ export default function BackupPage() {
     setIsRestoring(true)
     setRestoreStep(0)
     setRestoreFailure(null)
+    setRestoreEngineLive(null)
     try {
       const data = await runStreamRestore(
         apiUrl(`/api/backup/${encodeURIComponent(restoreTarget.id)}/restore?stream=1`),
         {
           method: 'POST',
           body: JSON.stringify({ confirm: 'RESTORE' }),
-          onStep: (step) => setRestoreStep(step),
+          onStep: (step, event) => {
+            setRestoreStep(step)
+            if (event?.restore_engine) setRestoreEngineLive(String(event.restore_engine))
+          },
         },
       )
       setRestoreStep(5)
@@ -753,6 +768,15 @@ export default function BackupPage() {
 
       {loadError ? (
         <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{loadError}</div>
+      ) : null}
+
+      {deployedRestoreEngine ? (
+        <p className="text-xs text-neutral-500">
+          Restore engine on server: <span className="font-mono font-semibold">{deployedRestoreEngine}</span>
+          {deployedRestoreEngine.includes('nuclear-v12') ? null : (
+            <span className="ml-2 font-semibold text-amber-700">— update required (expected nuclear-v12)</span>
+          )}
+        </p>
       ) : null}
 
       <section className="rounded-xl border border-neutral-100 bg-white p-5 shadow-sm">
@@ -1023,6 +1047,11 @@ export default function BackupPage() {
         {isRestoring ? (
           <div className="mt-4 rounded-lg border border-blue-100 bg-blue-50 px-4 py-3">
             <p className="text-sm font-semibold text-blue-900">Restore in progress</p>
+            {restoreEngineLive ? (
+              <p className="mt-1 text-xs text-blue-800">
+                Running restore engine: <span className="font-mono font-semibold">{restoreEngineLive}</span>
+              </p>
+            ) : null}
             <ul className="mt-2 space-y-1 text-sm text-blue-800">
               {RESTORE_STEPS.map((step, idx) => (
                 <li key={step} className={idx <= restoreStep ? 'font-semibold' : 'text-blue-600/70'}>

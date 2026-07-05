@@ -2915,7 +2915,7 @@ export async function runRestorePipeline({
     if (onProgress) onProgress({ step, ...extra })
   }
 
-  emit(0, { message: 'Validating backup file' })
+  emit(0, { message: 'Validating backup file', restore_engine: RESTORE_ENGINE_VERSION })
   validateLnbakParsed(parsed)
 
   let safetyBackup = null
