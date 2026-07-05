@@ -60,7 +60,7 @@ export const UPLOADS_DIR = uploadsRoot()
 export const SUBJECT_ASSETS_DIR = subjectAssetsRoot()
 
 /** Logged at restore start so deploy/runtime can be verified on DigitalOcean. */
-export const RESTORE_ENGINE_VERSION = '2026-07-05-do-v7'
+export const RESTORE_ENGINE_VERSION = '2026-07-05-fk-safe-v8'
 
 /** Tables excluded from pg_tables discovery (meta, ephemeral, legacy mirrors). */
 export const BACKUP_TABLE_EXCLUDE = new Set([
@@ -371,35 +371,82 @@ export async function resolveBackupTableOrder(pool) {
   return order
 }
 
+/** Known topic_id FK constraints — hardcoded fallback when pg_catalog discovery misses them. */
+const KNOWN_TOPIC_FK_RESTORE = [
+  {
+    table_name: 'subject_modules',
+    name: 'subject_modules_topic_id_fkey',
+    def: 'FOREIGN KEY (topic_id) REFERENCES public.subject_topics(id) ON DELETE SET NULL',
+  },
+  {
+    table_name: 'study_materials',
+    name: 'study_materials_topic_id_fkey',
+    def: 'FOREIGN KEY (topic_id) REFERENCES public.subject_topics(id) ON DELETE SET NULL',
+  },
+  {
+    table_name: 'assignments',
+    name: 'assignments_topic_id_fkey',
+    def: 'FOREIGN KEY (topic_id) REFERENCES public.subject_topics(id) ON DELETE SET NULL',
+  },
+  {
+    table_name: 'activities',
+    name: 'activities_topic_id_fkey',
+    def: 'FOREIGN KEY (topic_id) REFERENCES public.subject_topics(id) ON DELETE SET NULL',
+  },
+  {
+    table_name: 'quizzes',
+    name: 'quizzes_topic_id_fkey',
+    def: 'FOREIGN KEY (topic_id) REFERENCES public.subject_topics(id) ON DELETE SET NULL',
+  },
+]
+
+function quoteIdent(name) {
+  return `"${String(name).replace(/"/g, '""')}"`
+}
+
 /**
- * Drop all FK constraints pointing at subject_topics (non-deferrable on DO Postgres).
+ * Drop every FK pointing at subject_topics (dynamic + hardcoded fallback).
  * @returns {Promise<{ name: string, table_name: string, def: string }[]>}
  */
-async function dropSubjectTopicForeignKeys(client) {
-  const { rows } = await client.query(`
-    SELECT c.conname AS name,
-           r.relname AS table_name,
-           pg_get_constraintdef(c.oid) AS def
-    FROM pg_constraint c
-    JOIN pg_class r ON r.oid = c.conrelid
-    JOIN pg_namespace n ON n.oid = r.relnamespace
-    WHERE c.contype = 'f'
-      AND c.confrelid = 'public.subject_topics'::regclass
-      AND n.nspname = 'public'
-    ORDER BY r.relname, c.conname
-  `)
-  for (const row of rows) {
+async function forceDropAllTopicForeignKeys(client) {
+  const saved = new Map()
+
+  try {
+    const { rows } = await client.query(`
+      SELECT c.conname AS name,
+             r.relname AS table_name,
+             pg_get_constraintdef(c.oid) AS def
+      FROM pg_constraint c
+      JOIN pg_class r ON r.oid = c.conrelid
+      JOIN pg_namespace n ON n.oid = r.relnamespace
+      WHERE c.contype = 'f'
+        AND c.confrelid = 'public.subject_topics'::regclass
+        AND n.nspname = 'public'
+      ORDER BY r.relname, c.conname
+    `)
+    for (const row of rows) {
+      saved.set(row.name, row)
+    }
+  } catch (e) {
+    console.warn('[BACKUP] pg_catalog topic FK discovery failed:', e?.message || e)
+  }
+
+  for (const known of KNOWN_TOPIC_FK_RESTORE) {
+    if (!saved.has(known.name)) saved.set(known.name, known)
+  }
+
+  for (const row of saved.values()) {
     const tableSql = `public.${quoteIdent(row.table_name)}`
     await client.query(
       `ALTER TABLE ${tableSql} DROP CONSTRAINT IF EXISTS ${quoteIdent(row.name)}`,
     )
   }
-  if (rows.length) {
-    console.log(
-      `[BACKUP] Dropped ${rows.length} subject_topics FK constraint(s): ${rows.map((r) => r.name).join(', ')}`,
-    )
-  }
-  return rows
+
+  const list = [...saved.values()]
+  console.log(
+    `[BACKUP] Dropped ${list.length} topic FK constraint(s): ${list.map((r) => r.name).join(', ')}`,
+  )
+  return list
 }
 
 /** @param {{ name: string, table_name: string, def: string }[]} saved */
@@ -408,28 +455,62 @@ async function restoreSubjectTopicForeignKeys(client, saved) {
   for (const row of saved) {
     const tableSql = `public.${quoteIdent(row.table_name)}`
     const { rows: exists } = await client.query(
-      `SELECT 1 FROM pg_constraint
-       WHERE conname = $1 AND conrelid = $2::regclass LIMIT 1`,
-      [row.name, tableSql],
+      `SELECT 1 FROM pg_constraint c
+       JOIN pg_class r ON r.oid = c.conrelid
+       JOIN pg_namespace n ON n.oid = r.relnamespace
+       WHERE c.conname = $1 AND r.relname = $2 AND n.nspname = 'public'
+       LIMIT 1`,
+      [row.name, row.table_name],
     )
     if (exists.length) continue
     await client.query(
       `ALTER TABLE ${tableSql} ADD CONSTRAINT ${quoteIdent(row.name)} ${row.def}`,
     )
   }
-  console.log(`[BACKUP] Restored ${saved.length} subject_topics FK constraint(s)`)
+  console.log(`[BACKUP] Restored ${saved.length} topic FK constraint(s)`)
+}
+
+/** Null out topic_id values that do not reference an existing subject_topics row. */
+async function scrubInvalidTopicIds(client) {
+  for (const tableKey of TOPIC_ID_DEFER_TABLES) {
+    const fromSql = DEFERRED_TOPIC_ID_TARGETS[tableKey]
+    if (!fromSql) continue
+    await client.query(`
+      UPDATE ${fromSql} AS child
+      SET topic_id = NULL
+      WHERE child.topic_id IS NOT NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM public.subject_topics AS t WHERE t.id = child.topic_id
+        )
+    `)
+  }
 }
 
 /**
- * Reliable FK bypass for managed Postgres: drop topic FKs before insert, restore after.
- * @returns {Promise<{ name: string, table_name: string, def: string }[]>}
+ * After main restore COMMIT: link topics + scrub orphans + re-add FKs. Never fails restore.
+ * @param {{ name: string, table_name: string, def: string }[]} droppedTopicFks
  */
+async function postRestoreTopicLinksAndForeignKeys(pool, topicLinkPlan, droppedTopicFks) {
+  if (!Array.isArray(droppedTopicFks) || !droppedTopicFks.length) return
+  const client = await pool.connect()
+  try {
+    await applyDeferredTopicIdsFromPlan(client, topicLinkPlan, pool)
+    await scrubInvalidTopicIds(client)
+    await restoreSubjectTopicForeignKeys(client, droppedTopicFks)
+  } catch (e) {
+    console.warn('[BACKUP] Post-restore topic FK setup failed (non-fatal):', e?.message || e)
+  } finally {
+    client.release()
+  }
+}
+
 export async function beginRestoreSession(client) {
-  return await dropSubjectTopicForeignKeys(client)
+  return await forceDropAllTopicForeignKeys(client)
 }
 
 /** @param {{ name: string, table_name: string, def: string }[]} droppedTopicFks */
 export async function endRestoreSession(client, droppedTopicFks) {
+  await scrubInvalidTopicIds(client)
   await restoreSubjectTopicForeignKeys(client, droppedTopicFks)
 }
 
@@ -1960,10 +2041,6 @@ export function validateLnbakParsed(parsed) {
   }
 }
 
-function quoteIdent(name) {
-  return `"${String(name).replace(/"/g, '""')}"`
-}
-
 function unionRowKeys(rows) {
   const keySet = new Set()
   for (const r of rows) {
@@ -1999,7 +2076,12 @@ async function bulkInsert(client, tableKey, rows, pool = null) {
   const maxRowsPerBatch = Math.max(1, Math.floor(60000 / colCount))
 
   for (let offset = 0; offset < rows.length; offset += maxRowsPerBatch) {
-    const batch = rows.slice(offset, offset + maxRowsPerBatch)
+    const batch = rows.slice(offset, offset + maxRowsPerBatch).map((row) => {
+      if (!TOPIC_ID_DEFER_TABLES.has(tableKey) || !row || typeof row !== 'object') return row
+      const copy = { ...row }
+      delete copy.topic_id
+      return copy
+    })
     const placeholders = batch
       .map(
         (_, i) =>
@@ -2051,13 +2133,13 @@ export async function restoreDatabaseFromParsed(parsed) {
   const truncateOrder = [...tableOrder].reverse()
   const topicLinkPlan = captureTopicLinkPlan(parsed)
   purgeTopicIdsFromBackupData(parsed)
-  console.log(`[BACKUP] Captured ${topicLinkPlan.length} topic link(s); topic_id stripped from insert payload`)
+  console.log(`[BACKUP] topic_id removed from insert payload (${topicLinkPlan.length} link(s) saved for post-restore)`)
 
   try {
     await client.query('BEGIN')
     await client.query(`SET LOCAL statement_timeout = '600000'`)
     await client.query(`SET LOCAL lock_timeout = '120000'`)
-    droppedTopicFks = await beginRestoreSession(client)
+    droppedTopicFks = await forceDropAllTopicForeignKeys(client)
 
     for (const key of truncateOrder) {
       ensureDynamicTableRegistry(key)
@@ -2084,18 +2166,18 @@ export async function restoreDatabaseFromParsed(parsed) {
       }
     }
 
-    await applyDeferredTopicIdsFromPlan(client, topicLinkPlan, pool)
     await resetSerialSequences(client, pool, tableOrder)
-    await endRestoreSession(client, droppedTopicFks)
     await client.query('COMMIT')
+    console.log('[BACKUP] Database restore committed (topic FKs re-applied after commit)')
   } catch (e) {
-    await endRestoreSession(client, droppedTopicFks).catch(() => {})
     await client.query('ROLLBACK').catch(() => {})
     if (e instanceof RestoreFailedError) throw e
     throw enrichRestoreError(e, null)
   } finally {
     client.release()
   }
+
+  await postRestoreTopicLinksAndForeignKeys(pool, topicLinkPlan, droppedTopicFks)
 }
 
 async function extractTarGzFromPath(tarGzPath, destDir = UPLOADS_DIR) {
