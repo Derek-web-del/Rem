@@ -1,0 +1,20 @@
+{
+  "stride_spoofing": {
+    "file": "checklist-evidence/c2-stride/stride_spoofing.png"
+  },
+  "stride_tampering": {
+    "file": "checklist-evidence/c2-stride/stride_tampering.png"
+  },
+  "stride_repudiation": {
+    "file": "checklist-evidence/c2-stride/stride_repudiation.png"
+  },
+  "stride_info_disc": {
+    "file": "checklist-evidence/c2-stride/stride_info_disc.png"
+  },
+  "stride_dos": {
+    "file": "checklist-evidence/c2-stride/stride_dos.png"
+  },
+  "stride_eop": {
+    "file": "checklist-evidence/c2-stride/stride_eop.png"
+  }
+}

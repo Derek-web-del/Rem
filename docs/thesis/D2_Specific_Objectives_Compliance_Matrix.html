@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>D.2 Specific Objectives Compliance Matrix — LenLearn Capstone</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Times New Roman',Times,serif;font-size:12pt;color:#000;background:#fff;line-height:1.55;max-width:1200px;margin:0 auto;padding:40px 48px}
+h1{font-size:13pt;font-weight:bold;text-align:center;margin-bottom:8px;line-height:1.5}
+h2{font-size:12pt;font-weight:bold;text-align:center;margin:0 0 24px}
+.meta{font-size:10pt;text-align:center;margin-bottom:20px;color:#333;line-height:1.6}
+.meta strong{font-weight:bold}
+.note{font-size:10pt;margin-bottom:16px;padding:10px 14px;border:1px solid #999;background:#fafafa;line-height:1.5}
+.note-warn{border-color:#c90;background:#fffbeb}
+table.matrix{width:100%;border-collapse:collapse;margin:12px 0 32px;font-size:9pt}
+table.matrix th{background:#e8e8e8;padding:7px 5px;text-align:center;border:1px solid #000;font-weight:bold;vertical-align:middle}
+table.matrix td{padding:7px 5px;border:1px solid #000;vertical-align:top;line-height:1.4}
+td.obj-id{text-align:center;font-weight:bold;white-space:nowrap}
+td.obj-text{font-size:8.5pt;text-align:left}
+td.status{text-align:center;white-space:nowrap}
+.status-done{color:#0a5;font-weight:bold}
+.status-partial{color:#c80;font-weight:bold}
+.evidence-link{font-size:8pt;display:block;margin-top:2px;color:#333}
+.total-row td{background:#f5f5f5;font-weight:bold}
+.pdf-source{font-size:9pt;margin-top:24px;text-align:center;font-style:italic}
+@media print{body{padding:24px;max-width:none}}
+</style>
+</head>
+<body>
+
+<h1>D. Research Objectives Completion and Defense Readiness Compliance</h1>
+<h2>D.2 Specific Objectives Compliance Matrix — LenLearn Capstone</h2>
+
+<p class="meta">
+  <strong>Source of objectives:</strong> Chapter 1 Sec. 1.3 (PDF pp. 14–15) &nbsp;|&nbsp;
+  <strong>Evaluation basis:</strong> FURPS + STRIDE hybrid model (Ch.3 Sec. 3.7–3.8, Ch.4 Sec. 4.2–4.3)<br>
+  <strong>Related checklists:</strong> <a href="D1_General_Objective_Compliance_Checklist.html">D.1 General Objective</a> &nbsp;|&nbsp;
+  <a href="D3_Objective_Based_Defense_Readiness_Checklist.html">D.3 Defense Readiness</a>
+</p>
+
+<p class="note">
+  Each row maps one approved objective to a measurable indicator, implemented output, Chapter 4 evidence, Chapter 5 conclusion reference, appendix proof, and Ch.6 follow-up where scope is intentionally limited rather than fully open.
+</p>
+
+<table class="matrix">
+  <thead>
+    <tr>
+      <th style="width:5%">ID</th>
+      <th style="width:18%">Approved Objective (summary)</th>
+      <th style="width:12%">Measurable Indicator</th>
+      <th style="width:14%">Module / Feature</th>
+      <th style="width:12%">Ch.4 Evidence</th>
+      <th style="width:10%">Ch.5 Conclusion</th>
+      <th style="width:10%">Appendix Proof</th>
+      <th style="width:8%">Status</th>
+      <th style="width:11%">Remarks / Ch.6</th>
+    </tr>
+  </thead>
+  <tbody>
+
+    <tr>
+      <td class="obj-id">GO</td>
+      <td class="obj-text">Develop LenLearn — secure, cybersecurity-driven LMS with browser restrictions, AI plagiarism checker, session monitoring, encryption, and compliance-aligned controls.</td>
+      <td>Deployed system + FURPS WM ≥ Agree + STRIDE 18/18 Passed</td>
+      <td>Admin/Faculty/Student portals; Quiz Session Guard; AI Checker; Audit Logs; encryption stack</td>
+      <td>Sec. 4.1; Table 52; Table 74<span class="evidence-link">→ B.1 / D.1 screenshots</span></td>
+      <td>Sec. 5.1–5.2 synthesis<span class="evidence-link">→ ch5/conclusions_implications.png</span></td>
+      <td>App. D (FRS), F, G, H<span class="evidence-link">→ appendices/*.png</span></td>
+      <td class="status status-done">Completed</td>
+      <td class="obj-text">Sec. 6.1–6.4 cover enhancements. See <a href="D1_General_Objective_Compliance_Checklist.html">D.1</a>.</td>
+    </tr>
+
+    <tr>
+      <td class="obj-id">SO1</td>
+      <td class="obj-text">Develop LMS core functional components: user management, curriculum/subjects, online quiz delivery, centralized storage, AI plagiarism checker, and student activity logging.</td>
+      <td>FURPS Functionality WM 4.44–5.00 (Strongly Agree); module walkthrough completed</td>
+      <td>User Mgmt, Curriculum, Quiz, Gradebook, AI Checker, Audit/Activity Logs</td>
+      <td>Sec. 4.1 Figs. 4.2–4.5; Sec. 4.2.1<span class="evidence-link">→ ch4/functional_suitability_results.png</span></td>
+      <td>Sec. 5.1 core modules summary<span class="evidence-link">→ ch5/summary_key_findings.png</span></td>
+      <td>App. D, F (questionnaire)<span class="evidence-link">→ appendix_f_questionnaire.png</span></td>
+      <td class="status status-done">Completed</td>
+      <td class="obj-text">Sec. 6.1: onboarding materials, paginated admin views.</td>
+    </tr>
+
+    <tr>
+      <td class="obj-id">SO2</td>
+      <td class="obj-text">Integrate OTP MFA, Better Auth/JWT sessions, RBAC, AES-256-GCM PII encryption at rest, SSL/TLS in transit.</td>
+      <td>STRIDE Spoofing/Info Disc/EOP tests Passed; bcrypt + 2FA + RBAC code evidence</td>
+      <td>Better Auth, email OTP 2FA, roleAccess.js, AES-256-GCM, HTTPS/TLS</td>
+      <td>Sec. 4.3.1–4.3.4, 4.3.6<span class="evidence-link">→ ch4/spoofing_results.png, elevation_of_privilege_results.png</span></td>
+      <td>Sec. 5.2 security objectives achieved<span class="evidence-link">→ ch5/security_conclusion.png</span></td>
+      <td>App. G, H<span class="evidence-link">→ appendix_g/h screenshots</span></td>
+      <td class="status status-done">Completed</td>
+      <td class="obj-text">Sec. 6.2: WebAuthn/passkeys, expanded field encryption, idle-session warning.</td>
+    </tr>
+
+    <tr>
+      <td class="obj-id">SO3</td>
+      <td class="obj-text">Implement PWA offline framework: Service Worker, Cache API, IndexedDB quiz progress, Background Sync for low-connectivity continuity.</td>
+      <td>IndexedDB v3 stores + offline quiz auto-save/sync verified in codebase; Ch.1 notes limited offline scope</td>
+      <td>Service Worker, Cache API, indexedDB.js, offlineSync.js, quiz_progress store</td>
+      <td>Sec. 4.1 (limited offline noted); no dedicated SO3 results table<span class="evidence-link">→ c1/offline_*.png</span></td>
+      <td>Sec. 5.1 mentions continuity features indirectly<span class="evidence-link">→ ch5/summary_key_findings.png</span></td>
+      <td>App. D (FRS student quiz scope)<span class="evidence-link">→ c1/frs_scope_reference.png</span></td>
+      <td class="status status-partial">Partial*</td>
+      <td class="obj-text">*Implemented for quiz progress + material cache per Ch.1 Sec. 1.4 limitation — not full PWA for all LMS workflows. Sec. 6.1 + Ch.1 Sec. 1.4 acknowledge scope.</td>
+    </tr>
+
+    <tr>
+      <td class="obj-id">SO4</td>
+      <td class="obj-text">Conduct STRIDE-oriented vulnerability assessment using SQLMap, Burp Suite, and JMeter attack simulations.</td>
+      <td>Table 74: 18/18 STRIDE metrics Passed; Appendix H structured test cases</td>
+      <td>Security test harness; SQL injection guards; rate limiting; RBAC enforcement</td>
+      <td>Sec. 4.3 + Table 74<span class="evidence-link">→ ch4/security_components_stride_summary.png</span></td>
+      <td>Sec. 5.2: all 18 STRIDE cases passed<span class="evidence-link">→ ch5/security_conclusion_stride.png</span></td>
+      <td>App. G, H, J<span class="evidence-link">→ appendix_g/h/j screenshots</span></td>
+      <td class="status status-done">Completed</td>
+      <td class="obj-text">Sec. 6.2 cites 88.0% on 26 structured cases — reconcile with Ch.4 18/18 before defense.</td>
+    </tr>
+
+    <tr>
+      <td class="obj-id">SO5</td>
+      <td class="obj-text">Ensure compliance with RA 10173 (Data Privacy Act): data handling, access control, logging, incident response alignment.</td>
+      <td>Encryption of PII fields, RBAC, audit logs, consent/ethics clearance, deployment retention guidance</td>
+      <td>PII encryption, Audit Logs, Terms &amp; Conditions, consent workflow</td>
+      <td>Sec. 4.1 audit logs (Fig. 4.3); Sec. 4.2 security results<span class="evidence-link">→ ch4/security_results.png</span></td>
+      <td>Sec. 5.2 compliance-oriented controls<span class="evidence-link">→ ch5/objective_alignment.png</span></td>
+      <td>App. I (ethics), D (FRS privacy terms)<span class="evidence-link">→ appendix_i_ethics_clearance.png</span></td>
+      <td class="status status-done">Completed</td>
+      <td class="obj-text">Sec. 6.4: RA 10173 retention schedule, role-specific orientation.</td>
+    </tr>
+
+    <tr>
+      <td class="obj-id">SO6</td>
+      <td class="obj-text">Evaluate system using recognized standards — functionality, usability, reliability, performance, supportability (ISO/FURPS-oriented).</td>
+      <td>Table 52 FURPS WM 4.04–5.00 across 96 respondents; Sec. 4.2 sub-sections per quality area</td>
+      <td>Full LenLearn system evaluated via role-specific questionnaires + controlled walkthroughs</td>
+      <td>Sec. 4.2.1–4.2.5<span class="evidence-link">→ ch4/results_system_quality_evaluation.png, usability_results.png</span></td>
+      <td>Sec. 5.1 FURPS + STRIDE condensed<span class="evidence-link">→ ch5/summary_key_findings.png</span></td>
+      <td>App. F (questionnaire), E (expert validation)<span class="evidence-link">→ appendix_f/e screenshots</span></td>
+      <td class="status status-done">Completed</td>
+      <td class="obj-text">Sec. 6.3: larger faculty/admin sample, longitudinal study recommended.</td>
+    </tr>
+
+    <tr class="total-row">
+      <td class="obj-id">—</td>
+      <td class="obj-text">7 objectives total (1 general + 6 specific)</td>
+      <td>6 Completed + 1 Partial (SO3 scope-limited)</td>
+      <td colspan="4">All objectives listed — none omitted</td>
+      <td class="status status-done">Ready*</td>
+      <td class="obj-text">*Defense-ready with SO3 partial scope documented in Ch.1/Ch.6 and Ch.4/Ch.6.2 rate reconciliation.</td>
+    </tr>
+
+  </tbody>
+</table>
+
+<p class="note note-warn">
+  <strong>SO3 partial completion is intentional, not a gap:</strong> Chapter 1 Sec. 1.4 explicitly limits offline support to selected student workflows (quiz resume + cached materials). The SO3 wording describes a fuller PWA framework; implementation matches the approved scope limitation, with Sec. 6.1 recommendations for expanded offline UX.
+</p>
+
+<p class="pdf-source">
+  Objective text verified from <strong>LenLearn_ Capstone Project.pdf</strong> (Ch.1 pp. 14–15).
+  Matrix evidence cross-referenced from B.1, B.3, B.4, C.1, and appendix checklist captures.
+</p>
+
+</body>
+</html>

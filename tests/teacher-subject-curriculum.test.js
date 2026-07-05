@@ -345,3 +345,13 @@ describe('subjectCurriculumDb item status', () => {
     assert.equal(result.ok, false)
   })
 })
+
+describe('subjectCurriculumDb topic id resolution', () => {
+  it('normalizeTopicIdInput maps uncategorized and empty to null', async () => {
+    const { normalizeTopicIdInput } = await import('../server/lib/subjectCurriculumDb.js')
+    assert.equal(normalizeTopicIdInput('uncategorized'), null)
+    assert.equal(normalizeTopicIdInput(''), null)
+    assert.equal(normalizeTopicIdInput(null), null)
+    assert.equal(normalizeTopicIdInput('42'), '42')
+  })
+})

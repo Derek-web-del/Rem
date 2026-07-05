@@ -1,0 +1,23 @@
+{
+  "pdf_source": "c:\\Users\\User\\Downloads\\LenLearn_ Capstone Project.pdf",
+  "title_page": {
+    "fitz_page": 1,
+    "printed_page": "?",
+    "file": "checklist-evidence/d1/title_page.png"
+  },
+  "general_objective_ch1": {
+    "fitz_page": 25,
+    "printed_page": "14",
+    "file": "checklist-evidence/d1/general_objective_ch1.png"
+  },
+  "scope_limitations_ch1": {
+    "fitz_page": 27,
+    "printed_page": "16",
+    "file": "checklist-evidence/d1/scope_limitations_ch1.png"
+  },
+  "signed_frs_appendix_d": {
+    "fitz_page": 201,
+    "printed_page": "190",
+    "file": "checklist-evidence/d1/signed_frs_appendix_d.png"
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "chapter5_opening": {
+    "fitz_page": 199,
+    "printed_page": "187",
+    "file": "checklist-evidence/ch5/chapter5_opening.png"
+  },
+  "summary_key_findings": {
+    "fitz_page": 199,
+    "printed_page": "187",
+    "file": "checklist-evidence/ch5/summary_key_findings.png"
+  },
+  "conclusions_implications": {
+    "fitz_page": 200,
+    "printed_page": "188",
+    "file": "checklist-evidence/ch5/conclusions_implications.png"
+  },
+  "objective_alignment": {
+    "fitz_page": 201,
+    "printed_page": "189",
+    "file": "checklist-evidence/ch5/objective_alignment.png"
+  },
+  "security_conclusion": {
+    "fitz_page": 200,
+    "printed_page": "188",
+    "file": "checklist-evidence/ch5/security_conclusion.png"
+  },
+  "security_conclusion_stride": {
+    "fitz_page": 201,
+    "printed_page": "189",
+    "file": "checklist-evidence/ch5/security_conclusion_stride.png"
+  }
+}

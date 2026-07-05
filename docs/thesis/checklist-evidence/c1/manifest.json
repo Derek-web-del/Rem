@@ -1,0 +1,50 @@
+{
+  "auth_user_authentication": {
+    "file": "checklist-evidence/c1/auth_user_authentication.png",
+    "generated": true
+  },
+  "auth_password_management": {
+    "file": "checklist-evidence/c1/auth_password_management.png",
+    "generated": true
+  },
+  "auth_rbac": {
+    "file": "checklist-evidence/c1/auth_rbac.png",
+    "generated": true
+  },
+  "offline_quiz_entry": {
+    "file": "checklist-evidence/c1/offline_quiz_entry.png",
+    "generated": true
+  },
+  "offline_storage_sync": {
+    "file": "checklist-evidence/c1/offline_storage_sync.png",
+    "generated": true
+  },
+  "sec_mfa": {
+    "file": "checklist-evidence/c1/sec_mfa.png",
+    "generated": true
+  },
+  "sec_password_hashing": {
+    "file": "checklist-evidence/c1/sec_password_hashing.png",
+    "generated": true
+  },
+  "sec_encryption": {
+    "file": "checklist-evidence/c1/sec_encryption.png",
+    "generated": true
+  },
+  "sec_frontend": {
+    "file": "checklist-evidence/c1/sec_frontend.png",
+    "generated": true
+  },
+  "sec_backend": {
+    "file": "checklist-evidence/c1/sec_backend.png",
+    "generated": true
+  },
+  "sec_database": {
+    "file": "checklist-evidence/c1/sec_database.png",
+    "generated": true
+  },
+  "frs_scope_reference": {
+    "file": "checklist-evidence/c1/frs_scope_reference.png",
+    "generated": true
+  }
+}

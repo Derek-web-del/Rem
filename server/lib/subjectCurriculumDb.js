@@ -347,6 +347,44 @@ export async function fetchSubjectTopicsWithItems(pool, subjectId, { publishedOn
   return grouped
 }
 
+/** Map API/form topic_id to null (uncategorized) or a numeric id string. */
+export function normalizeTopicIdInput(topicRaw) {
+  if (
+    topicRaw === '' ||
+    topicRaw == null ||
+    topicRaw === 'null' ||
+    topicRaw === 'undefined' ||
+    topicRaw === 'uncategorized'
+  ) {
+    return null
+  }
+  return topicRaw
+}
+
+/**
+ * Resolve topic_id for subject_modules FK (subject_topics.id).
+ * @returns {{ ok: true, topicId: number | null } | { ok: false, code: string }}
+ */
+export async function resolveTopicIdForSubject(pool, subjectId, topicRaw) {
+  const normalized = normalizeTopicIdInput(topicRaw)
+  if (normalized === null) {
+    return { ok: true, topicId: null }
+  }
+  const tid = Number(normalized)
+  if (!Number.isFinite(tid) || tid <= 0) {
+    return { ok: false, code: 'INVALID_TOPIC_ID' }
+  }
+  const sid = Number(subjectId)
+  const { rows } = await pool.query(
+    `SELECT id FROM subject_topics WHERE id = $1 AND subject_id = $2 LIMIT 1`,
+    [tid, sid],
+  )
+  if (!rows[0]) {
+    return { ok: false, code: 'TOPIC_NOT_FOUND' }
+  }
+  return { ok: true, topicId: tid }
+}
+
 export async function reorderSubjectTopics(pool, subjectId, topicIds) {
   await ensureSubjectCurriculumSchema(pool)
   const sid = Number(subjectId)
@@ -456,16 +494,10 @@ export async function updateSubjectTopic(pool, subjectId, topicId, { title, topi
 export async function createSubjectLesson(pool, subjectId, topicId, payload = {}) {
   await ensureSubjectCurriculumSchema(pool)
   const sid = Number(subjectId)
-  const rawTopic = topicId == null || topicId === '' ? null : Number(topicId)
-  let tid = null
-  if (rawTopic != null && !Number.isNaN(rawTopic)) {
-    const { rows: top } = await pool.query(
-      `SELECT id FROM subject_topics WHERE id = $1 AND subject_id = $2 LIMIT 1`,
-      [rawTopic, sid],
-    )
-    if (!top[0]) return null
-    tid = rawTopic
-  }
+  const topicSource = topicId ?? payload.topic_id
+  const resolved = await resolveTopicIdForSubject(pool, sid, topicSource)
+  if (!resolved.ok) return null
+  const tid = resolved.topicId
   const numQuery = tid != null
     ? `SELECT COALESCE(MAX(lesson_number), 0)::int AS max_num FROM subject_modules WHERE topic_id = $1`
     : `SELECT COALESCE(MAX(lesson_number), 0)::int AS max_num FROM subject_modules WHERE subject_id = $1 AND topic_id IS NULL`
@@ -523,8 +555,10 @@ export async function updateSubjectLesson(pool, subjectId, lessonId, payload = {
     params.push(Number(payload.module_order))
   }
   if (payload.topic_id !== undefined) {
+    const resolved = await resolveTopicIdForSubject(pool, subjectId, payload.topic_id)
+    if (!resolved.ok) return null
     sets.push(`topic_id = $${n++}`)
-    params.push(payload.topic_id == null ? null : Number(payload.topic_id))
+    params.push(resolved.topicId)
   }
   if (!sets.length) return null
   params.push(Number(lessonId), Number(subjectId))

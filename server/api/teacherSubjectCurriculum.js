@@ -21,7 +21,9 @@ import {
   fetchSubjectTopicsWithItems,
   moveCurriculumItem,
   moveSubjectLesson,
+  normalizeTopicIdInput,
   reorderSubjectTopics,
+  resolveTopicIdForSubject,
   updateCurriculumItemStatus,
   updateModuleSubtopic,
   updateSubjectLesson,
@@ -54,15 +56,10 @@ import {
 import { buildTargetLabel } from '../lib/teacherAuditSnapshots.js'
 
 function parseLessonBody(body = {}) {
-  const topicRaw = body.topic_id
-  const topic_id =
-    topicRaw === '' || topicRaw == null || topicRaw === 'null' || topicRaw === 'undefined'
-      ? null
-      : topicRaw
   return {
     title: String(body.title || '').trim(),
     description: body.description != null ? String(body.description) : '',
-    topic_id,
+    topic_id: normalizeTopicIdInput(body.topic_id),
     link_url:
       body.link_url !== undefined
         ? String(body.link_url || '').trim() || null
@@ -72,6 +69,20 @@ function parseLessonBody(body = {}) {
     clear_file: body.clear_file === 'true' || body.clear_file === true,
     clear_link: body.clear_link === 'true' || body.clear_link === true,
   }
+}
+
+function topicValidationMessage(code) {
+  if (code === 'TOPIC_NOT_FOUND') return 'Topic not found for this subject.'
+  if (code === 'INVALID_TOPIC_ID') return 'Invalid topic id.'
+  return 'Invalid topic for this subject.'
+}
+
+async function resolveLessonTopicId(pool, subjectId, topicRaw) {
+  const resolved = await resolveTopicIdForSubject(pool, subjectId, topicRaw)
+  if (!resolved.ok) {
+    return { error: topicValidationMessage(resolved.code) }
+  }
+  return { topicId: resolved.topicId }
 }
 
 function validateLinkUrl(url) {
@@ -478,7 +489,12 @@ export function createTeacherSubjectCurriculumRouter(express, auth) {
         const saved = saveLessonFile(file.buffer, file.originalname)
         file_path = saved.file_path
       }
-      const lesson = await createSubjectLesson(ctx.pool, ctx.subjectId, fields.topic_id, {
+      const topicResolved = await resolveLessonTopicId(ctx.pool, ctx.subjectId, fields.topic_id)
+      if (topicResolved.error) {
+        res.status(400).json({ error: 'BAD_REQUEST', message: topicResolved.error })
+        return
+      }
+      const lesson = await createSubjectLesson(ctx.pool, ctx.subjectId, topicResolved.topicId, {
         title: fields.title,
         description: fields.description,
         file_path,
@@ -505,7 +521,16 @@ export function createTeacherSubjectCurriculumRouter(express, auth) {
         res.status(400).json({ error: 'BAD_REQUEST', message: 'Lesson title is required.' })
         return
       }
-      const lesson = await createSubjectLesson(ctx.pool, ctx.subjectId, req.params.topicId, {
+      const topicResolved = await resolveLessonTopicId(
+        ctx.pool,
+        ctx.subjectId,
+        req.params.topicId,
+      )
+      if (topicResolved.error) {
+        res.status(400).json({ error: 'BAD_REQUEST', message: topicResolved.error })
+        return
+      }
+      const lesson = await createSubjectLesson(ctx.pool, ctx.subjectId, topicResolved.topicId, {
         title,
         description: req.body?.description,
         file_path: req.body?.file_path,
@@ -554,7 +579,14 @@ export function createTeacherSubjectCurriculumRouter(express, auth) {
       const payload = {}
       if (req.body?.title !== undefined) payload.title = fields.title
       if (req.body?.description !== undefined) payload.description = fields.description
-      if (req.body?.topic_id !== undefined) payload.topic_id = fields.topic_id
+      if (req.body?.topic_id !== undefined) {
+        const topicResolved = await resolveLessonTopicId(ctx.pool, ctx.subjectId, fields.topic_id)
+        if (topicResolved.error) {
+          res.status(400).json({ error: 'BAD_REQUEST', message: topicResolved.error })
+          return
+        }
+        payload.topic_id = topicResolved.topicId
+      }
       if (fields.link_url !== undefined) payload.link_url = fields.link_url
       if (fields.clear_link) payload.link_url = null
       if (fields.lesson_number != null) payload.lesson_number = fields.lesson_number
@@ -815,13 +847,13 @@ export function createTeacherSubjectCurriculumRouter(express, auth) {
           res.status(400).json({ error: 'BAD_REQUEST', message: 'subject_id is required for lesson moves.' })
           return
         }
-        const topicRaw = body.topic_id
-        const topic_id =
-          topicRaw === '' || topicRaw == null || topicRaw === 'null' || topicRaw === 'undefined'
-            ? null
-            : topicRaw
+        const topicResolved = await resolveLessonTopicId(pool, subjectId, body.topic_id)
+        if (topicResolved.error) {
+          res.status(400).json({ error: 'BAD_REQUEST', message: topicResolved.error })
+          return
+        }
         const lesson = await moveSubjectLesson(pool, subjectId, body.item_id, {
-          topic_id,
+          topic_id: topicResolved.topicId,
           module_order: body.module_order,
         })
         if (!lesson) {
@@ -838,7 +870,7 @@ export function createTeacherSubjectCurriculumRouter(express, auth) {
           target_label: buildTargetLabel(lesson?.title, `Subject ${subjectId}`),
           new_values: {
             item_type: 'lesson',
-            topic_id,
+            topic_id: topicResolved.topicId,
             module_order: body.module_order,
           },
           changed_fields: ['topic_id', 'module_order'].filter((f) => body[f] !== undefined),

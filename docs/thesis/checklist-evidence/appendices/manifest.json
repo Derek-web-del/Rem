@@ -1,0 +1,67 @@
+{
+  "appendices_section": {
+    "fitz_page": 217,
+    "printed_page": "205",
+    "file": "checklist-evidence/appendices/appendices_section.png"
+  },
+  "appendix_a_communication_letter": {
+    "fitz_page": 218,
+    "printed_page": "206",
+    "file": "checklist-evidence/appendices/appendix_a_communication_letter.png"
+  },
+  "appendix_b_interview": {
+    "fitz_page": 220,
+    "printed_page": "208",
+    "file": "checklist-evidence/appendices/appendix_b_interview.png"
+  },
+  "appendix_b_interview_transcript": {
+    "fitz_page": 221,
+    "printed_page": "209",
+    "file": "checklist-evidence/appendices/appendix_b_interview_transcript.png"
+  },
+  "appendix_c_panel_comments": {
+    "fitz_page": 223,
+    "printed_page": "211",
+    "file": "checklist-evidence/appendices/appendix_c_panel_comments.png"
+  },
+  "appendix_d_signed_frs": {
+    "fitz_page": 226,
+    "printed_page": "214",
+    "file": "checklist-evidence/appendices/appendix_d_signed_frs.png"
+  },
+  "appendix_e_expert_validation": {
+    "fitz_page": 249,
+    "printed_page": "237",
+    "file": "checklist-evidence/appendices/appendix_e_expert_validation.png"
+  },
+  "appendix_f_questionnaire": {
+    "fitz_page": 256,
+    "printed_page": "244",
+    "file": "checklist-evidence/appendices/appendix_f_questionnaire.png"
+  },
+  "appendix_g_security_testing_eval": {
+    "fitz_page": 262,
+    "printed_page": "250",
+    "file": "checklist-evidence/appendices/appendix_g_security_testing_eval.png"
+  },
+  "appendix_h_security_test_case": {
+    "fitz_page": 267,
+    "printed_page": "255",
+    "file": "checklist-evidence/appendices/appendix_h_security_test_case.png"
+  },
+  "appendix_i_ethics_clearance": {
+    "fitz_page": 273,
+    "printed_page": "261",
+    "file": "checklist-evidence/appendices/appendix_i_ethics_clearance.png"
+  },
+  "appendix_j_video_review_form": {
+    "fitz_page": 274,
+    "printed_page": "262",
+    "file": "checklist-evidence/appendices/appendix_j_video_review_form.png"
+  },
+  "appendix_cv": {
+    "fitz_page": 280,
+    "printed_page": "268",
+    "file": "checklist-evidence/appendices/appendix_cv.png"
+  }
+}

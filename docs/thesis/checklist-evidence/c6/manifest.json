@@ -1,0 +1,23 @@
+{
+  "domain_documented": {
+    "file": "checklist-evidence/c6/domain_documented.png"
+  },
+  "railway_production": {
+    "file": "checklist-evidence/c6/railway_production.png"
+  },
+  "cloudflare_security": {
+    "file": "checklist-evidence/c6/cloudflare_security.png"
+  },
+  "debug_disabled": {
+    "file": "checklist-evidence/c6/debug_disabled.png"
+  },
+  "env_vars_protected": {
+    "file": "checklist-evidence/c6/env_vars_protected.png"
+  },
+  "backup_procedure": {
+    "file": "checklist-evidence/c6/backup_procedure.png"
+  },
+  "production_security": {
+    "file": "checklist-evidence/c6/production_security.png"
+  }
+}

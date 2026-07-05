@@ -1,0 +1,47 @@
+{
+  "pdf_source": "c:\\Users\\User\\Downloads\\LenLearn_ Capstone Project.pdf",
+  "frs_table1_terms_policy": {
+    "fitz_page": 57,
+    "printed_page": "46",
+    "file": "checklist-evidence/c5/frs_table1_terms_policy.png"
+  },
+  "frs_table2_terms_policy": {
+    "fitz_page": 60,
+    "printed_page": "49",
+    "file": "checklist-evidence/c5/frs_table2_terms_policy.png"
+  },
+  "frs_table3_terms_policy": {
+    "fitz_page": 62,
+    "printed_page": "51",
+    "file": "checklist-evidence/c5/frs_table3_terms_policy.png"
+  },
+  "sec14_scope_data_protection": {
+    "fitz_page": 27,
+    "printed_page": "16",
+    "file": "checklist-evidence/c5/sec14_scope_data_protection.png"
+  },
+  "sec18_privacy_definitions": {
+    "fitz_page": 34,
+    "printed_page": "23",
+    "file": "checklist-evidence/c5/sec18_privacy_definitions.png"
+  },
+  "table11_security_feasibility": {
+    "fitz_page": 77,
+    "printed_page": "66",
+    "file": "checklist-evidence/c5/table11_security_feasibility.png"
+  },
+  "ch6_ra10173_retention": {
+    "fitz_page": 185,
+    "printed_page": "174",
+    "file": "checklist-evidence/c5/ch6_ra10173_retention.png"
+  },
+  "appendix_h_it03_sensitive_fields": {
+    "fitz_page": 210,
+    "printed_page": "199",
+    "file": "checklist-evidence/c5/appendix_h_it03_sensitive_fields.png"
+  },
+  "terms_consent_all_roles.png": "checklist-evidence/c5/terms_consent_all_roles.png",
+  "consent_timestamp_storage.png": "checklist-evidence/c5/consent_timestamp_storage.png",
+  "log_sanitization_no_pii.png": "checklist-evidence/c5/log_sanitization_no_pii.png",
+  "data_retention_archive_vault.png": "checklist-evidence/c5/data_retention_archive_vault.png"
+}

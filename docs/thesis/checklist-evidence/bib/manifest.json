@@ -1,0 +1,42 @@
+{
+  "bibliography_opening": {
+    "fitz_page": 208,
+    "printed_page": "196",
+    "file": "checklist-evidence/bib/bibliography_opening.png"
+  },
+  "bibliography_after_ch6": {
+    "fitz_page": 207,
+    "printed_page": "195",
+    "file": "checklist-evidence/bib/bibliography_after_ch6.png"
+  },
+  "bibliography_list_mid": {
+    "fitz_page": 211,
+    "printed_page": "199",
+    "file": "checklist-evidence/bib/bibliography_list_mid.png"
+  },
+  "bibliography_apa_format": {
+    "fitz_page": 208,
+    "printed_page": "196",
+    "file": "checklist-evidence/bib/bibliography_apa_format.png"
+  },
+  "bibliography_sources_credible": {
+    "fitz_page": 212,
+    "printed_page": "200",
+    "file": "checklist-evidence/bib/bibliography_sources_credible.png"
+  },
+  "intext_citation_ch1": {
+    "fitz_page": 51,
+    "printed_page": "39",
+    "file": "checklist-evidence/bib/intext_citation_ch1.png"
+  },
+  "intext_citation_ch4": {
+    "fitz_page": 150,
+    "printed_page": "138",
+    "file": "checklist-evidence/bib/intext_citation_ch4.png"
+  },
+  "_meta": {
+    "entry_count": 78,
+    "year_range": "2022\u20132026",
+    "bib_pages": "196\u2013204"
+  }
+}

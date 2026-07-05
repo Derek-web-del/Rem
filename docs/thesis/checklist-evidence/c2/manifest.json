@@ -1,0 +1,11 @@
+{
+  "s1_password_auth": {
+    "file": "checklist-evidence/c2/s1_password_auth.png"
+  },
+  "s2_input_validation": {
+    "file": "checklist-evidence/c2/s2_input_validation.png"
+  },
+  "s3_api_session": {
+    "file": "checklist-evidence/c2/s3_api_session.png"
+  }
+}

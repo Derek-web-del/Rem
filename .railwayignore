@@ -1,6 +1,0 @@
-public/uploads/**
-.cursor/**
-docs/live-api-flows-results.json
-*.log
-.env
-.env.*

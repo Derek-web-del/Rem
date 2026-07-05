@@ -1,0 +1,47 @@
+{
+  "chapter6_opening": {
+    "fitz_page": 203,
+    "printed_page": "191",
+    "file": "checklist-evidence/ch6/chapter6_opening.png"
+  },
+  "system_enhancements": {
+    "fitz_page": 203,
+    "printed_page": "191",
+    "file": "checklist-evidence/ch6/system_enhancements.png"
+  },
+  "system_enhancements_cont": {
+    "fitz_page": 204,
+    "printed_page": "192",
+    "file": "checklist-evidence/ch6/system_enhancements_cont.png"
+  },
+  "security_improvements": {
+    "fitz_page": 204,
+    "printed_page": "192",
+    "file": "checklist-evidence/ch6/security_improvements.png"
+  },
+  "security_improvements_cont": {
+    "fitz_page": 205,
+    "printed_page": "193",
+    "file": "checklist-evidence/ch6/security_improvements_cont.png"
+  },
+  "future_research": {
+    "fitz_page": 205,
+    "printed_page": "193",
+    "file": "checklist-evidence/ch6/future_research.png"
+  },
+  "future_research_cont": {
+    "fitz_page": 206,
+    "printed_page": "194",
+    "file": "checklist-evidence/ch6/future_research_cont.png"
+  },
+  "deployment_advice": {
+    "fitz_page": 206,
+    "printed_page": "194",
+    "file": "checklist-evidence/ch6/deployment_advice.png"
+  },
+  "deployment_advice_cont": {
+    "fitz_page": 207,
+    "printed_page": "195",
+    "file": "checklist-evidence/ch6/deployment_advice_cont.png"
+  }
+}
