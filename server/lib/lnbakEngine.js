@@ -53,7 +53,7 @@ export const UPLOADS_DIR = uploadsRoot()
 export const SUBJECT_ASSETS_DIR = subjectAssetsRoot()
 
 /** Logged at restore start so deploy/runtime can be verified on DigitalOcean. */
-export const RESTORE_ENGINE_VERSION = '2026-07-05-defer-v3'
+export const RESTORE_ENGINE_VERSION = '2026-07-05-defer-v4'
 
 /** Tables excluded from pg_tables discovery (meta, ephemeral, legacy mirrors). */
 export const BACKUP_TABLE_EXCLUDE = new Set([
@@ -829,70 +829,121 @@ export function omitRestoreInsertColumns(tableKey, rows) {
   })
 }
 
-const DEFERRED_TOPIC_ID_TARGETS = [
-  { tableKey: 'subject_modules', fromSql: 'public.subject_modules' },
-  { tableKey: 'study_materials', fromSql: 'public.study_materials' },
-  { tableKey: 'assignments', fromSql: 'public.assignments' },
-  { tableKey: 'activities', fromSql: 'public.activities' },
-  { tableKey: 'quizzes', fromSql: 'public.quizzes' },
-]
-
-/** Apply topic_id on all curriculum item tables after subject_topics are inserted (FK-safe). */
-export async function applyDeferredTopicIds(client, parsed, pool = null) {
-  const pg = pool || getPgPool()
-  const topicIds = getEffectiveParentIds(parsed, 'subject_topics')
-  let updated = 0
-  let cleared = 0
-
-  for (const { tableKey, fromSql } of DEFERRED_TOPIC_ID_TARGETS) {
-    if (!(await tableExists(pg, tableKey))) continue
-    const raw = parsed?.data?.[tableKey]
-    if (!Array.isArray(raw) || raw.length === 0) continue
-
-    const prepared = prepareRestoreRowsForInsert(parsed, tableKey, raw)
-    for (const row of prepared) {
+/** Snapshot topic links from backup JSON before topic_id columns are stripped for insert. */
+export function captureTopicLinkPlan(parsed) {
+  const plan = []
+  for (const tableKey of TOPIC_ID_DEFER_TABLES) {
+    const rows = parsed?.data?.[tableKey]
+    if (!Array.isArray(rows)) continue
+    for (const row of rows) {
+      if (!row || typeof row !== 'object') continue
       const rowId = row.id
+      const topicId = row.topic_id
       if (rowId == null || rowId === '') continue
-      const tid = row.topic_id
-      if (tid == null || tid === '' || !idInNumericSet(topicIds, tid)) {
-        await client.query(`UPDATE ${fromSql} SET topic_id = NULL WHERE id = $1::bigint`, [rowId])
-        cleared += 1
+      if (
+        topicId == null ||
+        topicId === '' ||
+        topicId === 'uncategorized' ||
+        topicId === 'null' ||
+        topicId === 'undefined'
+      ) {
         continue
       }
-      try {
-        const { rowCount } = await client.query(
-          `UPDATE ${fromSql} AS target SET topic_id = src.id
-           FROM public.subject_topics AS src
-           WHERE target.id = $1::bigint AND src.id = $2::bigint`,
-          [rowId, tid],
-        )
-        if (Number(rowCount || 0) > 0) {
-          updated += 1
-        } else {
-          await client.query(`UPDATE ${fromSql} SET topic_id = NULL WHERE id = $1::bigint`, [rowId])
-          cleared += 1
-        }
-      } catch (e) {
-        if (String(e?.code || '') === '23503') {
-          await client.query(`UPDATE ${fromSql} SET topic_id = NULL WHERE id = $1::bigint`, [rowId])
-          cleared += 1
-          console.warn(
-            `[BACKUP] Cleared topic_id on ${tableKey} id=${rowId} after FK error: ${e?.message || e}`,
-          )
-          continue
-        }
-        throw e
+      plan.push({ tableKey, rowId, topicId })
+    }
+  }
+  return plan
+}
+
+/** Remove topic_id from backup rows so INSERT can never violate subject_topics FK. */
+export function purgeTopicIdsFromBackupData(parsed) {
+  for (const tableKey of TOPIC_ID_DEFER_TABLES) {
+    const rows = parsed?.data?.[tableKey]
+    if (!Array.isArray(rows)) continue
+    for (const row of rows) {
+      if (row && typeof row === 'object' && 'topic_id' in row) {
+        delete row.topic_id
       }
+    }
+  }
+}
+
+const DEFERRED_TOPIC_ID_TARGETS = {
+  subject_modules: 'public.subject_modules',
+  study_materials: 'public.study_materials',
+  assignments: 'public.assignments',
+  activities: 'public.activities',
+  quizzes: 'public.quizzes',
+}
+
+/**
+ * Best-effort topic linking after all rows are inserted. Never throws — restore must not fail here.
+ * @param {{ tableKey: string, rowId: unknown, topicId: unknown }[]} linkPlan
+ */
+export async function applyDeferredTopicIdsFromPlan(client, linkPlan, pool = null) {
+  const pg = pool || getPgPool()
+  let updated = 0
+  let skipped = 0
+
+  if (!Array.isArray(linkPlan) || linkPlan.length === 0) {
+    return { updated: 0, cleared: 0, skipped: 0 }
+  }
+
+  for (const link of linkPlan) {
+    const fromSql = DEFERRED_TOPIC_ID_TARGETS[link.tableKey]
+    if (!fromSql || !(await tableExists(pg, link.tableKey))) {
+      skipped += 1
+      continue
+    }
+    const rowId = link.rowId
+    const topicId = link.topicId
+    if (rowId == null || rowId === '' || topicId == null || topicId === '') {
+      skipped += 1
+      continue
+    }
+    try {
+      const { rows: topicRows } = await client.query(
+        `SELECT 1 FROM public.subject_topics WHERE id = $1::bigint LIMIT 1`,
+        [topicId],
+      )
+      if (!topicRows.length) {
+        skipped += 1
+        continue
+      }
+      const { rowCount } = await client.query(
+        `UPDATE ${fromSql} AS target SET topic_id = src.id
+         FROM public.subject_topics AS src
+         WHERE target.id = $1::bigint AND src.id = $2::bigint`,
+        [rowId, topicId],
+      )
+      if (Number(rowCount || 0) > 0) updated += 1
+      else skipped += 1
+    } catch (e) {
+      skipped += 1
+      console.warn(
+        `[BACKUP] Skipped topic link ${link.tableKey} id=${rowId} → topic ${topicId}: ${e?.message || e}`,
+      )
     }
   }
 
   if (updated > 0) {
-    console.log(`[BACKUP] Applied deferred topic_id on ${updated} row(s) after parent topics insert`)
+    console.log(`[BACKUP] Linked topic_id on ${updated} row(s) after insert (best-effort)`)
   }
-  if (cleared > 0) {
-    console.warn(`[BACKUP] Cleared deferred topic_id on ${cleared} row(s)`)
+  if (skipped > 0) {
+    console.warn(`[BACKUP] Skipped ${skipped} topic link(s) — rows remain uncategorized`)
   }
-  return { updated, cleared }
+  return { updated, cleared: 0, skipped }
+}
+
+/** Apply topic_id on curriculum tables after subject_topics exist. Never fails restore. */
+export async function applyDeferredTopicIds(client, parsed, pool = null) {
+  try {
+    const plan = captureTopicLinkPlan(parsed)
+    return await applyDeferredTopicIdsFromPlan(client, plan, pool)
+  } catch (e) {
+    console.error('[BACKUP] Deferred topic_id linking failed (non-fatal):', e?.message || e)
+    return { updated: 0, cleared: 0, skipped: 0 }
+  }
 }
 
 /** @deprecated Use applyDeferredTopicIds */
@@ -1867,6 +1918,9 @@ async function bulkInsert(client, tableKey, rows, pool = null) {
 
   const omitCols = new Set(RESTORE_DEFER_INSERT_COLUMNS[tableKey] || [])
   let cols = unionRowKeys(rows).filter((c) => !omitCols.has(c))
+  if (TOPIC_ID_DEFER_TABLES.has(tableKey)) {
+    cols = cols.filter((c) => c !== 'topic_id')
+  }
   if (tableKey === 'faculties' && pool) {
     const colSet = await getFacultiesColumnSet(pool)
     cols = filterFacultyRowKeys(cols, colSet)
@@ -1931,6 +1985,9 @@ export async function restoreDatabaseFromParsed(parsed) {
   console.log(`[BACKUP] restore_engine=${RESTORE_ENGINE_VERSION}`)
   const tableOrder = await resolveBackupTableOrder(pool)
   const truncateOrder = [...tableOrder].reverse()
+  const topicLinkPlan = captureTopicLinkPlan(parsed)
+  purgeTopicIdsFromBackupData(parsed)
+  console.log(`[BACKUP] Captured ${topicLinkPlan.length} topic link(s); topic_id stripped from insert payload`)
 
   try {
     await client.query('BEGIN')
@@ -1961,7 +2018,7 @@ export async function restoreDatabaseFromParsed(parsed) {
       }
     }
 
-    await applyDeferredTopicIds(client, parsed, pool)
+    await applyDeferredTopicIdsFromPlan(client, topicLinkPlan, pool)
     await resetSerialSequences(client, pool, tableOrder)
     await client.query('COMMIT')
     await endRestoreSession(client, fkBypassMode)

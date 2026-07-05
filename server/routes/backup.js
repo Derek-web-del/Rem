@@ -28,6 +28,9 @@ import {
   writeLnbakArchiveToPath,
   readLnbakFromPath,
   runRestorePipeline,
+  RESTORE_ENGINE_VERSION,
+  LNBAK_TABLE_ORDER,
+  testRestoreFkBypassCapability,
 } from '../lib/lnbakEngine.js'
 import { getPgPool } from '../pgPool.js'
 
@@ -124,6 +127,23 @@ export function createBackupRouter(express, auth) {
     }
     return session
   }
+
+  router.get('/restore-diagnostics', async (req, res) => {
+    try {
+      if (!(await requireAdmin(req, res))) return
+      const fkBypass = await testRestoreFkBypassCapability(getPgPool())
+      res.json({
+        ok: true,
+        restore_engine: RESTORE_ENGINE_VERSION,
+        subject_topics_before_modules:
+          LNBAK_TABLE_ORDER.indexOf('subject_topics') <
+          LNBAK_TABLE_ORDER.indexOf('subject_modules'),
+        fk_bypass: fkBypass,
+      })
+    } catch (e) {
+      sendSafeServerError(res, e, 'GET /api/backup/restore-diagnostics')
+    }
+  })
 
   router.get('/schedule', async (req, res) => {
     try {

@@ -17,8 +17,10 @@ import {
   sanitizeChildFkRows,
   sanitizeOptionalTopicIdRows,
   omitRestoreInsertColumns,
+  captureTopicLinkPlan,
+  purgeTopicIdsFromBackupData,
+  applyDeferredTopicIdsFromPlan,
   applyDeferredTopicIds,
-  applyDeferredSubjectModuleTopicIds,
   prepareRestoreRowsForInsert,
   buildNumericIdSetFromRows,
   idInNumericSet,
@@ -248,6 +250,24 @@ describe('lnbak FK sanitization on restore', () => {
     const out = prepareRestoreRowsForInsert(parsed, 'subject_topics', parsed.data.subject_topics)
     assert.equal(out.length, 1)
     assert.equal(out[0].id, 10)
+  })
+
+  test('captureTopicLinkPlan and purgeTopicIdsFromBackupData strip topic_id for insert', () => {
+    const parsed = {
+      data: {
+        subject_modules: [{ id: 100, subject_id: 1, title: 'L1', topic_id: 10 }],
+        study_materials: [{ id: 5, topic_id: 10 }],
+      },
+    }
+    const plan = captureTopicLinkPlan(parsed)
+    assert.equal(plan.length, 2)
+    assert.equal(plan[0].tableKey, 'subject_modules')
+    assert.equal(plan[0].topicId, 10)
+    purgeTopicIdsFromBackupData(parsed)
+    assert.equal(parsed.data.subject_modules[0].topic_id, undefined)
+    assert.equal(parsed.data.study_materials[0].topic_id, undefined)
+    const insertRows = omitRestoreInsertColumns('subject_modules', parsed.data.subject_modules)
+    assert.equal('topic_id' in insertRows[0], false)
   })
 })
 
@@ -671,7 +691,8 @@ dbDescribe('lnbak export (PostgreSQL)', () => {
         },
       }
 
-      const { updated } = await applyDeferredTopicIds(client, parsed, pool)
+      const plan = captureTopicLinkPlan(parsed)
+      const { updated } = await applyDeferredTopicIdsFromPlan(client, plan, pool)
       assert.equal(updated, 1)
 
       const { rows } = await client.query(
