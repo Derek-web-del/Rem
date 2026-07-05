@@ -537,6 +537,17 @@ export function prepareRestoreRowsForInsert(parsed, tableKey, rawRows) {
     return out
   }
 
+  if (tableKey === 'subject_topics') {
+    const subjectIds = getEffectiveParentIds(parsed, 'subjects')
+    const { rows, skipped } = sanitizeChildFkRows(rawRows, subjectIds, { parentColumn: 'subject_id' })
+    if (skipped > 0) {
+      console.warn(
+        `[BACKUP] Skipped ${skipped} subject_topics row(s) with invalid subject_id`,
+      )
+    }
+    return rows
+  }
+
   if (TOPIC_ID_NULL_ON_RESTORE.has(tableKey)) {
     const topicIds = getEffectiveParentIds(parsed, 'subject_topics')
     const { rows, nulled } = sanitizeOptionalTopicIdRows(rawRows, topicIds)
@@ -568,6 +579,63 @@ export function prepareRestoreRowsForInsert(parsed, tableKey, rawRows) {
   }
 
   return rawRows.map((r) => ({ ...r }))
+}
+
+/** Columns omitted on INSERT and applied in a second pass after parent rows exist. */
+const RESTORE_DEFER_INSERT_COLUMNS = {
+  subject_modules: ['topic_id'],
+}
+
+export function omitRestoreInsertColumns(tableKey, rows) {
+  const omit = RESTORE_DEFER_INSERT_COLUMNS[tableKey]
+  if (!omit?.length || !Array.isArray(rows)) return rows
+  const omitSet = new Set(omit)
+  return rows.map((row) => {
+    const copy = { ...row }
+    for (const col of omitSet) delete copy[col]
+    return copy
+  })
+}
+
+/** Apply subject_modules.topic_id after subject_topics rows are inserted (FK-safe). */
+export async function applyDeferredSubjectModuleTopicIds(client, parsed, pool = null) {
+  const pg = pool || getPgPool()
+  if (!(await tableExists(pg, 'subject_modules'))) return { updated: 0, cleared: 0 }
+  const raw = parsed?.data?.subject_modules
+  if (!Array.isArray(raw) || raw.length === 0) return { updated: 0, cleared: 0 }
+
+  const prepared = prepareRestoreRowsForInsert(parsed, 'subject_modules', raw)
+  const topicIds = getEffectiveParentIds(parsed, 'subject_topics')
+  let updated = 0
+  let cleared = 0
+
+  for (const row of prepared) {
+    const moduleId = row.id
+    if (moduleId == null || moduleId === '') continue
+    const tid = row.topic_id
+    if (tid == null || tid === '' || !idInNumericSet(topicIds, tid)) {
+      await client.query(`UPDATE public.subject_modules SET topic_id = NULL WHERE id = $1::bigint`, [
+        moduleId,
+      ])
+      cleared += 1
+      continue
+    }
+    await client.query(
+      `UPDATE public.subject_modules SET topic_id = $1::bigint
+       WHERE id = $2::bigint
+         AND EXISTS (SELECT 1 FROM public.subject_topics t WHERE t.id = $1::bigint)`,
+      [tid, moduleId],
+    )
+    updated += 1
+  }
+
+  if (updated > 0) {
+    console.log(`[BACKUP] Applied topic_id on ${updated} subject_modules row(s) after parent topics insert`)
+  }
+  if (cleared > 0) {
+    console.warn(`[BACKUP] Cleared topic_id on ${cleared} subject_modules row(s) during deferred apply`)
+  }
+  return { updated, cleared }
 }
 
 function warnOrphanFacultyRefsInParsed(parsed) {
@@ -1604,8 +1672,10 @@ export async function restoreDatabaseFromParsed(parsed) {
       }
       const prepared = prepareRestoreRowsForInsert(parsed, key, rows)
       if (!prepared.length) continue
-      await bulkInsert(client, key, prepared, pool)
+      await bulkInsert(client, key, omitRestoreInsertColumns(key, prepared), pool)
     }
+
+    await applyDeferredSubjectModuleTopicIds(client, parsed, pool)
 
     await resetSerialSequences(client, pool)
     await client.query('COMMIT')

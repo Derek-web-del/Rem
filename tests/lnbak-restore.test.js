@@ -14,6 +14,8 @@ import {
   sanitizeFacultySectionRows,
   sanitizeChildFkRows,
   sanitizeOptionalTopicIdRows,
+  omitRestoreInsertColumns,
+  applyDeferredSubjectModuleTopicIds,
   prepareRestoreRowsForInsert,
   buildNumericIdSetFromRows,
   idInNumericSet,
@@ -205,6 +207,29 @@ describe('lnbak FK sanitization on restore', () => {
     assert.equal(out.length, 2)
     assert.equal(out[0].topic_id, 10)
     assert.equal(out[1].topic_id, null)
+  })
+
+  test('omitRestoreInsertColumns strips deferred subject_modules topic_id', () => {
+    const rows = [{ id: 1, title: 'L1', topic_id: 10, subject_id: 5 }]
+    const out = omitRestoreInsertColumns('subject_modules', rows)
+    assert.equal(out[0].topic_id, undefined)
+    assert.equal(out[0].title, 'L1')
+    assert.equal(omitRestoreInsertColumns('subjects', rows), rows)
+  })
+
+  test('prepareRestoreRowsForInsert skips subject_topics with invalid subject_id', () => {
+    const parsed = {
+      data: {
+        subjects: [{ id: 1 }],
+        subject_topics: [
+          { id: 10, subject_id: 1, title: 'Ok' },
+          { id: 11, subject_id: 99, title: 'Bad' },
+        ],
+      },
+    }
+    const out = prepareRestoreRowsForInsert(parsed, 'subject_topics', parsed.data.subject_topics)
+    assert.equal(out.length, 1)
+    assert.equal(out[0].id, 10)
   })
 })
 
@@ -518,6 +543,65 @@ dbDescribe('lnbak export (PostgreSQL)', () => {
         if (sid) assert.ok(snapIds.has(sid), `app_state missing curriculum ${sid}`)
       }
     } finally {
+      await pool.end()
+    }
+  })
+
+  test('applyDeferredSubjectModuleTopicIds sets topic_id after modules insert', async () => {
+    process.env.BETTER_AUTH_SECRET = BETTER_AUTH_SECRET_FOR_TESTS
+    const pool = new pg.Pool({ connectionString: PG_TEST_URL })
+    const client = await pool.connect()
+    const subjectId = 999901
+    const topicId = 999910
+    const moduleId = 999920
+    try {
+      const { rows: subjTable } = await pool.query(
+        `SELECT 1 FROM information_schema.tables
+         WHERE table_schema = 'public' AND table_name = 'subjects' LIMIT 1`,
+      )
+      if (!subjTable.length) return
+
+      await client.query('BEGIN')
+      await client.query(
+        `INSERT INTO public.subjects (id, subject_code, subject_name, grade_level, semester)
+         VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (id) DO NOTHING`,
+        [subjectId, 'LNBAK-TST', 'Restore Test', '10', '1'],
+      )
+      await client.query(
+        `INSERT INTO public.subject_topics (id, subject_id, title, topic_order)
+         VALUES ($1, $2, $3, 0)
+         ON CONFLICT (id) DO NOTHING`,
+        [topicId, subjectId, 'Topic A'],
+      )
+      await client.query(
+        `INSERT INTO public.subject_modules (id, subject_id, title, module_order, topic_id)
+         VALUES ($1, $2, $3, 0, NULL)
+         ON CONFLICT (id) DO UPDATE SET topic_id = NULL`,
+        [moduleId, subjectId, 'Lesson A'],
+      )
+
+      const parsed = {
+        data: {
+          subjects: [{ id: subjectId }],
+          subject_topics: [{ id: topicId, subject_id: subjectId, title: 'Topic A' }],
+          subject_modules: [
+            { id: moduleId, subject_id: subjectId, title: 'Lesson A', topic_id: topicId },
+          ],
+        },
+      }
+
+      const { updated } = await applyDeferredSubjectModuleTopicIds(client, parsed, pool)
+      assert.equal(updated, 1)
+
+      const { rows } = await client.query(
+        `SELECT topic_id::int AS topic_id FROM public.subject_modules WHERE id = $1`,
+        [moduleId],
+      )
+      assert.equal(rows[0]?.topic_id, topicId)
+    } finally {
+      await client.query('ROLLBACK').catch(() => {})
+      client.release()
       await pool.end()
     }
   })
