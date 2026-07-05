@@ -53,7 +53,7 @@ export const UPLOADS_DIR = uploadsRoot()
 export const SUBJECT_ASSETS_DIR = subjectAssetsRoot()
 
 /** Logged at restore start so deploy/runtime can be verified on DigitalOcean. */
-export const RESTORE_ENGINE_VERSION = '2026-07-05-defer-v4'
+export const RESTORE_ENGINE_VERSION = '2026-07-05-defer-v5'
 
 /** Tables excluded from pg_tables discovery (meta, ephemeral, legacy mirrors). */
 export const BACKUP_TABLE_EXCLUDE = new Set([
@@ -70,44 +70,62 @@ export const BACKUP_TABLE_EXCLUDE = new Set([
   'twoFactor',
 ])
 
-/** Curated dependency order — merged with live pg_tables on export/restore. */
+/**
+ * Curated dependency order — parent tables before children.
+ * Merged with live pg_tables on export/restore; unknown tables append at end.
+ *
+ * Round 1: auth + logs
+ * Round 2: institute roster
+ * Round 3: curriculum (subject_topics BEFORE subject_modules)
+ * Round 4: classwork definitions
+ * Round 5: submissions + grades
+ */
 export const LNBAK_TABLE_ORDER = [
+  // Round 1 — standalone / low FK deps
   'user',
   'account',
-  'google_oauth_tokens',
+  'audit_logs',
+  'lms_activity_logs',
+
+  // Round 2 — depend on Round 1
+  'faculties',
+  'students',
+  'sections',
+  'subjects',
   'curriculum',
   'curriculum_guides',
-  'sections',
-  'faculties',
-  'faculty_study_materials',
-  'faculty_sections',
-  'subjects',
-  'subject_grade_criteria',
-  'subject_grade_components',
+  'announcements',
+
+  // Round 3 — depend on Round 2 (subject_topics MUST precede subject_modules)
   'subject_topics',
   'subject_modules',
   'subject_module_subtopics',
-  'students',
-  'subject_student_final_grades',
-  'announcements',
+  'faculty_sections',
+  'faculty_study_materials',
   'study_materials',
   'subject_materials',
+  'subject_grade_criteria',
+  'subject_grade_components',
+
+  // Round 4 — depend on Round 3
   'assignments',
   'activities',
-  'assignment_submissions',
-  'activity_submissions',
-  'score_overwrite_requests',
   'quizzes',
   'quiz_password_access',
   'quiz_parts',
   'quiz_questions',
   'quiz_choices',
-  'quiz_answers',
+
+  // Round 5 — depend on Round 4
+  'assignment_submissions',
+  'activity_submissions',
   'quiz_submissions',
   'quiz_student_answers',
+  'quiz_answers',
+  'subject_student_final_grades',
   'plagiarism_reports',
-  'audit_logs',
-  'lms_activity_logs',
+  'score_overwrite_requests',
+  'google_oauth_tokens',
 ]
 
 /** Skip child restore when backup has no parent rows (older .lnbak files). */
@@ -317,7 +335,7 @@ export async function discoverBackupTables(pool) {
   return rows.map((r) => String(r.tablename)).filter((t) => !BACKUP_TABLE_EXCLUDE.has(t))
 }
 
-/** Curated dependency order + any newly discovered tables appended at the end. */
+/** Curated dependency order + dynamically discovered tables sorted into rounds. */
 export async function resolveBackupTableOrder(pool) {
   let discovered = []
   try {
@@ -326,10 +344,18 @@ export async function resolveBackupTableOrder(pool) {
     console.warn('[BACKUP] pg_tables discovery failed; using curated order only:', e?.message || e)
     return [...LNBAK_TABLE_ORDER]
   }
-  const order = [...LNBAK_TABLE_ORDER]
-  const seen = new Set(order)
-  for (const tableKey of discovered) {
-    if (seen.has(tableKey)) continue
+  const discoveredSet = new Set(discovered)
+  const order = []
+  const seen = new Set()
+
+  for (const tableKey of LNBAK_TABLE_ORDER) {
+    if (!discoveredSet.has(tableKey)) continue
+    order.push(tableKey)
+    seen.add(tableKey)
+  }
+
+  const unknown = discovered.filter((t) => !seen.has(t)).sort()
+  for (const tableKey of unknown) {
     ensureDynamicTableRegistry(tableKey)
     order.push(tableKey)
     seen.add(tableKey)
@@ -338,35 +364,55 @@ export async function resolveBackupTableOrder(pool) {
   return order
 }
 
-/** @returns {'replica' | 'deferred' | 'none'} */
+const SUBJECT_MODULES_TOPIC_FK = 'subject_modules_topic_id_fkey'
+
+async function dropSubjectModulesTopicFk(client) {
+  await client.query(`
+    ALTER TABLE public.subject_modules
+    DROP CONSTRAINT IF EXISTS ${SUBJECT_MODULES_TOPIC_FK}
+  `)
+}
+
+async function restoreSubjectModulesTopicFk(client) {
+  const { rows } = await client.query(
+    `SELECT 1 FROM pg_constraint
+     WHERE conname = $1 AND conrelid = 'public.subject_modules'::regclass
+     LIMIT 1`,
+    [SUBJECT_MODULES_TOPIC_FK],
+  )
+  if (rows.length) return
+  await client.query(`
+    ALTER TABLE public.subject_modules
+    ADD CONSTRAINT ${SUBJECT_MODULES_TOPIC_FK}
+    FOREIGN KEY (topic_id) REFERENCES public.subject_topics(id) ON DELETE SET NULL
+  `)
+}
+
+/** @returns {'deferred' | 'drop_topic_fk' | 'none'} */
 export async function beginRestoreSession(client) {
   try {
-    await client.query(`SET session_replication_role = 'replica'`)
-    console.log('[BACKUP] Restore FK bypass: session_replication_role=replica')
-    return 'replica'
+    await client.query('SET CONSTRAINTS ALL DEFERRED')
+    console.log('[BACKUP] Restore FK bypass: SET CONSTRAINTS ALL DEFERRED')
+    return 'deferred'
   } catch (e) {
-    const code = String(e?.code || '')
-    const msg = String(e?.message || e)
-    if (code === '42501' || /permission denied|superuser|replication/i.test(msg)) {
-      try {
-        await client.query('SET CONSTRAINTS ALL DEFERRED')
-        console.warn('[BACKUP] Restore FK bypass fallback: SET CONSTRAINTS ALL DEFERRED')
-        return 'deferred'
-      } catch (e2) {
-        console.warn('[BACKUP] FK bypass unavailable; relying on insert order:', e2?.message || e2)
-        return 'none'
-      }
+    console.warn('[BACKUP] SET CONSTRAINTS ALL DEFERRED unavailable:', e?.message || e)
+    try {
+      await dropSubjectModulesTopicFk(client)
+      console.warn('[BACKUP] Restore FK bypass fallback: dropped subject_modules_topic_id_fkey')
+      return 'drop_topic_fk'
+    } catch (e2) {
+      console.warn('[BACKUP] FK bypass unavailable; relying on insert order + topic_id purge:', e2?.message || e2)
+      return 'none'
     }
-    throw e
   }
 }
 
-/** @param {'replica' | 'deferred' | 'none'} mode */
+/** @param {'deferred' | 'drop_topic_fk' | 'none'} mode */
 export async function endRestoreSession(client, mode) {
-  if (mode === 'replica') {
-    await client.query(`SET session_replication_role = 'origin'`)
-  } else if (mode === 'deferred') {
+  if (mode === 'deferred') {
     await client.query('SET CONSTRAINTS ALL IMMEDIATE')
+  } else if (mode === 'drop_topic_fk') {
+    await restoreSubjectModulesTopicFk(client)
   }
 }
 
@@ -2020,8 +2066,8 @@ export async function restoreDatabaseFromParsed(parsed) {
 
     await applyDeferredTopicIdsFromPlan(client, topicLinkPlan, pool)
     await resetSerialSequences(client, pool, tableOrder)
-    await client.query('COMMIT')
     await endRestoreSession(client, fkBypassMode)
+    await client.query('COMMIT')
   } catch (e) {
     await endRestoreSession(client, fkBypassMode).catch(() => {})
     await client.query('ROLLBACK').catch(() => {})

@@ -1,6 +1,20 @@
 /** Generic message returned to API clients for unexpected / database failures. */
 export const GENERIC_SERVER_ERROR = 'Something went wrong. Please try again.'
 
+/** Human-readable reason for admin restore UI. */
+export function describeRestoreFailureReason(err) {
+  const e = /** @type {Record<string, unknown>} */ (err || {})
+  const constraint = typeof e.constraint === 'string' ? e.constraint : ''
+  const pgCode = typeof e.pg_code === 'string' ? e.pg_code : typeof e.code === 'string' ? e.code : ''
+  if (pgCode === '23503' || /foreign key/i.test(String(e.detail || e.message || ''))) {
+    if (constraint.includes('topic_id')) {
+      return 'foreign key constraint violation (lesson topic_id references a missing topic)'
+    }
+    return 'foreign key constraint violation'
+  }
+  return String(e.detail || e.message || err || 'Restore failed')
+}
+
 /**
  * Build admin-visible restore error payload (restore endpoints are admin-only).
  * @param {unknown} err
@@ -17,6 +31,7 @@ export function formatRestoreErrorPayload(err) {
   const constraint = typeof e.constraint === 'string' ? e.constraint : null
   const pg_code = typeof e.code === 'string' ? e.code : typeof e.pg_code === 'string' ? e.pg_code : null
   const detail = String(e.detail || e.message || err || 'Restore failed')
+  const reason = describeRestoreFailureReason(err)
   const label = failed_table || 'unknown'
   return {
     success: false,
@@ -25,8 +40,10 @@ export function formatRestoreErrorPayload(err) {
     failed_table,
     constraint,
     pg_code,
+    reason,
     rolled_back: e.rolled_back !== false,
     detail,
+    hint: 'Your database was automatically rolled back. No data was lost. Try again or contact support.',
   }
 }
 

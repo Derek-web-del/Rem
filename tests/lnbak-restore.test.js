@@ -461,6 +461,20 @@ describe('lnbak table order', () => {
     assert.ok(LNBAK_TABLE_ORDER.indexOf('quiz_password_access') > LNBAK_TABLE_ORDER.indexOf('quizzes'))
   })
 
+  test('students come before subject_topics (Round 2 before Round 3)', () => {
+    assert.ok(
+      LNBAK_TABLE_ORDER.indexOf('students') <
+        LNBAK_TABLE_ORDER.indexOf('subject_topics'),
+    )
+  })
+
+  test('subjects come before subject_topics', () => {
+    assert.ok(
+      LNBAK_TABLE_ORDER.indexOf('subjects') <
+        LNBAK_TABLE_ORDER.indexOf('subject_topics'),
+    )
+  })
+
   test('lms_activity_logs comes after audit_logs', () => {
     assert.ok(LNBAK_TABLE_ORDER.indexOf('lms_activity_logs') > LNBAK_TABLE_ORDER.indexOf('audit_logs'))
   })
@@ -505,6 +519,8 @@ describe('lnbak restore error helpers', () => {
     assert.equal(payload.error, 'RESTORE_FAILED')
     assert.equal(payload.failed_table, 'subject_modules')
     assert.equal(payload.constraint, 'subject_modules_topic_id_fkey')
+    assert.match(String(payload.reason), /foreign key/i)
+    assert.ok(payload.hint)
     assert.equal(payload.rolled_back, true)
   })
 })

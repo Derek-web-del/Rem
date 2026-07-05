@@ -36,17 +36,53 @@ const RESTORE_STEPS = [
 function formatRestoreErrorMessage(errOrPayload) {
   const p = errOrPayload?.restoreDetails || errOrPayload || {}
   const failedTable = p.failed_table || p.failedTable
-  const constraint = p.constraint
+  const reason = p.reason || p.constraint || null
   const detail = p.detail || p.message || String(errOrPayload?.message || errOrPayload || 'Restore failed')
-  const lines = ['Restore failed']
-  if (failedTable) lines.push(`Failed at table: ${failedTable}`)
-  if (constraint) lines.push(`Constraint: ${constraint}`)
-  if (detail && detail !== lines[0]) lines.push(String(detail))
-  if (p.rolled_back !== false) {
-    lines.push('The database has been rolled back to its previous state. No data was lost.')
-  }
-  lines.push('Contact your administrator with these details if the problem persists.')
+  const lines = ['Restore failed', '']
+  if (failedTable) lines.push(`Failed at: ${failedTable}`)
+  if (reason) lines.push(`Reason: ${reason}`)
+  else if (detail && !failedTable) lines.push(`Reason: ${detail}`)
+  else if (detail && detail !== reason) lines.push(`Detail: ${detail}`)
+  lines.push('')
+  lines.push(
+    p.hint ||
+      'Your database was automatically rolled back. No data was lost. Try again or contact support.',
+  )
   return lines.join('\n')
+}
+
+function RestoreErrorPanel({ error, onDismiss }) {
+  if (!error) return null
+  const failedTable = error.failed_table || error.failedTable
+  const reason = error.reason || error.constraint || error.detail || error.message
+  return (
+    <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900">
+      <p className="font-semibold">Restore failed</p>
+      {failedTable ? (
+        <p className="mt-2">
+          <span className="font-medium">Failed at:</span> {failedTable}
+        </p>
+      ) : null}
+      {reason ? (
+        <p className="mt-1">
+          <span className="font-medium">Reason:</span> {String(reason)}
+        </p>
+      ) : null}
+      <p className="mt-2 text-red-800">
+        {error.hint ||
+          'Your database was automatically rolled back. No data was lost. Try again or contact support.'}
+      </p>
+      {onDismiss ? (
+        <button
+          type="button"
+          onClick={onDismiss}
+          className="mt-3 rounded-lg border border-red-300 px-3 py-1.5 text-xs font-semibold text-red-800"
+        >
+          Dismiss
+        </button>
+      ) : null}
+    </div>
+  )
 }
 
 function attachRestoreErrorDetails(err, event) {
@@ -54,7 +90,9 @@ function attachRestoreErrorDetails(err, event) {
   e.failed_table = event?.failed_table ?? null
   e.constraint = event?.constraint ?? null
   e.pg_code = event?.pg_code ?? null
+  e.reason = event?.reason ?? null
   e.detail = event?.detail ?? null
+  e.hint = event?.hint ?? null
   e.rolled_back = event?.rolled_back !== false
   return e
 }
@@ -348,7 +386,7 @@ export default function BackupPage() {
   const [searchParams, setSearchParams] = useSearchParams()
 
   const [droppedFile, setDroppedFile] = useState(null)
-  const [restoreError, setRestoreError] = useState('')
+  const [restoreFailure, setRestoreFailure] = useState(null)
   const [isRestoring, setIsRestoring] = useState(false)
   const [restoreStep, setRestoreStep] = useState(0)
   const [showConfirm, setShowConfirm] = useState(false)
@@ -533,7 +571,7 @@ export default function BackupPage() {
     if (!droppedFile) return
     setIsRestoring(true)
     setRestoreStep(0)
-    setRestoreError('')
+    setRestoreFailure(null)
     try {
       const form = new FormData()
       form.append('file', droppedFile)
@@ -550,7 +588,8 @@ export default function BackupPage() {
       dispatchAuditLogsRefresh({ reason: 'backup_restored' })
       dispatchBackupRestored(data)
     } catch (err) {
-      setRestoreError(formatRestoreErrorMessage(err))
+      setRestoreFailure(err)
+      toast.error(formatRestoreErrorMessage(err), { title: 'Restore failed', durationMs: 12000 })
       setRestoreStep(0)
     } finally {
       setIsRestoring(false)
@@ -664,6 +703,7 @@ export default function BackupPage() {
     setHistoryRestoreSubmitting(true)
     setIsRestoring(true)
     setRestoreStep(0)
+    setRestoreFailure(null)
     try {
       const data = await runStreamRestore(
         apiUrl(`/api/backup/${encodeURIComponent(restoreTarget.id)}/restore?stream=1`),
@@ -682,6 +722,7 @@ export default function BackupPage() {
       dispatchBackupRestored(data)
       toast.updated('Data restored from backup.', { title: 'Restored', durationMs: 6000 })
     } catch (err) {
+      setRestoreFailure(err)
       toast.error(formatRestoreErrorMessage(err), { title: 'Restore failed', durationMs: 12000 })
       setRestoreStep(0)
     } finally {
@@ -904,9 +945,7 @@ export default function BackupPage() {
           onChange={(e) => handleFileSelect(e.target.files?.[0] || null)}
         />
 
-        {restoreError ? (
-          <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{restoreError}</div>
-        ) : null}
+        <RestoreErrorPanel error={restoreFailure} onDismiss={() => setRestoreFailure(null)} />
 
         {droppedFile ? (
           <div className="mt-4 space-y-4">
@@ -1318,6 +1357,7 @@ export default function BackupPage() {
                 ))}
               </ul>
             ) : null}
+            <RestoreErrorPanel error={restoreFailure} onDismiss={() => setRestoreFailure(null)} />
             <div className="mt-6 flex justify-end gap-2">
               <button
                 type="button"

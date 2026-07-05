@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import fsp from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import multer from 'multer'
-import { sendSafeServerError, sendRestoreError, formatRestoreErrorPayload } from '../lib/safeApiError.js'
+import { sendSafeServerError, sendRestoreError, formatRestoreErrorPayload, describeRestoreFailureReason } from '../lib/safeApiError.js'
 import { BACKUP_RESTORE_MAX_BYTES } from '../lib/uploadLimitsConfig.js'
 import { isBackupDbConfigured, ensureBackupSchema } from '../lib/backupSchema.js'
 import {
@@ -86,7 +86,26 @@ function wantsStreamRestore(req) {
   )
 }
 
-async function executeStreamRestore(res, runner) {
+async function logRestoreFailure(actor, err, meta = {}) {
+  try {
+    const payload = formatRestoreErrorPayload(err)
+    await logBackupAudit(actor, 'BACKUP_RESTORE_FAILED', {
+      description: describeRestoreFailureReason(err),
+      details: {
+        failed_at: payload.failed_table,
+        constraint: payload.constraint,
+        reason: payload.reason,
+        detail: payload.detail,
+        rolled_back: payload.rolled_back,
+        ...meta,
+      },
+    })
+  } catch (auditErr) {
+    console.error('[BACKUP] Failed to write restore failure audit:', auditErr)
+  }
+}
+
+async function executeStreamRestore(res, runner, { onError } = {}) {
   res.setHeader('Content-Type', 'application/x-ndjson')
   res.setHeader('Cache-Control', 'no-cache')
   res.flushHeaders?.()
@@ -102,6 +121,13 @@ async function executeStreamRestore(res, runner) {
     writeEvent({ type: 'complete', success: true, ...result })
     res.end()
   } catch (e) {
+    if (onError) {
+      try {
+        await onError(e)
+      } catch {
+        /* audit failure must not mask restore error */
+      }
+    }
     writeEvent({
       type: 'error',
       success: false,
@@ -269,10 +295,11 @@ export function createBackupRouter(express, auth) {
 
   router.post('/restore-upload', restoreUpload.single('file'), async (req, res) => {
     let uploadPath = req.file?.path || null
+    let actor = null
     try {
       const session = await requireAdmin(req, res)
       if (!session) return
-      const actor = actorFromSession(session)
+      actor = actorFromSession(session)
 
       if (!uploadPath) {
         validationError(res, 'No backup file uploaded.')
@@ -301,20 +328,31 @@ export function createBackupRouter(express, auth) {
         })
 
       if (wantsStreamRestore(req)) {
-        await executeStreamRestore(res, async (onProgress) => {
-          const restoreDetails = await runRestore(onProgress)
-          await logBackupAudit(actor, 'BACKUP_RESTORED', {
-            backupId: null,
-            backupName: req.file.originalname,
-            description: `Data restored from uploaded backup (${req.file.originalname})`,
-            details: { restoredAt: new Date().toISOString(), ...restoreDetails },
-          })
-          return {
-            message: 'Restore completed successfully',
-            restored_at: new Date().toISOString(),
-            ...restoreDetails,
-          }
-        })
+        await executeStreamRestore(
+          res,
+          async (onProgress) => {
+            const restoreDetails = await runRestore(onProgress)
+            await logBackupAudit(actor, 'BACKUP_RESTORED', {
+              backupId: null,
+              backupName: req.file.originalname,
+              description: `Data restored from uploaded backup (${req.file.originalname})`,
+              details: { restoredAt: new Date().toISOString(), ...restoreDetails },
+            })
+            return {
+              message: 'Restore completed successfully',
+              restored_at: new Date().toISOString(),
+              ...restoreDetails,
+            }
+          },
+          {
+            onError: async (e) => {
+              await logRestoreFailure(actor, e, {
+                source: 'upload',
+                backupName: req.file.originalname,
+              })
+            },
+          },
+        )
         return
       }
 
@@ -344,6 +382,12 @@ export function createBackupRouter(express, auth) {
             : 'configured limit'
         validationError(res, `Backup file exceeds ${cap} restore upload limit.`)
         return
+      }
+      if (actor) {
+        await logRestoreFailure(actor, e, {
+          source: 'upload',
+          backupName: req.file?.originalname || null,
+        })
       }
       if (!res.headersSent) {
         sendRestoreError(res, e, 'POST /api/backup/restore-upload')
@@ -493,6 +537,7 @@ export function createBackupRouter(express, auth) {
   })
 
   router.post('/:id/restore', async (req, res) => {
+    let actor = null
     try {
       const session = await requireAdmin(req, res)
       if (!session) return
@@ -512,7 +557,7 @@ export function createBackupRouter(express, auth) {
         res.status(400).json({ success: false, error: 'Only completed backups can be restored.' })
         return
       }
-      const actor = actorFromSession(session)
+      actor = actorFromSession(session)
       const opened = await readLnbakFromPath(row.file_path)
 
       const runRestore = async (onProgress) =>
@@ -527,20 +572,32 @@ export function createBackupRouter(express, auth) {
         })
 
       if (wantsStreamRestore(req)) {
-        await executeStreamRestore(res, async (onProgress) => {
-          const restoreDetails = await runRestore(onProgress)
-          await logBackupAudit(actor, 'BACKUP_RESTORED', {
-            backupId: row.id,
-            backupName: row.name,
-            description: `Data restored from backup "${row.name}"`,
-            details: { restoredAt: new Date().toISOString(), ...restoreDetails },
-          })
-          return {
-            message: 'Restore completed successfully',
-            restored_at: new Date().toISOString(),
-            ...restoreDetails,
-          }
-        })
+        await executeStreamRestore(
+          res,
+          async (onProgress) => {
+            const restoreDetails = await runRestore(onProgress)
+            await logBackupAudit(actor, 'BACKUP_RESTORED', {
+              backupId: row.id,
+              backupName: row.name,
+              description: `Data restored from backup "${row.name}"`,
+              details: { restoredAt: new Date().toISOString(), ...restoreDetails },
+            })
+            return {
+              message: 'Restore completed successfully',
+              restored_at: new Date().toISOString(),
+              ...restoreDetails,
+            }
+          },
+          {
+            onError: async (e) => {
+              await logRestoreFailure(actor, e, {
+                source: 'history',
+                backupId: row.id,
+                backupName: row.name,
+              })
+            },
+          },
+        )
         return
       }
 
@@ -559,6 +616,12 @@ export function createBackupRouter(express, auth) {
         ...restoreDetails,
       })
     } catch (e) {
+      if (actor) {
+        await logRestoreFailure(actor, e, {
+          source: 'history',
+          backupId: req.params.id,
+        })
+      }
       sendRestoreError(res, e, 'POST /api/backup/:id/restore')
     }
   })
