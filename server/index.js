@@ -39,6 +39,7 @@ import { assertAesConfiguredForProduction } from './lib/aes256.js'
 import { verifySmtpTransporter } from './mail.js'
 import sanitizeInput from './middleware/sanitizeInput.js'
 import { sendSafeServerError } from './lib/safeApiError.js'
+import { resolveClientIp, resolveRateLimitKey, clientIpDebug } from './lib/clientIp.js'
 import {
   EXPRESS_BODY_LIMIT,
   EXPRESS_BODY_LIMIT_BYTES,
@@ -71,13 +72,15 @@ function passwordResetRateLimitHandler(_req, res) {
   res.status(429).json({ error: message, message })
 }
 
-function makeLimiter({ windowMs, max }) {
+function makeLimiter({ windowMs, max, keyBySession = true }) {
   return rateLimit({
     windowMs,
     max,
     standardHeaders: true,
     legacyHeaders: false,
     handler: rateLimitJsonHandler,
+    keyGenerator: (req) =>
+      keyBySession ? resolveRateLimitKey(req) : `ip:${resolveClientIp(req)}`,
   })
 }
 
@@ -124,10 +127,9 @@ export async function createApp() {
   ensureUploadDirs()
   const app = express()
 
-  // Trust proxy headers for correct req.ip behind reverse proxies (ngrok/CDN),
-  // but avoid the permissive `true` setting which express-rate-limit rejects.
-  // - Dev/local: only trust loopback proxies (ngrok agent on same machine).
-  // - Prod: trust exactly one proxy hop (e.g. CDN/load balancer in front of Node).
+  // Trust proxy headers for correct req.ip behind reverse proxies (Cloudflare, DO, ngrok).
+  // Cloudflare + DigitalOcean App Platform = 2 hops → set TRUST_PROXY=2 on DO env.
+  // TRUST_PROXY=1 is fine for a single CDN/proxy hop.
   const env = process.env.NODE_ENV || 'development'
   const trustProxy =
     process.env.TRUST_PROXY != null && process.env.TRUST_PROXY !== ''
@@ -275,19 +277,24 @@ function parseCorsOrigins() {
     res.redirect(307, '/api/health')
   })
 
+  // Debug: verify each visitor gets a distinct IP for rate limits (Cloudflare + DO).
+  app.get('/api/health/ip-probe', (req, res) => {
+    res.json({ ok: true, ...clientIpDebug(req) })
+  })
+
   app.use('/api', sanitizeInput)
 
-  // Per-IP rate limits (separate instances per endpoint).
-  // Defaults match review guidance; tests can override via env.
+  // Per-user (session) or per-IP rate limits on /api (auth routes use separate limiters below).
+  // Production defaults are sized for LMS polling + many concurrent users on shared school Wi‑Fi.
   const isDev = (process.env.NODE_ENV || 'development') !== 'production'
   const RL_WINDOW_MS = parseMs(process.env.RATE_LIMIT_WINDOW_MS, 15 * 60 * 1000)
   const apiReadLimiter = makeLimiter({
     windowMs: RL_WINDOW_MS,
-    max: Number(process.env.RATE_LIMIT_MAX_GET || (isDev ? 1000 : 100)),
+    max: Number(process.env.RATE_LIMIT_MAX_GET || (isDev ? 1000 : 3000)),
   })
   const apiWriteLimiter = makeLimiter({
     windowMs: RL_WINDOW_MS,
-    max: Number(process.env.RATE_LIMIT_MAX_POST || (isDev ? 500 : 50)),
+    max: Number(process.env.RATE_LIMIT_MAX_POST || (isDev ? 500 : 800)),
   })
   app.use('/api', (req, res, next) => {
     const path = String(req.originalUrl || req.path || '').split('?')[0]
@@ -301,7 +308,8 @@ function parseCorsOrigins() {
   })
   const signInLimiter = makeLimiter({
     windowMs: parseMs(process.env.RATE_LIMIT_WINDOW_MS_SIGNIN, RL_WINDOW_MS),
-    max: Number(process.env.RATE_LIMIT_MAX_SIGNIN || 10),
+    max: Number(process.env.RATE_LIMIT_MAX_SIGNIN || (isDev ? 1000 : 30)),
+    keyBySession: false,
   })
   app.post('/api/auth/sign-in/username', signInLimiter)
   app.post('/api/auth/sign-in/email', signInLimiter)
@@ -310,14 +318,16 @@ function parseCorsOrigins() {
     '/api/auth/two-factor/send-otp',
     makeLimiter({
       windowMs: parseMs(process.env.RATE_LIMIT_WINDOW_MS_SEND_OTP, RL_WINDOW_MS),
-      max: Number(process.env.RATE_LIMIT_MAX_SEND_OTP || 5),
+      max: Number(process.env.RATE_LIMIT_MAX_SEND_OTP || (isDev ? 100 : 15)),
+      keyBySession: false,
     }),
   )
   app.post(
     '/api/auth/two-factor/verify-otp',
     makeLimiter({
       windowMs: parseMs(process.env.RATE_LIMIT_WINDOW_MS_VERIFY_OTP, RL_WINDOW_MS),
-      max: Number(process.env.RATE_LIMIT_MAX_VERIFY_OTP || 10),
+      max: Number(process.env.RATE_LIMIT_MAX_VERIFY_OTP || (isDev ? 100 : 20)),
+      keyBySession: false,
     }),
   )
   app.post(
