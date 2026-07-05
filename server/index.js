@@ -258,7 +258,7 @@ function parseCorsOrigins() {
         timestamp: new Date().toISOString(),
         environment: process.env.NODE_ENV,
         database: 'connected',
-        version: '1.0.0',
+        version: '1.0.1',
         restore_engine: RESTORE_ENGINE_VERSION,
       })
     } catch {

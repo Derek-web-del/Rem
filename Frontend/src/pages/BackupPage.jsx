@@ -575,11 +575,11 @@ export default function BackupPage() {
 
   function handleFileSelect(file) {
     const err = validateDroppedFile(file)
-    setRestoreError(err)
     setRestoreResult(null)
     setShowConfirm(false)
     setRestoreConfirmText('')
     setDroppedFile(err ? null : file)
+    if (err) toast.error(err, { title: 'Invalid backup file' })
   }
 
   function handleDrop(e) {
@@ -1043,7 +1043,6 @@ export default function BackupPage() {
                   type="button"
                   onClick={() => {
                     setDroppedFile(null)
-                    setRestoreError('')
                   }}
                   className="rounded-lg border border-neutral-200 px-4 py-2 text-sm font-semibold text-neutral-700"
                 >
