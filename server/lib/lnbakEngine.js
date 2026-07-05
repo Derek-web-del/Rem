@@ -62,30 +62,6 @@ export const SUBJECT_ASSETS_DIR = subjectAssetsRoot()
 /** Logged at restore start so deploy/runtime can be verified on DigitalOcean. */
 export const RESTORE_ENGINE_VERSION = '2026-07-05-nuclear-v12'
 
-/** @param {string} hypothesisId @param {string} location @param {string} message @param {Record<string, unknown>} [data] */
-function dbgRestore(hypothesisId, location, message, data = {}) {
-  const payload = {
-    sessionId: '127b1e',
-    hypothesisId,
-    location,
-    message,
-    data,
-    timestamp: Date.now(),
-    runId: String(data.runId || 'restore'),
-  }
-  // #region agent log
-  fetch('http://127.0.0.1:7837/ingest/c79b5560-e018-420c-ad0f-457fade4670e', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '127b1e' },
-    body: JSON.stringify(payload),
-  }).catch(() => {})
-  fsp.mkdir(path.join(process.cwd(), '.cursor'), { recursive: true }).catch(() => {})
-  fsp.appendFile(path.join(process.cwd(), '.cursor', 'debug-127b1e.log'), `${JSON.stringify(payload)}\n`).catch(() => {})
-  fsp.appendFile(path.join(BACKUPS_DIR, 'restore-debug-127b1e.log'), `${JSON.stringify(payload)}\n`).catch(() => {})
-  console.log('[DBG-127b1e]', JSON.stringify(payload))
-  // #endregion
-}
-
 /** Latest restore debug snapshot — surfaced in API errors and diagnostics. */
 let _lastRestoreDebug = { engine: RESTORE_ENGINE_VERSION, phase: 'idle' }
 
@@ -559,16 +535,6 @@ async function addTopicForeignKeySafe(client, row) {
   if (exists.length) return true
 
   await scrubAllInvalidTopicIds(client)
-  const orphans = row.name === 'subject_modules_topic_id_fkey'
-    ? await countOrphanModuleTopicIds(client)
-    : 0
-  // #region agent log
-  dbgRestore('H4', 'lnbakEngine.js:addTopicForeignKeySafe', 'attempt ADD topic FK', {
-    constraint: row.name,
-    orphans,
-    runId: 'post-fix',
-  })
-  // #endregion
 
   await client.query('SAVEPOINT topic_fk_add')
   try {
@@ -580,13 +546,6 @@ async function addTopicForeignKeySafe(client, row) {
   } catch (e1) {
     await client.query('ROLLBACK TO SAVEPOINT topic_fk_add')
     console.warn(`[BACKUP] FK ${row.name} add failed — scrub + NOT VALID retry:`, e1?.message || e1)
-    // #region agent log
-    dbgRestore('H4', 'lnbakEngine.js:addTopicForeignKeySafe', 'ADD failed, retry NOT VALID', {
-      constraint: row.name,
-      error: String(e1?.message || e1),
-      runId: 'post-fix',
-    })
-    // #endregion
   }
 
   await scrubAllInvalidTopicIds(client)
@@ -607,13 +566,6 @@ async function addTopicForeignKeySafe(client, row) {
       `ALTER TABLE ${tableSql} DROP CONSTRAINT IF EXISTS ${quoteIdent(row.name)}`,
     ).catch(() => {})
     console.warn(`[BACKUP] FK ${row.name} could not be restored — restore continues without it:`, e2?.message || e2)
-    // #region agent log
-    dbgRestore('H4', 'lnbakEngine.js:addTopicForeignKeySafe', 'FK restore skipped (non-fatal)', {
-      constraint: row.name,
-      error: String(e2?.message || e2),
-      runId: 'post-fix',
-    })
-    // #endregion
     return false
   }
 }
@@ -1248,12 +1200,6 @@ export async function applyDeferredTopicIdsFromPlan(client, linkPlan, pool = nul
   const fkBlocksUpdates = await subjectModulesTopicFkExists(client)
   if (fkBlocksUpdates) {
     console.warn('[BACKUP] topic_id FK still present — skipping deferred topic links (modules stay uncategorized)')
-    // #region agent log
-    dbgRestore('H2', 'lnbakEngine.js:applyDeferredTopicIdsFromPlan', 'skipped deferred links — FK still exists', {
-      linkPlanSize: linkPlan.length,
-      runId: 'post-fix',
-    })
-    // #endregion
     return { updated: 0, cleared: 0, skipped: linkPlan.length }
   }
 
@@ -2325,17 +2271,6 @@ async function bulkInsert(client, tableKey, rows, pool = null, { insertAllColumn
   const colList = cols.map(quoteIdent).join(', ')
   const maxRowsPerBatch = Math.max(1, Math.floor(60000 / colCount))
 
-  if (tableKey === 'subject_modules') {
-    // #region agent log
-    dbgRestore('H3', 'lnbakEngine.js:bulkInsert', 'subject_modules INSERT columns', {
-      cols,
-      hasTopicId: cols.includes('topic_id'),
-      rowCount: rows.length,
-      runId: 'post-fix',
-    })
-    // #endregion
-  }
-
   for (let offset = 0; offset < rows.length; offset += maxRowsPerBatch) {
     const batch = rows.slice(offset, offset + maxRowsPerBatch).map((row) => {
       if (!TOPIC_ID_DEFER_TABLES.has(tableKey) || !row || typeof row !== 'object') {
@@ -2400,17 +2335,6 @@ export async function restoreDatabaseFromParsed(parsed) {
   const truncateOrder = [...tableOrder].reverse()
   logRestoreTableOrder(tableOrder)
 
-  // #region agent log
-  dbgRestore('H1', 'lnbakEngine.js:restoreDatabaseFromParsed', 'restore start', {
-    engine: RESTORE_ENGINE_VERSION,
-    topicLinkPlanCount: topicLinkPlan.length,
-    subjectTopicsInBackup: parsed?.data?.subject_topics?.length ?? 0,
-    subjectModulesInBackup: parsed?.data?.subject_modules?.length ?? 0,
-    topicsIdx: tableOrder.indexOf('subject_topics'),
-    modulesIdx: tableOrder.indexOf('subject_modules'),
-  })
-  // #endregion
-
   try {
     savedFks = mergeKnownTopicForeignKeys(await captureAllPublicForeignKeys(client))
 
@@ -2432,12 +2356,6 @@ export async function restoreDatabaseFromParsed(parsed) {
       )
     }
     setRestoreDebug({ replicaRoleActive })
-    // #region agent log
-    dbgRestore('H6', 'lnbakEngine.js:restoreDatabaseFromParsed', 'replica role probe', {
-      replicaRoleActive,
-      runId: 'post-fix',
-    })
-    // #endregion
     await dropAllPublicForeignKeys(client, savedFks)
     await forceDropKnownTopicForeignKeys(client)
     const fkAfterDrop = await subjectModulesTopicFkExists(client)
@@ -2446,14 +2364,6 @@ export async function restoreDatabaseFromParsed(parsed) {
       fkAfterDrop,
       savedFkCount: savedFks.length,
     })
-    // #region agent log
-    dbgRestore('H2', 'lnbakEngine.js:restoreDatabaseFromParsed', 'after FK drop', {
-      savedFkCount: savedFks.length,
-      subjectModulesTopicFkStillExists: fkAfterDrop,
-      hasTopicModuleFkInSaved: savedFks.some((f) => f.name === 'subject_modules_topic_id_fkey'),
-      replicaRoleActive,
-    })
-    // #endregion
 
     restorePhase = 'truncate'
     for (const key of truncateOrder) {
@@ -2470,26 +2380,12 @@ export async function restoreDatabaseFromParsed(parsed) {
       if (!(await tableExists(pool, key))) continue
       if (shouldSkipRestoreTable(parsed, key)) {
         console.warn(`[BACKUP] Skipping ${key} restore — no parent rows in backup`)
-        if (key === 'subject_topics') {
-          // #region agent log
-          dbgRestore('H5', 'lnbakEngine.js:restoreDatabaseFromParsed', 'subject_topics SKIPPED', {
-            reason: 'shouldSkipRestoreTable',
-          })
-          // #endregion
-        }
         continue
       }
       restorePhase = `insert:${key}`
       setRestoreDebug({ phase: restorePhase })
       if (key === 'subject_modules') {
         await forceDropKnownTopicForeignKeys(client)
-        const fkBeforeModules = await subjectModulesTopicFkExists(client)
-        // #region agent log
-        dbgRestore('H2', 'lnbakEngine.js:restoreDatabaseFromParsed', 'before subject_modules insert', {
-          fkStillExists: fkBeforeModules,
-          topicsInserted: tableOrder.indexOf('subject_topics') < tableOrder.indexOf(key),
-        })
-        // #endregion
       }
       const prepared = prepareRestoreRowsForInsert(parsed, key, rows)
       if (!prepared.length) continue
@@ -2510,13 +2406,6 @@ export async function restoreDatabaseFromParsed(parsed) {
     console.log('[BACKUP] session_replication_role=DEFAULT (re-enabling FK checks for topic links)')
     await forceDropKnownTopicForeignKeys(client)
     await applyDeferredTopicIdsFromPlan(client, topicLinkPlan, pool)
-    const orphansAfterLink = await countOrphanModuleTopicIds(client)
-    // #region agent log
-    dbgRestore('H5', 'lnbakEngine.js:restoreDatabaseFromParsed', 'after deferred topic link', {
-      orphans: orphansAfterLink,
-      linkPlanSize: topicLinkPlan.length,
-    })
-    // #endregion
     restorePhase = 'scrub'
     await scrubAllInvalidTopicIds(client)
     restorePhase = 'restore_fks'
@@ -2528,9 +2417,6 @@ export async function restoreDatabaseFromParsed(parsed) {
     await client.query('COMMIT')
     console.log('[BACKUP] COMMIT')
     console.log('[BACKUP] Database restore committed')
-    // #region agent log
-    dbgRestore('H1', 'lnbakEngine.js:restoreDatabaseFromParsed', 'restore success', { phase: 'commit' })
-    // #endregion
   } catch (e) {
     await client.query('ROLLBACK').catch(() => {})
     console.log('[BACKUP] ROLLBACK')
@@ -2544,14 +2430,6 @@ export async function restoreDatabaseFromParsed(parsed) {
       fkExists: await subjectModulesTopicFkExists(client).catch(() => null),
     }
     setRestoreDebug({ phase: restorePhase, ok: false, ...failDebug })
-    // #region agent log
-    dbgRestore('H4', 'lnbakEngine.js:restoreDatabaseFromParsed', 'restore FAILED', {
-      ...failDebug,
-      orphans: restorePhase === 'restore_fks' || restorePhase === 'deferred_topic_link'
-        ? await countOrphanModuleTopicIds(client).catch(() => -1)
-        : null,
-    })
-    // #endregion
     if (e instanceof RestoreFailedError) throw e
     throw enrichRestoreError(e, null)
   } finally {
