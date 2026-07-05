@@ -47,7 +47,11 @@ function resolveArchiverFactory(mod) {
 const archiver = resolveArchiverFactory(archiverLib)
 const unzipper = unzipperLib.default ?? unzipperLib
 
-export const BACKUPS_DIR = path.join(process.cwd(), 'backups')
+export const BACKUPS_DIR = (() => {
+  const configured = String(process.env.BACKUP_DIR || process.env.BACKUPS_DIR || '').trim()
+  if (configured) return path.resolve(configured)
+  return path.join(process.cwd(), 'backups')
+})()
 export const BACKUP_UPLOADS_DIR = path.join(BACKUPS_DIR, '.uploads')
 export const UPLOADS_DIR = uploadsRoot()
 export const SUBJECT_ASSETS_DIR = subjectAssetsRoot()

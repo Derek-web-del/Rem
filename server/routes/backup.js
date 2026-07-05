@@ -157,7 +157,19 @@ export function createBackupRouter(express, auth) {
   router.get('/restore-diagnostics', async (req, res) => {
     try {
       if (!(await requireAdmin(req, res))) return
-      const fkBypass = await testRestoreFkBypassCapability(getPgPool())
+      const pool = getPgPool()
+      const fkBypass = await testRestoreFkBypassCapability(pool)
+      let backupsWritable = false
+      let backupsFreeBytes = null
+      try {
+        ensureBackupsDirectory()
+        const probe = path.join(BACKUPS_DIR, `.write-probe-${Date.now()}`)
+        await fsp.writeFile(probe, 'ok')
+        await fsp.unlink(probe)
+        backupsWritable = true
+      } catch {
+        backupsWritable = false
+      }
       res.json({
         ok: true,
         restore_engine: RESTORE_ENGINE_VERSION,
@@ -165,6 +177,15 @@ export function createBackupRouter(express, auth) {
           LNBAK_TABLE_ORDER.indexOf('subject_topics') <
           LNBAK_TABLE_ORDER.indexOf('subject_modules'),
         fk_bypass: fkBypass,
+        storage: {
+          backups_dir: BACKUPS_DIR,
+          backups_writable: backupsWritable,
+          uploads_dir: process.env.UPLOAD_DIR || '(default public/uploads)',
+          backup_dir_env_set: Boolean(String(process.env.BACKUP_DIR || process.env.BACKUPS_DIR || '').trim()),
+          hint: backupsWritable
+            ? 'Backup directory is writable.'
+            : 'Mount a DigitalOcean Volume and set BACKUP_DIR to a path on that volume (e.g. /data/backups).',
+        },
       })
     } catch (e) {
       sendSafeServerError(res, e, 'GET /api/backup/restore-diagnostics')
