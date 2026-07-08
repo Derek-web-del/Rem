@@ -481,9 +481,6 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
           </div>
           <section className="rounded-xl border border-neutral-200 bg-white p-5 shadow-md md:p-6">
             <h3 className="text-lg font-semibold text-neutral-900">Upload New Curriculum</h3>
-            <p className="mt-1 text-sm text-neutral-600">
-              Guides are saved to PostgreSQL and published for the Teacher Curriculum page (same as faculty curriculum guides).
-            </p>
             <form onSubmit={submitUpload} className="mt-5 grid gap-4">
               <label className="text-sm font-medium text-neutral-700">
                 Grade Level

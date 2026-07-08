@@ -6,7 +6,7 @@ import {
   DEFAULT_UPLOAD_MAX_BYTES,
   DEFAULT_UPLOAD_MAX_MSG,
 } from './uploadLimitsConfig.js'
-import { PDF_OR_DOC_MIMES, verifyUploadMagicBytes } from './uploadMagicBytes.js'
+import { PDF_MIMES, verifyUploadMagicBytes } from './uploadMagicBytes.js'
 import { uploadsRoot } from './uploadPaths.js'
 
 export const CURRICULUM_UPLOAD_REL = '/uploads/curriculum'
@@ -27,16 +27,14 @@ function safeBaseName(name) {
   return base.replace(/[^\w.\-()+ ]+/g, '_').slice(0, 180) || 'guide.pdf'
 }
 
-const ALLOWED_CURRICULUM_EXT = new Set(['.pdf', '.doc', '.docx'])
+const ALLOWED_CURRICULUM_EXT = new Set(['.pdf'])
 
 function normalizeCurriculumExt(originalName) {
   const ext = path.extname(originalName || '').toLowerCase()
-  return ALLOWED_CURRICULUM_EXT.has(ext) ? ext : '.pdf'
+  return ext === '.pdf' ? ext : '.pdf'
 }
 
-function mimeForCurriculumExt(ext) {
-  if (ext === '.doc') return 'application/msword'
-  if (ext === '.docx') return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+function mimeForCurriculumExt() {
   return 'application/pdf'
 }
 
@@ -47,15 +45,15 @@ export function saveCurriculumPdf(buffer, originalName) {
 export function saveCurriculumGuideFile(buffer, originalName) {
   ensureCurriculumUploadDir()
   const ext = normalizeCurriculumExt(originalName)
-  const stem = safeBaseName(originalName).replace(/\.(pdf|doc|docx)$/i, '')
+  const stem = safeBaseName(originalName).replace(/\.pdf$/i, '')
   const fileName = `${stem}-${randomUUID().slice(0, 8)}${ext}`
   const abs = path.join(curriculumUploadAbsDir(), fileName)
   fs.writeFileSync(abs, buffer)
   return `${CURRICULUM_UPLOAD_REL}/${fileName}`
 }
 
-export function curriculumMimeForFileName(originalName) {
-  return mimeForCurriculumExt(normalizeCurriculumExt(originalName))
+export function curriculumMimeForFileName() {
+  return mimeForCurriculumExt()
 }
 
 export function deleteCurriculumFileByUrl(fileUrl) {
@@ -80,7 +78,7 @@ export function validateCurriculumGuideFile(file) {
   if (!file?.buffer?.length) return 'Curriculum file is required.'
   const name = String(file.originalname || '').toLowerCase()
   const ext = name.includes('.') ? `.${name.split('.').pop()}` : ''
-  if (!ALLOWED_CURRICULUM_EXT.has(ext)) return 'File must be PDF, DOC, or DOCX.'
+  if (!ALLOWED_CURRICULUM_EXT.has(ext)) return 'File must be PDF.'
   if (file.size > CURRICULUM_PDF_MAX_BYTES) {
     return DEFAULT_UPLOAD_MAX_MSG
   }
@@ -90,7 +88,7 @@ export function validateCurriculumGuideFile(file) {
 export async function validateCurriculumGuideFileAsync(file) {
   const syncErr = validateCurriculumGuideFile(file)
   if (syncErr) return syncErr
-  return verifyUploadMagicBytes(file.buffer, PDF_OR_DOC_MIMES)
+  return verifyUploadMagicBytes(file.buffer, PDF_MIMES)
 }
 
 const upload = multer({
@@ -100,16 +98,12 @@ const upload = multer({
     const mime = String(file.mimetype || '').toLowerCase()
     const name = String(file.originalname || '').toLowerCase()
     const ext = name.includes('.') ? `.${name.split('.').pop()}` : ''
-    const ok =
-      mime === 'application/pdf' ||
-      mime === 'application/msword' ||
-      mime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
-      ALLOWED_CURRICULUM_EXT.has(ext)
+    const ok = mime === 'application/pdf' || ext === '.pdf'
     if (ok) {
       cb(null, true)
       return
     }
-    cb(new Error('File must be PDF, DOC, or DOCX.'))
+    cb(new Error('File must be PDF.'))
   },
 })
 
