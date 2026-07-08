@@ -30,6 +30,7 @@ import Header from './components/Header.jsx'
 import PortalSidebarShell from './components/PortalSidebarShell.jsx'
 import { useSidebarCollapsed, SIDEBAR_COLLAPSED_KEYS } from './hooks/useSidebarCollapsed.js'
 import { dispatchAuditLogsRefresh, BACKUP_RESTORED_EVENT } from './lib/auditLogRefresh.js'
+import { uploadsPathToApiUrl } from './lib/fileUrls.js'
 import { facultyPhotoAuthImageUrl, facultyPhotoDisplaySrc } from './lib/facultyPhoto.js'
 import { dedupeById } from './lib/dedupeById.js'
 import { stripSecretsFromList } from './lib/stripLocalStorageSecrets.js'
@@ -687,6 +688,22 @@ function Avatar({ seed, size = 40 }) {
       aria-hidden
     />
   )
+}
+
+function DashboardFacultyThumb({ faculty }) {
+  const [imgFailed, setImgFailed] = useState(false)
+  const src = facultyPhotoDisplaySrc(faculty?.photo_url || faculty?.photoDataUrl || '')
+  if (src && !imgFailed) {
+    return (
+      <img
+        src={src}
+        alt={faculty?.name || ''}
+        className="h-11 w-11 shrink-0 rounded-full object-cover ring-2 ring-white shadow-sm"
+        onError={() => setImgFailed(true)}
+      />
+    )
+  }
+  return <Avatar seed={String(faculty?.email || faculty?.name || 'f')} size={44} />
 }
 
 export default function InstituteDashboard({ onLogout, schoolName = 'Glendale School, Inc.' }) {
@@ -2137,7 +2154,7 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
         return { ok: false, error: msg }
       }
       const list = Array.isArray(data) ? data : []
-      const mapped = mapCurriculumGuideList(list, (path) => apiUrl(path))
+      const mapped = mapCurriculumGuideList(list, uploadsPathToApiUrl)
       setCurriculums(mapped)
       return { ok: true, count: mapped.length }
     } catch (e) {
@@ -3117,24 +3134,12 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
                   {recentFaculties.length === 0 ? (
                     <li className="px-5 py-6 text-sm font-medium text-neutral-500 md:px-6">No faculty added yet.</li>
                   ) : (
-                    recentFaculties.map((f) => {
-                      const facultyPhotoSrc = facultyPhotoDisplaySrc(
-                        f.photo_url || f.photoDataUrl || '',
-                      )
-                      return (
+                    recentFaculties.map((f) => (
                       <li
                         key={f.id}
                         className="flex flex-wrap items-center gap-3 px-5 py-4 md:flex-nowrap md:gap-4 md:px-6"
                       >
-                        {facultyPhotoSrc ? (
-                          <img
-                            src={facultyPhotoSrc}
-                            alt={f.name}
-                            className="h-11 w-11 shrink-0 rounded-full object-cover ring-2 ring-white shadow-sm"
-                          />
-                        ) : (
-                          <Avatar seed={String(f.email || f.name || 'f')} size={44} />
-                        )}
+                        <DashboardFacultyThumb faculty={f} />
                         <div className="min-w-0 flex-1 text-left">
                           <p className="font-semibold text-neutral-900">{f.name}</p>
                           <p className="text-sm text-neutral-500">
@@ -3149,7 +3154,7 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
                           View
                         </button>
                       </li>
-                    )})
+                    ))
                   )}
                 </ul>
               </section>

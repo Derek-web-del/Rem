@@ -7,6 +7,7 @@ import {
   ADMIN_PORTAL_MODULES,
   TEACHER_PORTAL_MODULES,
   STUDENT_PORTAL_MODULES,
+  LOGIN_MODULE,
   TERMS_AND_CONDITIONS_MODULE,
 } from '../shared/auditPortalModules.js'
 
@@ -63,14 +64,14 @@ describe('auditPortalModules', () => {
         userRole: 'teacher',
         detailsObj: { userName: 'Jane Teacher' },
       }),
-      TEACHER_PORTAL_MODULES.DASHBOARD,
+      LOGIN_MODULE,
     )
     assert.equal(
       resolveAuditPortalModule({
         activityType: 'USER_SIGNED_OUT',
         userRole: 'student',
       }),
-      STUDENT_PORTAL_MODULES.DASHBOARD,
+      LOGIN_MODULE,
     )
   })
 
@@ -108,7 +109,7 @@ describe('auditPortalModules', () => {
         activityType: 'USER_SIGNED_OUT',
         userRole: 'admin',
       }),
-      ADMIN_PORTAL_MODULES.DASHBOARD,
+      LOGIN_MODULE,
     )
   })
 
@@ -170,14 +171,14 @@ describe('auditPortalModules', () => {
     )
   })
 
-  it('maps login events to dashboard module and affected user', () => {
+  it('maps login events to Login module and affected user', () => {
     assert.equal(
       resolveAuditPortalModule({
         activityType: 'USER_SIGNED_IN',
         userRole: 'student',
         detailsObj: { userName: 'Derek John Bantad' },
       }),
-      STUDENT_PORTAL_MODULES.DASHBOARD,
+      LOGIN_MODULE,
     )
     assert.equal(
       resolveAuditPortalAffected({
@@ -221,14 +222,14 @@ describe('auditPortalModules', () => {
     )
   })
 
-  it('maps session started and revoked to dashboard module by role', () => {
+  it('maps session started and revoked to Login module by role', () => {
     assert.equal(
       resolveAuditPortalModule({
         activityType: 'USER_SESSION_STARTED',
         userRole: 'student',
         detailsObj: { module: 'Dashboard' },
       }),
-      STUDENT_PORTAL_MODULES.DASHBOARD,
+      LOGIN_MODULE,
     )
     assert.equal(
       resolveAuditPortalModule({
@@ -236,7 +237,7 @@ describe('auditPortalModules', () => {
         userRole: 'admin',
         detailsObj: {},
       }),
-      ADMIN_PORTAL_MODULES.DASHBOARD,
+      LOGIN_MODULE,
     )
     assert.equal(
       resolveAuditPortalAffected({

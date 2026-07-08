@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { resolveAnnouncementImageSrc } from '../../lib/teacherAnnouncements.js'
 
 function BellIcon({ className }) {
@@ -6,6 +7,26 @@ function BellIcon({ className }) {
       <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
       <path d="M13.73 21a2 2 0 0 1-3.46 0" />
     </svg>
+  )
+}
+
+function AnnouncementImage({ item }) {
+  const [imgFailed, setImgFailed] = useState(false)
+  const imageSrc = resolveAnnouncementImageSrc(item)
+  if (imageSrc && !imgFailed) {
+    return (
+      <img
+        src={imageSrc}
+        alt={item.title || 'Announcement'}
+        className="h-full w-full object-cover"
+        onError={() => setImgFailed(true)}
+      />
+    )
+  }
+  return (
+    <div className="flex h-full items-center justify-center text-sm font-medium text-neutral-400">
+      No preview
+    </div>
   )
 }
 
@@ -54,25 +75,13 @@ export default function AdminLatestAnnouncementsExpanded({ announcements = [], o
           </div>
         ) : (
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {items.map((item) => {
-              const imageSrc = resolveAnnouncementImageSrc(item)
-              return (
+            {items.map((item) => (
                 <article
                   key={item.id}
                   className="overflow-hidden rounded-xl border border-neutral-200 border-l-4 border-l-[#1e4fa3] bg-white shadow-sm transition hover:shadow-md"
                 >
                   <div className="relative aspect-video w-full bg-neutral-100">
-                    {imageSrc ? (
-                      <img
-                        src={imageSrc}
-                        alt={item.title || 'Announcement'}
-                        className="h-full w-full object-cover"
-                      />
-                    ) : (
-                      <div className="flex h-full items-center justify-center text-sm font-medium text-neutral-400">
-                        No preview
-                      </div>
-                    )}
+                    <AnnouncementImage item={item} />
                     {item.updateType ? (
                       <span className="absolute right-2 top-2 rounded-full bg-white/95 px-2.5 py-0.5 text-[11px] font-semibold text-neutral-700 shadow-sm">
                         {item.updateType}
@@ -93,8 +102,7 @@ export default function AdminLatestAnnouncementsExpanded({ announcements = [], o
                     </dl>
                   </div>
                 </article>
-              )
-            })}
+            ))}
           </div>
         )}
       </div>

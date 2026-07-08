@@ -41,6 +41,13 @@ export const ADMIN_PORTAL_MODULES = {
 /** Shared Legal Center module label (all portals). */
 export const TERMS_AND_CONDITIONS_MODULE = 'Terms & Conditions'
 
+/** Audit Logs module for sign-in, sign-out, and session lifecycle events (all portals). */
+export const LOGIN_MODULE = 'Login'
+
+export function loginAuditModule() {
+  return LOGIN_MODULE
+}
+
 export function termsAndConditionsModule() {
   return TERMS_AND_CONDITIONS_MODULE
 }
@@ -84,6 +91,38 @@ export function isSessionAuditActivity(activityType) {
 export function isSessionAuditEventType(eventType) {
   return isSessionOnlyAuditEventType(eventType) || String(eventType || '').trim().toLowerCase() === 'session_revoked'
 }
+
+const LOGIN_MODULE_ACTIVITIES = new Set([
+  'USER_SIGNED_IN',
+  'LOGIN',
+  'USER_SIGNED_OUT',
+  'USER_SESSION_STARTED',
+  'SESSION_CREATED',
+  'SESSION_REVOKED',
+])
+
+const LOGIN_MODULE_EVENT_TYPES = new Set([
+  'user_signed_in',
+  'login',
+  'user_signed_out',
+  'session_created',
+  'session_revoked',
+])
+
+export function isLoginModuleAuditActivity(activityType) {
+  return LOGIN_MODULE_ACTIVITIES.has(String(activityType || '').trim().toUpperCase())
+}
+
+export function isLoginModuleAuditEventType(eventType) {
+  return LOGIN_MODULE_EVENT_TYPES.has(String(eventType || '').trim().toLowerCase())
+}
+
+const DASHBOARD_MODULE_LABELS = new Set([
+  ADMIN_PORTAL_MODULES.DASHBOARD,
+  TEACHER_PORTAL_MODULES.DASHBOARD,
+  STUDENT_PORTAL_MODULES.DASHBOARD,
+  'Dashboard',
+])
 
 /**
  * Resolve admin portal module for user_account_changed events.
@@ -148,6 +187,18 @@ function pickUserRole(event) {
   const ed = pickEventDetails(event)
   return normalizeRole(
     event?.userRole || ed?.userRole || ed?.role || ed?.actorRole || event?.raw?.userRole || '',
+  )
+}
+
+export function isLoginModuleAuditEvent(event) {
+  const ed = pickEventDetails(event)
+  const activity = pickActivityType(event)
+  const eventType = pickEventType(event)
+  return (
+    isLoginModuleAuditActivity(activity) ||
+    isLoginModuleAuditEventType(eventType) ||
+    isLoginModuleAuditActivity(String(ed?.activityType || '').trim().toUpperCase()) ||
+    isLoginModuleAuditEventType(String(ed?.eventType || ed?.type || '').trim().toLowerCase())
   )
 }
 
@@ -271,7 +322,7 @@ function moduleFromActivityType(activity, role) {
       activity === 'USER_SIGNED_IN' ||
       activity === 'LOGIN'
     ) {
-      return ADMIN_PORTAL_MODULES.DASHBOARD
+      return LOGIN_MODULE
     }
     if (activity === 'TERMS_ACCEPTED') return TERMS_AND_CONDITIONS_MODULE
   }
@@ -288,7 +339,7 @@ function moduleFromActivityType(activity, role) {
     activity === 'USER_SIGNED_IN' ||
     activity === 'LOGIN'
   ) {
-    return dashboardModuleForRole(role)
+    return LOGIN_MODULE
   }
 
   if (activity === 'TERMS_ACCEPTED') return TERMS_AND_CONDITIONS_MODULE
@@ -335,7 +386,7 @@ function moduleFromLedgerType(event) {
     return instituteModule
   }
 
-  if (ledgerType === 'LOGIN') return STUDENT_PORTAL_MODULES.DASHBOARD
+  if (ledgerType === 'LOGIN') return LOGIN_MODULE
   if (ledgerType.startsWith('CURRICULUM_')) return TEACHER_PORTAL_MODULES.CURRICULUM
   if (ledgerType.startsWith('SECTION_')) return TEACHER_PORTAL_MODULES.SECTION
   if (ledgerType.startsWith('SUBJECT_')) return TEACHER_PORTAL_MODULES.SUBJECTS
@@ -395,15 +446,15 @@ function moduleFromTermsOrLogin(event) {
     isSessionOnlyAuditActivity(activity) ||
     isSessionOnlyAuditEventType(eventType) ||
     activity === 'SESSION_REVOKED' ||
-    eventType === 'session_revoked'
+    eventType === 'session_revoked' ||
+    activity === 'USER_SIGNED_OUT' ||
+    eventType === 'user_signed_out'
   ) {
-    const role = pickUserRole(event)
-    return dashboardModuleForRole(role)
+    return LOGIN_MODULE
   }
 
   if (isSignInAuditActivity(activity) || isSignInAuditEventType(eventType)) {
-    const role = pickUserRole(event)
-    return dashboardModuleForRole(role)
+    return LOGIN_MODULE
   }
 
   return null
@@ -464,6 +515,9 @@ export function resolveAuditPortalModule(event) {
       stored === ADMIN_PORTAL_MODULES.DASHBOARD
     ) {
       return TERMS_AND_CONDITIONS_MODULE
+    }
+    if (isLoginModuleAuditEvent(event) && DASHBOARD_MODULE_LABELS.has(stored)) {
+      return LOGIN_MODULE
     }
     return stored
   }

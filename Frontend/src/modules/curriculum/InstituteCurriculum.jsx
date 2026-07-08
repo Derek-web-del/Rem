@@ -2,6 +2,7 @@ import { forwardRef, useEffect, useImperativeHandle, useMemo, useState } from 'r
 import BackButton from '../../components/BackButton.jsx'
 import { useNotify } from '../../components/notifications.jsx'
 import { authClient } from '../../lib/auth-client.js'
+import { uploadsPathToApiUrl } from '../../lib/fileUrls.js'
 import { apiUrl } from '../../lib/lmsStateStorage.js'
 import {
   mapCurriculumGuideList,
@@ -111,9 +112,11 @@ async function resolveCurriculumPostgresId(item) {
 
 function curriculumFilePreviewSrc(item) {
   const inline = String(item?.fileDataUrl ?? '').trim()
-  if (inline) return inline
-  const path = String(item?.fileUrl ?? '').trim()
-  if (path) return apiUrl(path)
+  if (inline.startsWith('data:') || inline.startsWith('http://') || inline.startsWith('https://')) {
+    return inline
+  }
+  const path = String(item?.fileUrl ?? item?.file_data_url ?? inline ?? '').trim()
+  if (path) return uploadsPathToApiUrl(path)
   return ''
 }
 
@@ -453,8 +456,17 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
       )
     }
     return (
-      <div className="h-44 w-full rounded-lg border bg-white p-2">
-        <iframe title={curriculumCardTitle(item)} src={src} className="h-full w-full rounded" />
+      <div className="flex h-44 w-full flex-col items-center justify-center gap-2 rounded-lg border bg-neutral-50 p-4 text-center">
+        <p className="text-sm font-semibold text-neutral-800">{curriculumCardTitle(item)}</p>
+        <p className="text-xs text-neutral-500">PDF curriculum guide</p>
+        <a
+          href={src}
+          target="_blank"
+          rel="noreferrer"
+          className="text-sm font-semibold text-blue-700 underline"
+        >
+          Open PDF
+        </a>
       </div>
     )
   }

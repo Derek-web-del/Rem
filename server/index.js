@@ -22,7 +22,7 @@ import { createGradesV1Router } from './api/gradesV1.js'
 import { createTeacherGradebookV1Router } from './api/teacherGradebookV1.js'
 import { createGradeOverrideV1Router } from './api/gradeOverrideV1.js'
 import { createAdminCurriculumGuidesRouter } from './api/adminCurriculumGuides.js'
-import { createFileDownloadRouter, createLegacyUploadsRouter } from './api/fileDownload.js'
+import { getUploadStorageStats } from './lib/uploadStorageStats.js'
 import { ensureUploadDirs, subjectAssetsRoot } from './lib/uploadPaths.js'
 import { createMonitoringRouter } from './routes/monitoring.js'
 import { createBackupRouter } from './routes/backup.js'
@@ -255,6 +255,7 @@ function parseCorsOrigins() {
         return
       }
       await pool.query('SELECT 1')
+      const uploads = getUploadStorageStats()
       res.json({
         status: 'ok',
         timestamp: new Date().toISOString(),
@@ -262,6 +263,7 @@ function parseCorsOrigins() {
         database: 'connected',
         version: '1.0.1',
         restore_engine: RESTORE_ENGINE_VERSION,
+        uploads,
       })
     } catch {
       res.status(503).json({

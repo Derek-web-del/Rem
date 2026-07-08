@@ -6,6 +6,7 @@ import {
   STUDENT_PORTAL_MODULES,
   TEACHER_PORTAL_MODULES,
   dashboardModuleForRole,
+  loginAuditModule,
   resolveAccountChangedModule,
   resolveInstituteActivityModule,
   termsAndConditionsModule,
@@ -583,7 +584,7 @@ export class CustomActivityLogger {
     userId,
     { userName = '', userEmail = '', userRole = '', ipAddress = '', userAgent = '' } = {},
   ) {
-    const dashboardModule = dashboardModuleForRole(userRole)
+    const dashboardModule = loginAuditModule()
     return this._log({
       userId: String(userId || 'unknown'),
       activityType: 'USER_SIGNED_OUT',
@@ -626,7 +627,7 @@ export class CustomActivityLogger {
     const description = name
       ? `${name} signed in via ${loginMethod}`
       : `User signed in via ${loginMethod}`
-    const sessionModule = dashboardModuleForRole(role || userRole)
+    const sessionModule = loginAuditModule()
 
     return this._log({
       userId: String(userId || 'unknown'),
@@ -684,7 +685,7 @@ export class CustomActivityLogger {
         actorEmail: actorEmail ? String(actorEmail) : null,
         actorRole: actorRole ? String(actorRole) : 'admin',
         userRole: role || null,
-        module: dashboardModuleForRole(role),
+        module: loginAuditModule(),
       },
       userEmail: actorEmail ? String(actorEmail) : null,
       userRole: actorRole ? String(actorRole) : 'admin',
@@ -1017,7 +1018,7 @@ export class CustomActivityLogger {
     const loginMethod = String(method || '').trim() || 'credentials'
     const signedInIso = signedInAt ? String(signedInAt) : new Date().toISOString()
     const ua = String(userAgent || '').trim().slice(0, 512) || 'unknown'
-    const loginModule = dashboardModuleForRole(role)
+    const loginModule = loginAuditModule()
     const description = name
       ? `${name} signed in via ${loginMethod}`
       : `User signed in via ${loginMethod}`

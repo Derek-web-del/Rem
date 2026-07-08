@@ -1,5 +1,11 @@
 # DigitalOcean App Platform spec — backup restore v12 (2026-07-05-nuclear-v12).
 # DO: Apps → LenLearn → Settings → App Spec → ensure branch + build_command match, then Force Rebuild.
+#
+# UPLOADS: App Platform disk is EPHEMERAL (no persistent volumes). User uploads
+# (faculty photos, curriculum PDFs, announcements) are NOT in PostgreSQL — they
+# live on disk. After moving from Droplet → App, restore uploads via Admin →
+# Data Backup (.lnbak) or copy from Droplet (scripts/export-droplet-uploads.sh).
+# Long-term: use DigitalOcean Spaces (S3-compatible) for persistent files.
 name: lenlearn
 region: sgp
 services:

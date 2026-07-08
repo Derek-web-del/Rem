@@ -62,14 +62,16 @@ function formatFacultyGradeLevels(faculty) {
 }
 
 function FacultyAvatar({ faculty, className = 'h-9 w-9' }) {
+  const [imgFailed, setImgFailed] = useState(false)
   const src = facultyPhotoSrc(faculty)
   const label = initials(faculty?.name)
-  if (src) {
+  if (src && !imgFailed) {
     return (
       <img
         src={src}
         alt=""
         className={`${className} shrink-0 rounded-full object-cover ring-1 ring-neutral-200`}
+        onError={() => setImgFailed(true)}
       />
     )
   }
