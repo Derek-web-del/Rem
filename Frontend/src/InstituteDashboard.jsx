@@ -17,7 +17,6 @@ import { saveListSnapshot, getListSnapshot } from './lib/indexedDB.js'
 import { isOnline } from './lib/offlineSync.js'
 import { warmAdminOfflineCache } from './lib/adminPortalOffline.js'
 import OfflineBanner from './components/OfflineBanner.jsx'
-import { AdminAccessBadge } from './components/PortalAccessBadge.jsx'
 import SystemOfflineBanner from './components/SystemOfflineBanner.jsx'
 import AdminAuditBanner from './components/AdminAuditBanner.jsx'
 import { resolveSubjectImageFromMap } from './lib/subjectImages.js'
@@ -3020,7 +3019,7 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
         onToggle={toggleSidebarCollapsed}
         sidebarGold={SIDEBAR_GOLD}
         sidebarGoldDark={SIDEBAR_GOLD_DARK}
-        header={<Header collapsed={sidebarCollapsed} />}
+        header={<Header collapsed={sidebarCollapsed} portalLabel="School Admin" />}
         footer={
           <div className="shrink-0 border-t border-white/15 px-2 py-4 text-center text-white/85">
             {!sidebarCollapsed ? (
@@ -3089,9 +3088,7 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
       </PortalSidebarShell>
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-neutral-100">
-        <header className="flex shrink-0 flex-col gap-3 border-b border-neutral-200/80 bg-neutral-50/80 px-4 py-4 backdrop-blur-sm md:px-8 md:py-5">
-          <AdminAccessBadge displayName={adminDisplayName} />
-          <div className="flex flex-wrap items-start justify-between gap-4">
+        <header className="flex shrink-0 flex-wrap items-start justify-between gap-4 border-b border-neutral-200/80 bg-neutral-50/80 px-4 py-4 backdrop-blur-sm md:px-8 md:py-5">
           <div>
             <h1 className="text-2xl font-bold tracking-tight text-neutral-900 md:text-3xl">
               {activeNav === 'curriculum'
@@ -3123,7 +3120,6 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
           >
             Logout
           </button>
-          </div>
         </header>
 
         <OfflineBanner />

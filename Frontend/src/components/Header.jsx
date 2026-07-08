@@ -1,6 +1,8 @@
 import GlendaleLogo from '../assets/GlendaleLogo.png'
 
-export default function Header({ collapsed = false }) {
+export default function Header({ collapsed = false, portalLabel = '' }) {
+  const label = String(portalLabel || '').trim()
+
   return (
     <header
       className={`flex w-full shrink-0 items-center justify-center border-b border-white/20 ${
@@ -18,7 +20,14 @@ export default function Header({ collapsed = false }) {
           className={`shrink-0 object-contain ${collapsed ? 'h-9 w-9' : 'h-12 w-12'}`}
         />
         {!collapsed ? (
-          <h1 className="text-sm font-medium tracking-wide text-white">Glendale School</h1>
+          <>
+            <h1 className="text-sm font-medium tracking-wide text-white">Glendale School</h1>
+            {label ? (
+              <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/75">
+                {label}
+              </p>
+            ) : null}
+          </>
         ) : null}
       </div>
     </header>

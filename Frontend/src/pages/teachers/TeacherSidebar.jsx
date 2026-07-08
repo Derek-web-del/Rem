@@ -36,7 +36,7 @@ export default function TeacherSidebar({ onLogout, navLocked: _navLocked = false
     <PortalSidebarShell
       collapsed={collapsed}
       onToggle={toggleCollapsed}
-      header={<Header collapsed={collapsed} />}
+      header={<Header collapsed={collapsed} portalLabel="Faculty" />}
       footer={
         <div className="shrink-0 border-t border-white/15 px-2 py-4 text-center text-white/85">
           {!collapsed ? (
