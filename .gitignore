@@ -15,6 +15,11 @@ Frontend/dist
 .env
 # Legacy local SQLite auth dir (data/auth.db) — no longer used; PostgreSQL only
 data/
+
+# Local database / upload snapshots (never commit)
+*.dump
+lenlearn_backup.*
+uploads_backup.tar.gz
 public/uploads/faculties/*
 !public/uploads/faculties/.gitkeep
 server/backups/*

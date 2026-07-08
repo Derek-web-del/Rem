@@ -2,10 +2,6 @@
 import { authClient } from './auth-client.js'
 import { normalizeAuditEvent } from './auditStatisticsCore.js'
 
-/** Shown when the server served rows from `public.audit_logs` after Infra 500s. */
-export const LOCAL_FALLBACK_NOTICE =
-  'Showing cached audit data from the local database. Better Auth Infra is temporarily unavailable.'
-
 /**
  * Load audit logs via monitoring API (retry + local fallback), then optional Dash client.
  *
@@ -55,8 +51,7 @@ export async function fetchDashAuditLogs(options = {}) {
     offset: Number(json?.offset ?? offset),
     source,
     localFallback,
-    fallbackNotice: localFallback ? LOCAL_FALLBACK_NOTICE : null,
-    warning: json?.warning || (localFallback ? LOCAL_FALLBACK_NOTICE : null),
+    warning: json?.warning || null,
   }
 }
 

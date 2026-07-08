@@ -1030,7 +1030,6 @@ export default function MonitoringRecords() {
   const [unifiedPage, setUnifiedPage] = useState(0)
   const [unifiedPageInput, setUnifiedPageInput] = useState('1')
   const [unifiedErr, setUnifiedErr] = useState('')
-  const [unifiedLocalFallback, setUnifiedLocalFallback] = useState(false)
   const [unifiedDateOpen, setUnifiedDateOpen] = useState(false)
   const [unifiedDateFrom, setUnifiedDateFrom] = useState('')
   const [unifiedDateTo, setUnifiedDateTo] = useState('')
@@ -1085,12 +1084,10 @@ export default function MonitoringRecords() {
 
       setUnifiedRows(normalized)
       setUnifiedTotal(Number(json?.total ?? normalized.length ?? 0))
-      setUnifiedLocalFallback(json?.localFallback === true || json?.authSource === 'local_fallback')
       setUnifiedErr('')
     } catch (e) {
       setUnifiedRows([])
       setUnifiedTotal(0)
-      setUnifiedLocalFallback(false)
       setUnifiedErr(String(e?.message || e || 'Could not load Events.'))
     }
   }, [unifiedType, unifiedDateFrom, unifiedDateTo, unifiedPage, debouncedSearch])
@@ -1228,11 +1225,6 @@ export default function MonitoringRecords() {
             </div>
           </div>
 
-          {unifiedLocalFallback ? (
-            <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-900">
-              Showing cached audit data from the local database. Better Auth Infra is temporarily unavailable.
-            </div>
-          ) : null}
           {unifiedErr ? (
             <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700">{unifiedErr}</div>
           ) : null}

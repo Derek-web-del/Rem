@@ -810,11 +810,6 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
               title: 'Save failed',
               durationMs: 12000,
             })
-          } else {
-            toast.success('Profile photo saved.', {
-              title: 'Admin profile',
-              durationMs: 4500,
-            })
           }
         } catch {
           if (!ac.signal.aborted) {
