@@ -2,9 +2,7 @@ import apiFetch from './apiClient.js'
 import { getRiskLevelFromScore } from '../../../shared/plagiarismRiskBands.js'
 import { AI_LIKELY_MIN, AI_MIXED_MIN } from '../../../shared/aiProbabilityBands.js'
 
-export { ORIGINALITY_FILE_MAX_BYTES as MAX_FILE_BYTES, ORIGINALITY_FILE_MAX_MSG } from './uploadLimits.js'
-
-export const ACCEPT_FILE_TYPES = '.txt,.docx,.pdf'
+export const ACCEPT_FILE_TYPES = '.txt,.pdf'
 
 function parseFlaggedSentences(raw) {
   if (!Array.isArray(raw)) return []

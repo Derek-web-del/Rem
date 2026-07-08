@@ -44,19 +44,12 @@ import {
 import { fetchGradeComponentsForSubject } from '../../lib/teacherSubjectCurriculum.js'
 
 import {
-  GENERIC_UPLOAD_MAX_BYTES,
-  GENERIC_UPLOAD_MAX_MSG,
   DEFAULT_UPLOAD_LABEL,
 } from '../../lib/uploadLimits.js'
 
-
-
-const MAX_FILE_BYTES = GENERIC_UPLOAD_MAX_BYTES
-const ACCEPT = '.pdf,.doc,.docx'
+const ACCEPT = '.pdf'
 const ALLOWED_FILE_TYPES = [
   'application/pdf',
-  'application/msword',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
 ]
 
 const FALLBACK_SUBJECTS = ['English', 'Math', 'Science', 'Filipino']
@@ -311,17 +304,10 @@ export default function TeacherAssignmentForm({ mode = 'add' }) {
     }
     const ext = next.name.split('.').pop()?.toLowerCase() || ''
     const mimeOk = ALLOWED_FILE_TYPES.includes(next.type)
-    const extOk = ['pdf', 'doc', 'docx'].includes(ext)
+    const extOk = ext === 'pdf'
     if (!mimeOk && !extOk) {
       toastRef.current.error(FACULTY_MSG.assignments.fileType, {
         toastId: FACULTY_TOAST_ID.assignmentFileTypeError,
-        durationMs: FACULTY_ANNOUNCEMENT_TOAST_MS,
-      })
-      return
-    }
-    if (next.size > MAX_FILE_BYTES) {
-      toastRef.current.error(FACULTY_MSG.assignments.fileSize, {
-        toastId: FACULTY_TOAST_ID.assignmentFileSizeError,
         durationMs: FACULTY_ANNOUNCEMENT_TOAST_MS,
       })
       return
@@ -466,17 +452,10 @@ export default function TeacherAssignmentForm({ mode = 'add' }) {
     if (file) {
       const ext = file.name.split('.').pop()?.toLowerCase() || ''
       const mimeOk = ALLOWED_FILE_TYPES.includes(file.type)
-      const extOk = ['pdf', 'doc', 'docx'].includes(ext)
+      const extOk = ext === 'pdf'
       if (!mimeOk && !extOk) {
         toastRef.current.error(FACULTY_MSG.assignments.fileType, {
           toastId: FACULTY_TOAST_ID.assignmentFileTypeError,
-          durationMs: FACULTY_ANNOUNCEMENT_TOAST_MS,
-        })
-        return false
-      }
-      if (file.size > MAX_FILE_BYTES) {
-        toastRef.current.error(FACULTY_MSG.assignments.fileSize, {
-          toastId: FACULTY_TOAST_ID.assignmentFileSizeError,
           durationMs: FACULTY_ANNOUNCEMENT_TOAST_MS,
         })
         return false
@@ -593,18 +572,13 @@ export default function TeacherAssignmentForm({ mode = 'add' }) {
       } else {
 
         toastRef.current.error(
-          msg.includes('File too large') || msg.includes('Maximum size') || msg.includes('exceed')
-            ? FACULTY_MSG.assignments.fileSize
-            : msg.includes('PDF') || msg.includes('DOC')
-              ? FACULTY_MSG.assignments.fileType
-              : FACULTY_MSG.assignments.addFailed,
+          msg.includes('PDF') || msg.includes('Only PDF')
+            ? FACULTY_MSG.assignments.fileType
+            : FACULTY_MSG.assignments.addFailed,
           {
-            toastId:
-              msg.includes('File too large') || msg.includes('Maximum size') || msg.includes('exceed')
-                ? FACULTY_TOAST_ID.assignmentFileSizeError
-                : msg.includes('PDF') || msg.includes('DOC')
-                  ? FACULTY_TOAST_ID.assignmentFileTypeError
-                  : FACULTY_TOAST_ID.assignmentAddError,
+            toastId: msg.includes('PDF') || msg.includes('Only PDF')
+              ? FACULTY_TOAST_ID.assignmentFileTypeError
+              : FACULTY_TOAST_ID.assignmentAddError,
             durationMs: FACULTY_ANNOUNCEMENT_TOAST_MS,
           },
         )
@@ -658,8 +632,7 @@ export default function TeacherAssignmentForm({ mode = 'add' }) {
               <div>
 
                 <p className="text-sm font-bold text-neutral-900">Assignment File</p>
-                <p className="mt-1 text-sm text-neutral-500">Allowed: PDF, DOC, DOCX</p>
-                <p className="text-sm text-neutral-500">{DEFAULT_UPLOAD_LABEL}</p>
+                <p className="mt-1 text-sm text-neutral-500">{DEFAULT_UPLOAD_LABEL}</p>
 
               </div>
 

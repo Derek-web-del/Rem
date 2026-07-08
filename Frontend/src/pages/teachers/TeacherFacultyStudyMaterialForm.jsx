@@ -35,14 +35,8 @@ import BackButton from '../../components/BackButton.jsx'
 import { ACTION_BLUE } from './instituteChrome.js'
 
 import {
-  STUDY_MATERIAL_MAX_BYTES,
-  STUDY_MATERIAL_MAX_MSG,
   STUDY_MATERIAL_UPLOAD_LABEL,
 } from '../../lib/uploadLimits.js'
-
-
-
-const MAX_FILE_BYTES = STUDY_MATERIAL_MAX_BYTES
 
 const ACCEPT = '.pdf,application/pdf'
 
@@ -296,20 +290,6 @@ export default function TeacherFacultyStudyMaterialForm({ mode = 'add' }) {
 
     }
 
-    if (next.size > MAX_FILE_BYTES) {
-
-      toastRef.current.error(FACULTY_MSG.studyMaterial.fileSize, {
-
-        toastId: 'study-material-file-size-error',
-
-        durationMs: FACULTY_ANNOUNCEMENT_TOAST_MS,
-
-      })
-
-      return
-
-    }
-
     setFile(next)
 
   }
@@ -412,20 +392,6 @@ export default function TeacherFacultyStudyMaterialForm({ mode = 'add' }) {
 
       }
 
-      if (file.size > MAX_FILE_BYTES) {
-
-        toastRef.current.error(FACULTY_MSG.studyMaterial.fileSize, {
-
-          toastId: 'study-material-file-size-error',
-
-          durationMs: FACULTY_ANNOUNCEMENT_TOAST_MS,
-
-        })
-
-        return false
-
-      }
-
     }
 
     return true
@@ -494,15 +460,11 @@ export default function TeacherFacultyStudyMaterialForm({ mode = 'add' }) {
 
           ? FACULTY_MSG.studyMaterial.updateFailed
 
-          : msg.includes('File too large') || msg.includes('Maximum size') || msg.includes('exceed')
+          : msg.includes('PDF') || msg.includes('Only PDF')
 
-            ? FACULTY_MSG.studyMaterial.fileSize
+            ? FACULTY_MSG.studyMaterial.fileType
 
-            : msg.includes('PDF')
-
-              ? FACULTY_MSG.studyMaterial.fileType
-
-              : FACULTY_MSG.studyMaterial.addFailed,
+            : FACULTY_MSG.studyMaterial.addFailed,
 
         {
 

@@ -3,14 +3,13 @@ import path from 'node:path'
 import multer from 'multer'
 import { randomUUID } from 'node:crypto'
 import {
-  DEFAULT_UPLOAD_MAX_BYTES,
-  DEFAULT_UPLOAD_MAX_MSG,
+  MULTER_MAX_BYTES,
+  GENERIC_UPLOAD_FAILED_MSG,
 } from './uploadLimitsConfig.js'
 import { PDF_MIMES, verifyUploadMagicBytes } from './uploadMagicBytes.js'
 import { uploadsRoot } from './uploadPaths.js'
 
 export const CURRICULUM_UPLOAD_REL = '/uploads/curriculum'
-export const CURRICULUM_PDF_MAX_BYTES = DEFAULT_UPLOAD_MAX_BYTES
 
 function curriculumUploadAbsDir() {
   return path.join(uploadsRoot(), 'curriculum')
@@ -79,9 +78,6 @@ export function validateCurriculumGuideFile(file) {
   const name = String(file.originalname || '').toLowerCase()
   const ext = name.includes('.') ? `.${name.split('.').pop()}` : ''
   if (!ALLOWED_CURRICULUM_EXT.has(ext)) return 'File must be PDF.'
-  if (file.size > CURRICULUM_PDF_MAX_BYTES) {
-    return DEFAULT_UPLOAD_MAX_MSG
-  }
   return ''
 }
 
@@ -93,7 +89,7 @@ export async function validateCurriculumGuideFileAsync(file) {
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: CURRICULUM_PDF_MAX_BYTES, files: 1, fields: 12 },
+  limits: { fileSize: MULTER_MAX_BYTES, files: 1, fields: 12 },
   fileFilter(_req, file, cb) {
     const mime = String(file.mimetype || '').toLowerCase()
     const name = String(file.originalname || '').toLowerCase()
@@ -118,7 +114,7 @@ export function curriculumPdfUploadMiddleware(req, res, next) {
     const status = err.code === 'LIMIT_FILE_SIZE' ? 400 : 400
     res.status(status).json({
       success: false,
-      error: err.code === 'LIMIT_FILE_SIZE' ? DEFAULT_UPLOAD_MAX_MSG : String(err.message || err),
+      error: err.code === 'LIMIT_FILE_SIZE' ? GENERIC_UPLOAD_FAILED_MSG : String(err.message || err),
     })
   })
 }

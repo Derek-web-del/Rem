@@ -2,9 +2,9 @@ import fs from 'node:fs'
 import path from 'node:path'
 import multer from 'multer'
 import {
-  STUDENT_SUBMISSION_MAX_BYTES,
-  STUDENT_SUBMISSION_MAX_MSG,
-} from '../../shared/uploadLimits.js'
+  MULTER_MAX_BYTES,
+  GENERIC_UPLOAD_FAILED_MSG,
+} from './uploadLimitsConfig.js'
 import { PDF_MIMES, verifyUploadMagicBytes } from './uploadMagicBytes.js'
 import { resolvePublicUploadPath, uploadsRoot } from './uploadPaths.js'
 
@@ -70,19 +70,16 @@ function validateStudentSubmissionFile(file) {
   if (!STUDENT_ALLOWED_EXT.has(ext) && !STUDENT_ALLOWED_MIMES.has(mime)) {
     return STUDENT_SUBMISSION_TYPE_REJECT_MSG
   }
-  if (file.size > STUDENT_SUBMISSION_MAX_BYTES) {
-    return STUDENT_SUBMISSION_MAX_MSG
-  }
   return ''
 }
 
 function createUploadMiddleware() {
   const upload = multer({
     storage: multer.memoryStorage(),
-    limits: { fileSize: STUDENT_SUBMISSION_MAX_BYTES, files: 1, fields: 8 },
+    limits: { fileSize: MULTER_MAX_BYTES, files: 1, fields: 8 },
     fileFilter(_req, file, cb) {
       const err = validateStudentSubmissionFile(file)
-      if (err && err !== STUDENT_SUBMISSION_MAX_MSG) {
+      if (err) {
         cb(new Error(err))
         return
       }
@@ -99,7 +96,7 @@ function createUploadMiddleware() {
       if (!err) return next()
       const msg = String(err.message || err)
       if (err.code === 'LIMIT_FILE_SIZE') {
-        res.status(400).json({ success: false, error: 'BAD_REQUEST', message: STUDENT_SUBMISSION_MAX_MSG })
+        res.status(400).json({ success: false, error: 'BAD_REQUEST', message: GENERIC_UPLOAD_FAILED_MSG })
         return
       }
       if (msg === STUDENT_SUBMISSION_TYPE_REJECT_MSG) {

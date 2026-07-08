@@ -15,8 +15,6 @@ import {
   useFacultyNotify,
 } from '../../lib/facultyNotify.js'
 import {
-  GENERIC_UPLOAD_MAX_BYTES,
-  GENERIC_UPLOAD_MAX_MSG,
   DEFAULT_UPLOAD_LABEL,
 } from '../../lib/uploadLimits.js'
 import TeacherMainHeader from './TeacherMainHeader.jsx'
@@ -30,12 +28,9 @@ import {
 } from '../../lib/curriculumFormPrefill.js'
 import { fetchGradeComponentsForSubject } from '../../lib/teacherSubjectCurriculum.js'
 
-const MAX_FILE_BYTES = GENERIC_UPLOAD_MAX_BYTES
-const ACCEPT = '.pdf,.doc,.docx'
+const ACCEPT = '.pdf'
 const ALLOWED_FILE_TYPES = [
   'application/pdf',
-  'application/msword',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
 ]
 
 const FALLBACK_SUBJECTS = ['English', 'Math', 'Science', 'Filipino']
@@ -206,17 +201,10 @@ export default function TeacherActivityForm({ mode = 'add' }) {
     }
     const ext = next.name.split('.').pop()?.toLowerCase() || ''
     const mimeOk = ALLOWED_FILE_TYPES.includes(next.type)
-    const extOk = ['pdf', 'doc', 'docx'].includes(ext)
+    const extOk = ext === 'pdf'
     if (!mimeOk && !extOk) {
       toastRef.current.error(FACULTY_MSG.activities.fileType, {
         toastId: FACULTY_TOAST_ID.activityFileTypeError,
-        durationMs: FACULTY_ANNOUNCEMENT_TOAST_MS,
-      })
-      return
-    }
-    if (next.size > MAX_FILE_BYTES) {
-      toastRef.current.error(FACULTY_MSG.activities.fileSize, {
-        toastId: FACULTY_TOAST_ID.activityFileSizeError,
         durationMs: FACULTY_ANNOUNCEMENT_TOAST_MS,
       })
       return
@@ -293,17 +281,10 @@ export default function TeacherActivityForm({ mode = 'add' }) {
     if (file) {
       const ext = file.name.split('.').pop()?.toLowerCase() || ''
       const mimeOk = ALLOWED_FILE_TYPES.includes(file.type)
-      const extOk = ['pdf', 'doc', 'docx'].includes(ext)
+      const extOk = ext === 'pdf'
       if (!mimeOk && !extOk) {
         toastRef.current.error(FACULTY_MSG.activities.fileType, {
           toastId: FACULTY_TOAST_ID.activityFileTypeError,
-          durationMs: FACULTY_ANNOUNCEMENT_TOAST_MS,
-        })
-        return false
-      }
-      if (file.size > MAX_FILE_BYTES) {
-        toastRef.current.error(FACULTY_MSG.activities.fileSize, {
-          toastId: FACULTY_TOAST_ID.activityFileSizeError,
           durationMs: FACULTY_ANNOUNCEMENT_TOAST_MS,
         })
         return false
@@ -379,18 +360,13 @@ export default function TeacherActivityForm({ mode = 'add' }) {
         })
       } else {
         toastRef.current.error(
-          msg.includes('File too large') || msg.includes('Maximum size') || msg.includes('exceed')
-            ? FACULTY_MSG.activities.fileSize
-            : msg.includes('PDF') || msg.includes('DOC')
-              ? FACULTY_MSG.activities.fileType
-              : FACULTY_MSG.activities.addFailed,
+          msg.includes('PDF') || msg.includes('Only PDF')
+            ? FACULTY_MSG.activities.fileType
+            : FACULTY_MSG.activities.addFailed,
           {
-            toastId:
-              msg.includes('File too large') || msg.includes('Maximum size') || msg.includes('exceed')
-                ? FACULTY_TOAST_ID.activityFileSizeError
-                : msg.includes('PDF') || msg.includes('DOC')
-                  ? FACULTY_TOAST_ID.activityFileTypeError
-                  : FACULTY_TOAST_ID.activityAddError,
+            toastId: msg.includes('PDF') || msg.includes('Only PDF')
+              ? FACULTY_TOAST_ID.activityFileTypeError
+              : FACULTY_TOAST_ID.activityAddError,
             durationMs: FACULTY_ANNOUNCEMENT_TOAST_MS,
           },
         )
@@ -419,8 +395,7 @@ export default function TeacherActivityForm({ mode = 'add' }) {
             <div className="grid grid-cols-1 gap-6 lg:grid-cols-2 lg:items-start">
               <div>
                 <p className="text-sm font-bold text-neutral-900">Activity File</p>
-                <p className="mt-1 text-sm text-neutral-500">Allowed: PDF, DOC, DOCX only</p>
-                <p className="text-sm text-neutral-500">{DEFAULT_UPLOAD_LABEL}</p>
+                <p className="mt-1 text-sm text-neutral-500">{DEFAULT_UPLOAD_LABEL}</p>
               </div>
               <div>
                 <div

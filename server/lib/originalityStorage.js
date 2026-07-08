@@ -3,22 +3,17 @@ import path from 'node:path'
 import multer from 'multer'
 import { randomUUID } from 'node:crypto'
 import {
-  DEFAULT_UPLOAD_MAX_BYTES,
-  DEFAULT_UPLOAD_MAX_MSG,
+  MULTER_MAX_BYTES,
+  GENERIC_UPLOAD_FAILED_MSG,
 } from './uploadLimitsConfig.js'
 import { uploadsRoot } from './uploadPaths.js'
 
 export const ORIGINALITY_UPLOAD_REL = '/uploads/originality'
-export const ORIGINALITY_FILE_TYPE_MSG = 'Supported formats: .txt, .docx, .pdf'
-export const ORIGINALITY_MAX_BYTES = DEFAULT_UPLOAD_MAX_BYTES
-export const ORIGINALITY_FILE_SIZE_MSG = DEFAULT_UPLOAD_MAX_MSG
+export const ORIGINALITY_FILE_TYPE_MSG = 'Supported formats: .txt, .pdf'
+export const ORIGINALITY_FILE_SIZE_MSG = GENERIC_UPLOAD_FAILED_MSG
 
-const ALLOWED_EXT = new Set(['.txt', '.docx', '.pdf'])
-const ALLOWED_MIMES = new Set([
-  'text/plain',
-  'application/pdf',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-])
+const ALLOWED_EXT = new Set(['.txt', '.pdf'])
+const ALLOWED_MIMES = new Set(['text/plain', 'application/pdf'])
 
 function originalityUploadAbsDir() {
   return path.join(uploadsRoot(), 'originality')
@@ -52,7 +47,7 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage,
-  limits: { fileSize: ORIGINALITY_MAX_BYTES, files: 1, fields: 8 },
+  limits: { fileSize: MULTER_MAX_BYTES, files: 1, fields: 8 },
   fileFilter(_req, file, cb) {
     const ext = path.extname(String(file.originalname || '')).toLowerCase()
     const mime = String(file.mimetype || '').toLowerCase()

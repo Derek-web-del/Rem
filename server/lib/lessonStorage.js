@@ -3,22 +3,18 @@ import path from 'node:path'
 import multer from 'multer'
 import { randomUUID } from 'node:crypto'
 import {
-  DEFAULT_UPLOAD_MAX_BYTES,
-  DEFAULT_UPLOAD_MAX_MSG,
+  MULTER_MAX_BYTES,
+  GENERIC_UPLOAD_FAILED_MSG,
+  PDF_ONLY_TYPE_MSG,
 } from './uploadLimitsConfig.js'
 import { uploadsRoot } from './uploadPaths.js'
 
 export const LESSON_UPLOAD_REL = '/uploads/lessons'
-export const LESSON_MAX_BYTES = DEFAULT_UPLOAD_MAX_BYTES
-export const LESSON_FILE_SIZE_MSG = DEFAULT_UPLOAD_MAX_MSG
-export const LESSON_FILE_TYPE_MSG = 'Only PDF, DOC, and DOCX files are allowed.'
+export const LESSON_FILE_SIZE_MSG = GENERIC_UPLOAD_FAILED_MSG
+export const LESSON_FILE_TYPE_MSG = PDF_ONLY_TYPE_MSG
 
-const ALLOWED_EXT = new Set(['.pdf', '.doc', '.docx'])
-const ALLOWED_MIMES = new Set([
-  'application/pdf',
-  'application/msword',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-])
+const ALLOWED_EXT = new Set(['.pdf'])
+const ALLOWED_MIMES = new Set(['application/pdf'])
 
 function lessonsUploadAbsDir() {
   return path.join(uploadsRoot(), 'lessons')
@@ -38,7 +34,7 @@ function safeBaseName(name) {
 export function saveLessonFile(buffer, originalName) {
   ensureLessonsUploadDir()
   const ext = path.extname(originalName || '').toLowerCase()
-  const safeExt = ALLOWED_EXT.has(ext) ? ext : '.bin'
+  const safeExt = ALLOWED_EXT.has(ext) ? ext : '.pdf'
   const stem = safeBaseName(originalName).replace(new RegExp(`${safeExt.replace('.', '\\.')}$`, 'i'), '')
   const fileName = `${stem}-${randomUUID().slice(0, 8)}${safeExt}`
   const abs = path.join(lessonsUploadAbsDir(), fileName)
@@ -71,9 +67,6 @@ function validateLessonFile(file, { required = false } = {}) {
   if (!ALLOWED_EXT.has(ext) && !ALLOWED_MIMES.has(mime)) {
     return LESSON_FILE_TYPE_MSG
   }
-  if (file.size > LESSON_MAX_BYTES) {
-    return LESSON_FILE_SIZE_MSG
-  }
   return ''
 }
 
@@ -83,7 +76,7 @@ function isMultipart(req) {
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: LESSON_MAX_BYTES, files: 1, fields: 24 },
+  limits: { fileSize: MULTER_MAX_BYTES, files: 1, fields: 24 },
   fileFilter(_req, file, cb) {
     const ext = path.extname(String(file.originalname || '')).toLowerCase()
     const mime = String(file.mimetype || '').toLowerCase()

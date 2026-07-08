@@ -9,8 +9,6 @@ import {
   formatReportDateTime,
   getAiVerdictStyle,
   getRiskLevel,
-  MAX_FILE_BYTES,
-  ORIGINALITY_FILE_MAX_MSG,
   riskBadgeStyle,
   submitForAnalysis,
 } from '../../lib/originalityChecker.js'
@@ -170,12 +168,8 @@ export default function TeacherOriginalityCheckerPage() {
   function onFilePick(nextFile) {
     if (!nextFile) return
     const ext = nextFile.name.split('.').pop()?.toLowerCase()
-    if (!['txt', 'docx', 'pdf'].includes(ext || '')) {
-      toastRef.current.error('Supported formats: .txt, .docx, .pdf')
-      return
-    }
-    if (nextFile.size > MAX_FILE_BYTES) {
-      toastRef.current.error(ORIGINALITY_FILE_MAX_MSG)
+    if (!['txt', 'pdf'].includes(ext || '')) {
+      toastRef.current.error('Supported formats: .txt, .pdf')
       return
     }
     setFile(nextFile)
@@ -335,7 +329,7 @@ export default function TeacherOriginalityCheckerPage() {
                       Choose File
                     </button>
                     <p className="mt-2 text-xs text-neutral-500">
-                      Supported formats: .txt, .docx, .pdf — Max 15MB
+                      Supported formats: .txt, .pdf
                     </p>
                     {file ? <p className="mt-1 text-sm font-medium text-neutral-800">{file.name}</p> : null}
                   </div>

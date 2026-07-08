@@ -3,20 +3,16 @@ import path from 'node:path'
 import multer from 'multer'
 import { randomUUID } from 'node:crypto'
 import {
-  DEFAULT_UPLOAD_MAX_BYTES,
-  DEFAULT_UPLOAD_MAX_MSG,
+  MULTER_MAX_BYTES,
+  GENERIC_UPLOAD_FAILED_MSG,
+  PDF_ONLY_TYPE_MSG,
 } from './uploadLimitsConfig.js'
 import { uploadsRoot } from './uploadPaths.js'
 
 export const SYLLABUS_UPLOAD_REL = '/uploads/syllabus'
-export const SYLLABUS_MAX_BYTES = DEFAULT_UPLOAD_MAX_BYTES
 
-const ALLOWED_EXT = new Set(['.pdf', '.doc', '.docx'])
-const ALLOWED_MIMES = new Set([
-  'application/pdf',
-  'application/msword',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-])
+const ALLOWED_EXT = new Set(['.pdf'])
+const ALLOWED_MIMES = new Set(['application/pdf'])
 
 function syllabusUploadAbsDir() {
   return path.join(uploadsRoot(), 'syllabus')
@@ -66,17 +62,14 @@ function validateSyllabusFile(file) {
   const ext = path.extname(String(file.originalname || '')).toLowerCase()
   const mime = String(file.mimetype || '').toLowerCase()
   if (!ALLOWED_EXT.has(ext) && !ALLOWED_MIMES.has(mime)) {
-    return 'Only PDF, DOC, and DOCX files are allowed.'
-  }
-  if (file.size > SYLLABUS_MAX_BYTES) {
-    return DEFAULT_UPLOAD_MAX_MSG
+    return PDF_ONLY_TYPE_MSG
   }
   return ''
 }
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: SYLLABUS_MAX_BYTES, files: 1, fields: 8 },
+  limits: { fileSize: MULTER_MAX_BYTES, files: 1, fields: 8 },
   fileFilter(_req, file, cb) {
     const ext = path.extname(String(file.originalname || '')).toLowerCase()
     const mime = String(file.mimetype || '').toLowerCase()
@@ -84,7 +77,7 @@ const upload = multer({
       cb(null, true)
       return
     }
-    cb(new Error('Only PDF, DOC, and DOCX files allowed'))
+    cb(new Error(PDF_ONLY_TYPE_MSG))
   },
 })
 
@@ -98,7 +91,7 @@ export function syllabusUploadMiddleware(req, res, next) {
     if (!err) return next()
     res.status(400).json({
       success: false,
-      error: err.code === 'LIMIT_FILE_SIZE' ? DEFAULT_UPLOAD_MAX_MSG : String(err.message || err),
+      error: err.code === 'LIMIT_FILE_SIZE' ? GENERIC_UPLOAD_FAILED_MSG : String(err.message || err),
     })
   })
 }

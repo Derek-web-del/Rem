@@ -103,9 +103,6 @@ export async function fetchStudentWorkDetail(kind, id) {
 export async function submitStudentWorkFile(kind, id, file) {
   const typeErr = validateStudentSubmissionFileType(file)
   if (typeErr) throw new Error(typeErr)
-  if (file?.size > 10 * 1024 * 1024) {
-    throw new Error('File size exceeds 10 MB limit. Please choose a smaller file.')
-  }
   const base = workApiBase(kind)
   const form = new FormData()
   form.append('file', file)

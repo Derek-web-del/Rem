@@ -1,11 +1,7 @@
 import { useRef, useState } from 'react'
-import {
-  GENERIC_UPLOAD_MAX_BYTES,
-  GENERIC_UPLOAD_MAX_MSG,
-} from '../../../../lib/uploadLimits.js'
 
-const ACCEPT = '.pdf,.doc,.docx'
-const ALLOWED = new Set(['pdf', 'doc', 'docx'])
+const ACCEPT = '.pdf'
+const ALLOWED = new Set(['pdf'])
 
 function linkLabel(url) {
   try {
@@ -32,8 +28,7 @@ export default function LessonAttachPanel({
   function validateFile(f) {
     if (!f) return ''
     const ext = f.name.split('.').pop()?.toLowerCase() || ''
-    if (!ALLOWED.has(ext)) return 'Only PDF, DOC, and DOCX files are allowed.'
-    if (f.size > GENERIC_UPLOAD_MAX_BYTES) return GENERIC_UPLOAD_MAX_MSG
+    if (!ALLOWED.has(ext)) return 'Only PDF files are allowed.'
     return ''
   }
 

@@ -3,8 +3,6 @@ import { useNavigate, useParams, useLocation, useSearchParams } from 'react-rout
 import { apiUrl } from '../../lib/lmsStateStorage.js'
 import { FACULTY_MSG, useFacultyNotify } from '../../lib/facultyNotify.js'
 import {
-  SUBJECT_MATERIAL_MAX_BYTES,
-  SUBJECT_MATERIAL_MAX_MSG,
   DEFAULT_UPLOAD_LABEL,
 } from '../../lib/uploadLimits.js'
 import TeacherBackButton from './TeacherBackButton.jsx'
@@ -12,31 +10,16 @@ import TeacherMainHeader from './TeacherMainHeader.jsx'
 import { ACTION_BLUE } from './instituteChrome.js'
 import { linkCreatedItemToCurriculum, readCurriculumQuery } from '../../lib/curriculumFormPrefill.js'
 
-const ACCEPT_EDIT = '.pdf,.doc,.docx'
-const ACCEPT_ADD = '.pdf'
-const DOC_EXT = new Set(['pdf', 'doc', 'docx'])
+const ACCEPT = '.pdf'
 const PDF_EXT = new Set(['pdf'])
 
 function isAdminSyllabusMaterialId(id) {
   return String(id || '').startsWith('admin-syllabus')
 }
 const FILE_TYPE_MSG = FACULTY_MSG.studyMaterial.fileType
-const FILE_SIZE_MAX_MSG = SUBJECT_MATERIAL_MAX_MSG
 const ADD_FILE_TYPE_MSG = 'Only PDF files are allowed.'
 
-function isAllowedDocument(file) {
-  if (!file) return false
-  const ext = file.name.split('.').pop()?.toLowerCase() || ''
-  if (DOC_EXT.has(ext)) return true
-  const mime = String(file.type || '').toLowerCase()
-  return (
-    mime === 'application/pdf' ||
-    mime === 'application/msword' ||
-    mime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-  )
-}
-
-function isAllowedAddDocument(file) {
+function isAllowedPdfDocument(file) {
   if (!file) return false
   const ext = file.name.split('.').pop()?.toLowerCase() || ''
   if (PDF_EXT.has(ext)) return true
@@ -45,15 +28,13 @@ function isAllowedAddDocument(file) {
 
 function validateAddFile(file) {
   if (!file) return ''
-  if (!isAllowedAddDocument(file)) return ADD_FILE_TYPE_MSG
-  if (file.size > SUBJECT_MATERIAL_MAX_BYTES) return FILE_SIZE_MAX_MSG
+  if (!isAllowedPdfDocument(file)) return ADD_FILE_TYPE_MSG
   return ''
 }
 
 function validateEditFile(file) {
   if (!file) return ''
-  if (!isAllowedDocument(file)) return FILE_TYPE_MSG
-  if (file.size > SUBJECT_MATERIAL_MAX_BYTES) return FILE_SIZE_MAX_MSG
+  if (!isAllowedPdfDocument(file)) return FILE_TYPE_MSG
   return ''
 }
 
@@ -182,7 +163,7 @@ function EditStudyMaterialForm({
             <input
               ref={fileRef}
               type="file"
-              accept={ACCEPT_EDIT}
+              accept={ACCEPT}
               className="hidden"
               onChange={(ev) => {
                 onFilePick(ev.target.files?.[0])
@@ -292,7 +273,7 @@ function AddStudyMaterialForm({
           <p className="text-sm font-semibold text-neutral-900">
             Study Material File ({subjectLabel})
           </p>
-          <p className="mt-2 text-sm text-neutral-600">PDF only • Max 15MB</p>
+          <p className="mt-2 text-sm text-neutral-600">{DEFAULT_UPLOAD_LABEL}</p>
         </div>
         <div>
           <div
@@ -314,7 +295,7 @@ function AddStudyMaterialForm({
             <input
               ref={fileRef}
               type="file"
-              accept={ACCEPT_ADD}
+              accept={ACCEPT}
               className="hidden"
               onChange={(ev) => {
                 onFilePick(ev.target.files?.[0])
@@ -465,8 +446,6 @@ export default function TeacherStudyMaterialForm({
       setFile(null)
       if (fileErr === ADD_FILE_TYPE_MSG || fileErr === FILE_TYPE_MSG) {
         toast.error(mode === 'add' ? ADD_FILE_TYPE_MSG : FACULTY_MSG.studyMaterial.fileType)
-      } else if (fileErr === FILE_SIZE_MAX_MSG) {
-        toast.error(SUBJECT_MATERIAL_MAX_MSG)
       }
       return
     }
@@ -498,8 +477,6 @@ export default function TeacherStudyMaterialForm({
   function notifyFileValidationError(fileErr) {
     if (fileErr === ADD_FILE_TYPE_MSG || fileErr === FILE_TYPE_MSG) {
       toast.error(mode === 'add' ? ADD_FILE_TYPE_MSG : FACULTY_MSG.studyMaterial.fileType)
-    } else if (fileErr === FILE_SIZE_MAX_MSG) {
-      toast.error(SUBJECT_MATERIAL_MAX_MSG)
     }
   }
 
@@ -574,8 +551,7 @@ export default function TeacherStudyMaterialForm({
     } catch (err) {
       const msg = String(err?.message || err)
       setError(msg)
-      if (msg === FILE_TYPE_MSG) toast.error(FACULTY_MSG.studyMaterial.fileType)
-      else if (msg === FILE_SIZE_MAX_MSG) toast.error(FACULTY_MSG.studyMaterial.fileSize)
+      if (msg === FILE_TYPE_MSG || msg === ADD_FILE_TYPE_MSG) toast.error(FACULTY_MSG.studyMaterial.fileType)
       else toast.error(isEdit ? FACULTY_MSG.studyMaterial.updateFailed : FACULTY_MSG.studyMaterial.addFailed)
     } finally {
       setSubmitting(false)

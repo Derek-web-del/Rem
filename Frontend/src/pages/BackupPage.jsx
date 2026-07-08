@@ -816,11 +816,7 @@ export default function BackupPage() {
             <li>If health is OK on your <span className="font-mono">.ondigitalocean.app</span> URL but not on glendalehs-lms.com, update Cloudflare DNS to DigitalOcean</li>
           </ol>
         </div>
-      ) : (
-        <p className="text-xs text-emerald-700">
-          Restore engine ready: <span className="font-mono font-semibold">{deployedRestoreEngine}</span>
-        </p>
-      )}
+      ) : null}
 
       <section className="rounded-xl border border-neutral-100 bg-white p-5 shadow-sm">
         <h2 className="text-lg font-bold text-neutral-900">Google Drive Backup</h2>

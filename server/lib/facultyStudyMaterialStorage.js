@@ -2,13 +2,9 @@ import path from 'node:path'
 import multer from 'multer'
 import { saveStudyMaterialFile, deleteStudyMaterialFileByUrl } from './studyMaterialStorage.js'
 import {
-  DEFAULT_UPLOAD_MAX_BYTES,
-  FACULTY_STUDY_MATERIAL_MAX_BYTES,
-  STUDY_MATERIAL_MAX_MSG,
+  MULTER_MAX_BYTES,
+  GENERIC_UPLOAD_FAILED_MSG,
 } from './uploadLimitsConfig.js'
-
-export const FACULTY_MATERIAL_MAX_BYTES = FACULTY_STUDY_MATERIAL_MAX_BYTES
-export const FACULTY_MATERIAL_SIZE_MSG = STUDY_MATERIAL_MAX_MSG
 export const FACULTY_MATERIAL_TYPE_MSG = 'Only PDF files are allowed.'
 export const FACULTY_MATERIAL_FILE_TYPE = 'PDF'
 
@@ -32,9 +28,6 @@ export function validateFacultyMaterialFile(file, { required = true } = {}) {
   const mime = String(file.mimetype || '').toLowerCase()
   if (!ALLOWED_EXT.has(ext) && !ALLOWED_MIMES.has(mime)) {
     return FACULTY_MATERIAL_TYPE_MSG
-  }
-  if (file.size > FACULTY_MATERIAL_MAX_BYTES) {
-    return FACULTY_MATERIAL_SIZE_MSG
   }
   return ''
 }
@@ -79,7 +72,7 @@ export function parseBase64Upload(body) {
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: FACULTY_MATERIAL_MAX_BYTES, files: 1, fields: 24 },
+  limits: { fileSize: MULTER_MAX_BYTES, files: 1, fields: 24 },
   fileFilter(_req, file, cb) {
     const ext = path.extname(String(file.originalname || '')).toLowerCase()
     const mime = String(file.mimetype || '').toLowerCase()
@@ -101,7 +94,7 @@ export function facultyStudyMaterialUploadMiddleware(req, res, next) {
     if (!err) return next()
     res.status(400).json({
       success: false,
-      error: err.code === 'LIMIT_FILE_SIZE' ? FACULTY_MATERIAL_SIZE_MSG : String(err.message || err),
+      error: err.code === 'LIMIT_FILE_SIZE' ? GENERIC_UPLOAD_FAILED_MSG : String(err.message || err),
     })
   })
 }

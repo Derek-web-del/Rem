@@ -16,29 +16,30 @@ export const MULTER_MAX_BYTES = 50 * 1024 * 1024
 export const BACKUP_RESTORE_MAX_BYTES_DEFAULT = 0
 
 export const PHOTO_MAX_MSG = 'Photo too large. Maximum size is 2MB.'
-export const DEFAULT_UPLOAD_MAX_MSG = 'File too large. Maximum size is 15MB.'
-export const FACULTY_STUDY_MATERIAL_MAX_MSG = 'File too large. Maximum size is 25MB.'
+export const PDF_ONLY_TYPE_MSG = 'Only PDF files are allowed.'
+export const GENERIC_UPLOAD_FAILED_MSG = 'File upload failed.'
+export const DEFAULT_UPLOAD_MAX_MSG = GENERIC_UPLOAD_FAILED_MSG
+export const FACULTY_STUDY_MATERIAL_MAX_MSG = GENERIC_UPLOAD_FAILED_MSG
 export const STUDENT_SUBMISSION_MAX_BYTES = 10 * 1024 * 1024
-export const STUDENT_SUBMISSION_MAX_MSG =
-  'File size exceeds 10 MB limit. Please choose a smaller file.'
+export const STUDENT_SUBMISSION_MAX_MSG = GENERIC_UPLOAD_FAILED_MSG
 
 export const PHOTO_UPLOAD_LABEL = 'Images only • Max 2MB'
-export const STUDY_MATERIAL_UPLOAD_LABEL = 'PDF only • Max 25MB'
-export const DEFAULT_UPLOAD_LABEL = 'PDF, DOC, DOCX • Max 15MB'
+export const STUDY_MATERIAL_UPLOAD_LABEL = 'PDF only'
+export const DEFAULT_UPLOAD_LABEL = 'PDF only'
 
 /** Aliases used across the codebase */
 export const PROFILE_PHOTO_MAX_BYTES = PHOTO_MAX_BYTES
 export const PROFILE_PHOTO_MAX_MSG = PHOTO_MAX_MSG
 export const SUBJECT_MATERIAL_MAX_BYTES = DEFAULT_UPLOAD_MAX_BYTES
-export const SUBJECT_MATERIAL_MAX_MSG = DEFAULT_UPLOAD_MAX_MSG
+export const SUBJECT_MATERIAL_MAX_MSG = GENERIC_UPLOAD_FAILED_MSG
 export const GENERIC_UPLOAD_MAX_BYTES = DEFAULT_UPLOAD_MAX_BYTES
-export const GENERIC_UPLOAD_MAX_MSG = DEFAULT_UPLOAD_MAX_MSG
+export const GENERIC_UPLOAD_MAX_MSG = GENERIC_UPLOAD_FAILED_MSG
 export const STUDY_MATERIAL_MAX_BYTES = FACULTY_STUDY_MATERIAL_MAX_BYTES
-export const STUDY_MATERIAL_MAX_MSG = FACULTY_STUDY_MATERIAL_MAX_MSG
+export const STUDY_MATERIAL_MAX_MSG = GENERIC_UPLOAD_FAILED_MSG
 export const ORIGINALITY_FILE_MAX_BYTES = DEFAULT_UPLOAD_MAX_BYTES
-export const ORIGINALITY_FILE_MAX_MSG = DEFAULT_UPLOAD_MAX_MSG
+export const ORIGINALITY_FILE_MAX_MSG = GENERIC_UPLOAD_FAILED_MSG
 export const ORIGINALITY_CONTENT_MAX_BYTES = DEFAULT_UPLOAD_MAX_BYTES
-export const ORIGINALITY_ACCEPT_LABEL = 'TXT, DOCX, PDF • Max 15MB'
+export const ORIGINALITY_ACCEPT_LABEL = 'TXT, PDF only'
 
 /** @param {number} byteLength @param {number} maxBytes */
 export function isWithinLimit(byteLength, maxBytes) {

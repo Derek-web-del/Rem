@@ -2,10 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import AuthenticatedPdfFrame from '../../components/AuthenticatedPdfFrame.jsx'
 import OfflineCacheIndicator from '../../components/OfflineCacheIndicator.jsx'
 import {
-  STUDENT_SUBMISSION_MAX_BYTES,
-  STUDENT_SUBMISSION_MAX_MSG,
-} from '../../lib/uploadLimits.js'
-import {
   downloadStudentWorkPrompt,
   fetchStudentWorkDetail,
   formatWorkDate,
@@ -121,12 +117,6 @@ export default function StudentWorkView({ config }) {
       if (fileInputRef.current) fileInputRef.current.value = ''
       return
     }
-    if (file.size > STUDENT_SUBMISSION_MAX_BYTES) {
-      setSelectedFile(null)
-      setFileError(STUDENT_SUBMISSION_MAX_MSG)
-      if (fileInputRef.current) fileInputRef.current.value = ''
-      return
-    }
     setSelectedFile(file)
   }
 
@@ -135,10 +125,6 @@ export default function StudentWorkView({ config }) {
     const typeErr = validateStudentSubmissionFileType(selectedFile)
     if (typeErr) {
       setFileError(STUDENT_SUBMISSION_TYPE_MSG)
-      return
-    }
-    if (selectedFile.size > STUDENT_SUBMISSION_MAX_BYTES) {
-      setFileError(STUDENT_SUBMISSION_MAX_MSG)
       return
     }
     const wasResubmission = hasSubmission
@@ -291,7 +277,6 @@ export default function StudentWorkView({ config }) {
                           {selectedFile ? selectedFile.name : 'No file chosen'}
                         </span>
                       </div>
-                      <p className="mt-2 text-xs text-neutral-500">Maximum file size: 10 MB</p>
                       <p className="text-xs text-neutral-500">Accepted format: PDF only</p>
                       {fileError ? <p className="mt-2 text-sm text-red-600">{fileError}</p> : null}
                       {submitError ? <p className="mt-2 text-sm text-red-600">{submitError}</p> : null}

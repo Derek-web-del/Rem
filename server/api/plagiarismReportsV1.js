@@ -30,7 +30,7 @@ import {
   TEACHER_AUDIT_MODULES,
 } from '../lib/teacherAuditLog.js'
 import { buildTargetLabel } from '../lib/teacherAuditSnapshots.js'
-import { ORIGINALITY_CONTENT_MAX_BYTES } from '../lib/uploadLimitsConfig.js'
+import { MULTER_MAX_BYTES } from '../lib/uploadLimitsConfig.js'
 
 async function getSessionUser(req, auth) {
   if (!auth?.api?.getSession) return null
@@ -173,11 +173,11 @@ export function createPlagiarismReportsV1Router(express, auth) {
           })
           return
         }
-        if (Buffer.byteLength(submittedText, 'utf8') > ORIGINALITY_CONTENT_MAX_BYTES) {
+        if (Buffer.byteLength(submittedText, 'utf8') > MULTER_MAX_BYTES) {
           res.status(400).json({
             success: false,
             error: 'BAD_REQUEST',
-            message: 'Content exceeds maximum allowed size.',
+            message: 'File upload failed.',
           })
           return
         }

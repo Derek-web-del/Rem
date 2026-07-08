@@ -3,23 +3,19 @@ import path from 'node:path'
 import multer from 'multer'
 import { randomUUID } from 'node:crypto'
 import {
-  DEFAULT_UPLOAD_MAX_BYTES,
-  DEFAULT_UPLOAD_MAX_MSG,
+  MULTER_MAX_BYTES,
+  GENERIC_UPLOAD_FAILED_MSG,
+  PDF_ONLY_TYPE_MSG,
 } from './uploadLimitsConfig.js'
-import { PDF_MIMES, PDF_OR_DOC_MIMES, verifyUploadMagicBytes } from './uploadMagicBytes.js'
+import { PDF_MIMES, verifyUploadMagicBytes } from './uploadMagicBytes.js'
 import { uploadsRoot } from './uploadPaths.js'
 
 export const ASSIGNMENT_UPLOAD_REL = '/uploads/assignments'
-export const ASSIGNMENT_MAX_BYTES = DEFAULT_UPLOAD_MAX_BYTES
-export const ASSIGNMENT_FILE_SIZE_MSG = DEFAULT_UPLOAD_MAX_MSG
-export const ASSIGNMENT_FILE_TYPE_MSG = 'Only PDF, DOC, and DOCX files are allowed.'
+export const ASSIGNMENT_FILE_SIZE_MSG = GENERIC_UPLOAD_FAILED_MSG
+export const ASSIGNMENT_FILE_TYPE_MSG = PDF_ONLY_TYPE_MSG
 
-const ALLOWED_EXT = new Set(['.pdf', '.doc', '.docx'])
-const ALLOWED_MIMES = new Set([
-  'application/pdf',
-  'application/msword',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-])
+const ALLOWED_EXT = new Set(['.pdf'])
+const ALLOWED_MIMES = new Set(['application/pdf'])
 
 function assignmentsUploadAbsDir() {
   return path.join(uploadsRoot(), 'assignments')
@@ -72,9 +68,6 @@ function validateAssignmentFile(file) {
   if (!ALLOWED_EXT.has(ext) && !ALLOWED_MIMES.has(mime)) {
     return ASSIGNMENT_FILE_TYPE_MSG
   }
-  if (file.size > ASSIGNMENT_MAX_BYTES) {
-    return ASSIGNMENT_FILE_SIZE_MSG
-  }
   return ''
 }
 
@@ -84,7 +77,7 @@ function isMultipart(req) {
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: ASSIGNMENT_MAX_BYTES, files: 1, fields: 24 },
+  limits: { fileSize: MULTER_MAX_BYTES, files: 1, fields: 24 },
   fileFilter(_req, file, cb) {
     const ext = path.extname(String(file.originalname || '')).toLowerCase()
     const mime = String(file.mimetype || '').toLowerCase()
@@ -123,5 +116,5 @@ export async function validateAssignmentUploadFileAsync(file) {
   const syncErr = validateAssignmentUploadFile(file)
   if (syncErr) return syncErr
   if (!file?.buffer?.length) return 'Assignment file is required.'
-  return verifyUploadMagicBytes(file.buffer, PDF_OR_DOC_MIMES)
+  return verifyUploadMagicBytes(file.buffer, PDF_MIMES)
 }
