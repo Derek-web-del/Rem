@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useOutletContext } from 'react-router-dom'
 import { isOnline } from '../../lib/offlineSync.js'
 import OfflineCacheIndicator from '../../components/OfflineCacheIndicator.jsx'
+import AuthenticatedImage from '../../components/AuthenticatedImage.jsx'
 import {
   downloadAnnouncementImage,
   fetchTeacherAnnouncements,
@@ -161,7 +162,16 @@ export default function TeacherAnnouncementsPage() {
                 >
                   <div className="relative aspect-video w-full bg-neutral-100">
                     {imageSrc ? (
-                      <img src={imageSrc} alt="" className="h-full w-full object-cover" />
+                      <AuthenticatedImage
+                        src={imageSrc}
+                        alt=""
+                        className="h-full w-full object-cover"
+                        fallback={
+                          <div className="flex h-full items-center justify-center text-sm text-neutral-400">
+                            No image
+                          </div>
+                        }
+                      />
                     ) : (
                       <div className="flex h-full items-center justify-center text-sm text-neutral-400">
                         No image

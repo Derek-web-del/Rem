@@ -7,6 +7,7 @@ import { formatSemesterLabel } from '../../lib/quizQuestionTypes.js'
 import { FACULTY_MSG, FACULTY_TOAST_ID, useFacultyNotify } from '../../lib/facultyNotify.js'
 import OfflineCacheIndicator from '../../components/OfflineCacheIndicator.jsx'
 import { facultyPhotoDisplaySrc } from '../../lib/facultyPhoto.js'
+import AuthenticatedImage from '../../components/AuthenticatedImage.jsx'
 import TeacherBackButton from './TeacherBackButton.jsx'
 import TeacherMainHeader from './TeacherMainHeader.jsx'
 import { ACTION_BLUE, SIDEBAR_GOLD, SIDEBAR_GOLD_DARK } from './instituteChrome.js'
@@ -255,7 +256,16 @@ function SectionStudentsView({ section, search, setSearch, sortRollAsc, setSortR
                     <td className="px-3 py-3">
                       <div className="flex items-center gap-2">
                         {photo ? (
-                          <img src={photo} alt="" className="size-8 rounded-full object-cover" />
+                          <AuthenticatedImage
+                            src={photo}
+                            alt=""
+                            className="size-8 rounded-full object-cover"
+                            fallback={
+                              <div className="flex size-8 items-center justify-center rounded-full bg-sky-100 text-xs font-bold text-sky-800">
+                                ?
+                              </div>
+                            }
+                          />
                         ) : (
                           <div className="flex size-8 items-center justify-center rounded-full bg-sky-100 text-xs font-semibold text-sky-800">
                             {String(st.first_name?.[0] || '').toUpperCase()}

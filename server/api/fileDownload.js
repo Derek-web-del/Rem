@@ -440,6 +440,14 @@ export function createFileDownloadRouter(express, { auth }) {
       if (ext === '.pdf') {
         res.setHeader('Content-Type', 'application/pdf')
         res.setHeader('Content-Disposition', 'inline')
+      } else if (['.jpg', '.jpeg'].includes(ext)) {
+        res.setHeader('Content-Type', ext === '.jpg' ? 'image/jpeg' : 'image/jpeg')
+      } else if (ext === '.png') {
+        res.setHeader('Content-Type', 'image/png')
+      } else if (ext === '.webp') {
+        res.setHeader('Content-Type', 'image/webp')
+      } else if (ext === '.gif') {
+        res.setHeader('Content-Type', 'image/gif')
       }
 
       res.sendFile(resolved)

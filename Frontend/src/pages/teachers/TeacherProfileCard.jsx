@@ -1,3 +1,5 @@
+import AuthenticatedImage from '../../components/AuthenticatedImage.jsx'
+
 function initials(name) {
   const parts = String(name || '')
     .trim()
@@ -39,7 +41,16 @@ export default function TeacherProfileCard({
       >
         <div className="h-24 w-24 shrink-0 overflow-hidden rounded-lg border-2 border-white/40 bg-white/10 shadow-md">
           {photoDataUrl ? (
-            <img src={photoDataUrl} alt="" className="h-full w-full object-cover" />
+            <AuthenticatedImage
+              src={photoDataUrl}
+              alt=""
+              className="h-full w-full object-cover"
+              fallback={
+                <div className="flex h-full w-full items-center justify-center text-2xl font-bold text-white">
+                  {initials(displayName)}
+                </div>
+              }
+            />
           ) : (
             <div className="flex h-full w-full items-center justify-center text-2xl font-bold text-white">
               {initials(displayName)}

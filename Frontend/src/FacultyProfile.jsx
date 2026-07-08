@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import BackButton from './components/BackButton.jsx'
+import AuthenticatedImage from './components/AuthenticatedImage.jsx'
 import { useNotify } from './components/notifications.jsx'
 import { facultyPhotoDisplaySrc } from './lib/facultyPhoto.js'
 import { formatSemesterLabel } from './lib/quizQuestionTypes.js'
@@ -164,7 +165,7 @@ export default function FacultyProfile({ faculty, onBack, onSendPasswordResetEma
       <section className="rounded-xl border border-neutral-100 bg-white p-5 shadow-md md:p-6">
         <div className="flex flex-wrap items-center gap-5">
           {photoSrc ? (
-            <img src={photoSrc} alt="" className="size-20 rounded-xl object-cover ring-2 ring-neutral-100" />
+            <AuthenticatedImage src={photoSrc} alt="" className="size-20 rounded-xl object-cover ring-2 ring-neutral-100" />
           ) : (
             <div className="flex size-20 items-center justify-center rounded-xl bg-sky-100 text-xl font-bold text-sky-800">
               {initials(fullName)}

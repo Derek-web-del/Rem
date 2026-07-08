@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import AuthenticatedImage from './AuthenticatedImage.jsx'
 import { facultyPhotoDisplaySrc } from '../lib/facultyPhoto.js'
 import { formatSemesterLabel } from '../lib/quizQuestionTypes.js'
 import { apiUrl } from '../lib/lmsStateStorage.js'
@@ -130,7 +131,16 @@ export default function StudentDetailCard({
         <section className="rounded-xl border border-neutral-100 bg-white p-5 shadow-md md:p-6">
           <div className="flex flex-wrap items-center gap-5">
             {normalized.photo ? (
-              <img src={normalized.photo} alt="" className="size-20 rounded-xl object-cover ring-2 ring-neutral-100" />
+              <AuthenticatedImage
+                src={normalized.photo}
+                alt=""
+                className="size-20 rounded-xl object-cover ring-2 ring-neutral-100"
+                fallback={
+                  <div className="flex size-20 items-center justify-center rounded-xl bg-sky-100 text-xl font-bold text-sky-800">
+                    {initials(normalized.fullName)}
+                  </div>
+                }
+              />
             ) : (
               <div className="flex size-20 items-center justify-center rounded-xl bg-sky-100 text-xl font-bold text-sky-800">
                 {initials(normalized.fullName)}
@@ -153,7 +163,7 @@ export default function StudentDetailCard({
               <p className="mt-1 text-sm font-medium text-neutral-700">SECTION: {normalized.sectionLabel}</p>
               {facultyView ? (
                 <p className="mt-2 text-xs font-medium text-amber-800">
-                  Faculty view — contact, address, and parent information are restricted. Grades are available on the Grades tab.
+                  Faculty view — contact, address, and parent information are restricted.
                 </p>
               ) : null}
               {normalized.createdAt ? (

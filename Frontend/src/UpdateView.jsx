@@ -1,4 +1,6 @@
 import BackButton from './components/BackButton.jsx'
+import AuthenticatedImage from './components/AuthenticatedImage.jsx'
+import { resolveAnnouncementImageSrc } from './lib/teacherAnnouncements.js'
 
 function downloadUpdateImage(imageDataUrl, baseName) {
   if (!imageDataUrl || !String(imageDataUrl).startsWith('data:')) return
@@ -34,6 +36,8 @@ export default function UpdateView({ updateItem, uploadedByLabel, onBack, onEdit
       ? posted.toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' })
       : '—'
 
+  const imageSrc = resolveAnnouncementImageSrc(updateItem)
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -68,9 +72,13 @@ export default function UpdateView({ updateItem, uploadedByLabel, onBack, onEdit
         </div>
       </section>
 
-      {updateItem.imageDataUrl ? (
+      {imageSrc ? (
         <div className="overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-md">
-          <img src={updateItem.imageDataUrl} alt="" className="max-h-[480px] w-full object-contain bg-neutral-50" />
+          <AuthenticatedImage
+            src={imageSrc}
+            alt=""
+            className="max-h-[480px] w-full object-contain bg-neutral-50"
+          />
           <div className="border-t border-neutral-100 p-4">
             <button
               type="button"

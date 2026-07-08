@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useOutletContext } from 'react-router-dom'
 
 import { facultyPhotoDisplaySrc } from '../../lib/facultyPhoto.js'
+import AuthenticatedImage from '../../components/AuthenticatedImage.jsx'
 
 import { formatSemesterLabel } from '../../lib/quizQuestionTypes.js'
 import { apiUrl } from '../../lib/lmsStateStorage.js'
@@ -245,17 +246,11 @@ export default function StudentDashboard() {
                 <div className="flex flex-wrap items-center gap-5">
 
                   {photoSrc ? (
-
-                    <img
-
+                    <AuthenticatedImage
                       src={photoSrc}
-
                       alt=""
-
                       className="h-24 w-24 rounded-xl border-2 border-white/30 object-cover shadow-md md:h-28 md:w-28"
-
                     />
-
                   ) : (
 
                     <div className="flex h-24 w-24 items-center justify-center rounded-xl border-2 border-white/30 bg-white/15 text-3xl font-bold text-white shadow-md md:h-28 md:w-28">

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { uploadsPathToApiUrl } from '../lib/fileUrls.js'
+import { fetchAuthenticatedMediaUrl, isDirectMediaUrl } from '../lib/authenticatedMedia.js'
 import {
   cachePdfOnView,
   downloadCachedPdf,
@@ -50,9 +51,23 @@ export default function PdfViewerModal({ fileUrl, fileName = 'document.pdf', onC
       }
 
       if (resolvedUrl) {
-        setViewerSrc(resolvedUrl)
-        const stored = await cachePdfOnView(fileUrl)
-        if (!cancelled && stored) setCached(true)
+        try {
+          if (isDirectMediaUrl(resolvedUrl)) {
+            setViewerSrc(resolvedUrl)
+          } else {
+            const blobUrl = await fetchAuthenticatedMediaUrl(fileUrl || resolvedUrl)
+            if (cancelled) return
+            if (blobUrl.startsWith('blob:')) objectUrl = blobUrl
+            setViewerSrc(blobUrl)
+          }
+          const stored = await cachePdfOnView(fileUrl)
+          if (!cancelled && stored) setCached(true)
+        } catch {
+          if (!cancelled) {
+            setViewerSrc('')
+            setLoadError('Unable to load PDF preview.')
+          }
+        }
       } else {
         setViewerSrc('')
       }

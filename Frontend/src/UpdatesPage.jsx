@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import BackButton from './components/BackButton.jsx'
+import AuthenticatedImage from './components/AuthenticatedImage.jsx'
+import { resolveAnnouncementImageSrc } from './lib/teacherAnnouncements.js'
 import UpdateDetails from './UpdateDetails.jsx'
 import UpdateView from './UpdateView.jsx'
 
@@ -182,11 +184,13 @@ export default function UpdatesPage({ updates, uploadedByLabel, onAddUpdate, onU
             No announcements yet.
           </p>
         ) : (
-          filteredSorted.map((u) => (
+          filteredSorted.map((u) => {
+            const imageSrc = resolveAnnouncementImageSrc(u)
+            return (
             <article key={u.id} className="overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-md">
               <div className="aspect-video w-full bg-neutral-100">
-                {u.imageDataUrl ? (
-                  <img src={u.imageDataUrl} alt="" className="h-full w-full object-cover" />
+                {imageSrc ? (
+                  <AuthenticatedImage src={imageSrc} alt="" className="h-full w-full object-cover" />
                 ) : (
                   <div className="flex h-full items-center justify-center text-sm text-neutral-400">No image</div>
                 )}
@@ -229,7 +233,8 @@ export default function UpdatesPage({ updates, uploadedByLabel, onAddUpdate, onU
                 </div>
               </div>
             </article>
-          ))
+            )
+          })
         )}
       </div>
 

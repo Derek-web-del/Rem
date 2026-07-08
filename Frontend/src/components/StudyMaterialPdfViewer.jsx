@@ -235,9 +235,10 @@ export default function StudyMaterialPdfViewer({ material, onClose, onDownloadUn
   )
 }
 
+import AuthenticatedPdfFrame from './AuthenticatedPdfFrame.jsx'
+
 export function StudyMaterialPdfThumb({ fileUrl, title, className = '' }) {
-  const src = resolveStudyMaterialFileUrl(fileUrl)
-  if (!src) {
+  if (!fileUrl) {
     return (
       <div
         className={`flex items-center justify-center rounded-lg border border-dashed border-neutral-200 bg-neutral-100 text-xs text-neutral-500 ${className}`}
@@ -247,10 +248,11 @@ export function StudyMaterialPdfThumb({ fileUrl, title, className = '' }) {
     )
   }
   return (
-    <iframe
+    <AuthenticatedPdfFrame
+      filePath={fileUrl}
       title={title || 'PDF preview'}
-      src={`${src}#toolbar=0&navpanes=0&page=1`}
-      className={`w-full rounded-lg border border-neutral-200 bg-white pointer-events-none ${className}`}
+      className={`h-full w-full rounded-lg border border-neutral-200 bg-white ${className}`}
+      emptyClassName={`flex items-center justify-center rounded-lg border border-dashed border-neutral-200 bg-neutral-100 text-xs text-neutral-500 ${className}`}
     />
   )
 }

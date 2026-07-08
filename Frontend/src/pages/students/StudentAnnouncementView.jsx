@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useOutletContext, useParams } from 'react-router-dom'
+import AuthenticatedImage from '../../components/AuthenticatedImage.jsx'
 import {
   downloadAnnouncementImage,
   resolveAnnouncementImageSrc,
@@ -95,7 +96,7 @@ export default function StudentAnnouncementView() {
 
             {imageSrc ? (
               <div className="overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-md">
-                <img
+                <AuthenticatedImage
                   src={imageSrc}
                   alt=""
                   className="max-h-[480px] w-full bg-neutral-50 object-contain"

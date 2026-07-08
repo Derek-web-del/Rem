@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import AuthenticatedImage from '../AuthenticatedImage.jsx'
 import { resolveAnnouncementImageSrc } from '../../lib/teacherAnnouncements.js'
 
 function BellIcon({ className }) {
@@ -11,15 +11,18 @@ function BellIcon({ className }) {
 }
 
 function AnnouncementImage({ item }) {
-  const [imgFailed, setImgFailed] = useState(false)
   const imageSrc = resolveAnnouncementImageSrc(item)
-  if (imageSrc && !imgFailed) {
+  if (imageSrc) {
     return (
-      <img
+      <AuthenticatedImage
         src={imageSrc}
         alt={item.title || 'Announcement'}
         className="h-full w-full object-cover"
-        onError={() => setImgFailed(true)}
+        fallback={
+          <div className="flex h-full items-center justify-center text-sm font-medium text-neutral-400">
+            No preview
+          </div>
+        }
       />
     )
   }

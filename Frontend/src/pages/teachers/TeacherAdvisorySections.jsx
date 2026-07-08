@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { apiUrl } from '../../lib/lmsStateStorage.js'
 import { facultyPhotoDisplaySrc } from '../../lib/facultyPhoto.js'
+import AuthenticatedImage from '../../components/AuthenticatedImage.jsx'
 
 /** Advisory sections from GET /api/teacher/advisory-sections — expandable roster + filter. */
 export default function TeacherAdvisorySections({ sections, loading, error }) {
@@ -132,7 +133,7 @@ export default function TeacherAdvisorySections({ sections, loading, error }) {
                         >
                           <span className="min-w-[1.25rem] text-[12px] text-neutral-500">{index + 1}</span>
                           {photoSrc ? (
-                            <img
+                            <AuthenticatedImage
                               src={photoSrc}
                               alt=""
                               className="size-7 shrink-0 rounded-full object-cover"

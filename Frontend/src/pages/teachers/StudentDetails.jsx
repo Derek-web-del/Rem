@@ -8,12 +8,11 @@ import TeacherMainHeader from './TeacherMainHeader.jsx'
 
 export default function TeacherStudentDetails() {
   const { sectionId, studentId } = useParams()
-  const { logoutToPortal, setSidebarNavLocked } = useOutletContext() || {}
+  const { setSidebarNavLocked } = useOutletContext() || {}
 
   const [student, setStudent] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-  const [activeTab, setActiveTab] = useState('basic')
 
   useEffect(() => {
     setSidebarNavLocked?.(false)
@@ -58,7 +57,7 @@ export default function TeacherStudentDetails() {
         <div>
           <p className="text-xs font-semibold uppercase tracking-wider text-neutral-500">VIEW</p>
           <h2 className="text-xl font-bold text-neutral-900 md:text-2xl">Student Profile</h2>
-          <p className="mt-1 text-sm text-neutral-600">Advisory roster view — personal contact details are admin-only.</p>
+          <p className="mt-1 text-sm text-neutral-600">Advisory roster — grades only (contact details are admin-only).</p>
         </div>
 
         {loading ? (
@@ -70,37 +69,7 @@ export default function TeacherStudentDetails() {
         ) : (
           <>
             <StudentDetailCard student={student} showHero showTable={false} showEditButton={false} facultyView />
-
-            <div className="flex gap-2 border-b border-neutral-200">
-              <button
-                type="button"
-                onClick={() => setActiveTab('basic')}
-                className={`border-b-2 px-4 py-2 text-sm font-semibold ${
-                  activeTab === 'basic'
-                    ? 'border-blue-600 text-blue-700'
-                    : 'border-transparent text-neutral-500 hover:text-neutral-800'
-                }`}
-              >
-                Basic Details
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveTab('grades')}
-                className={`border-b-2 px-4 py-2 text-sm font-semibold ${
-                  activeTab === 'grades'
-                    ? 'border-blue-600 text-blue-700'
-                    : 'border-transparent text-neutral-500 hover:text-neutral-800'
-                }`}
-              >
-                Grades
-              </button>
-            </div>
-
-            {activeTab === 'basic' ? (
-              <StudentDetailCard student={student} showHero={false} showEditButton={false} facultyView />
-            ) : (
-              <StudentGradesCard studentId={student.id} student={student} readonly />
-            )}
+            <StudentGradesCard studentId={student.id} student={student} readonly />
           </>
         )}
       </main>

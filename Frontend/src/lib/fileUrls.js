@@ -1,11 +1,24 @@
 import { apiUrl } from './lmsStateStorage.js'
 
+function normalizeStoredUploadPath(filePath) {
+  let t = String(filePath ?? '').trim().replace(/\\/g, '/')
+  if (!t) return ''
+  if (t.startsWith('public/')) t = t.slice('public/'.length)
+  if (!t.startsWith('/') && (t.startsWith('uploads/') || t.startsWith('api/files/'))) {
+    t = `/${t}`
+  }
+  if (t.startsWith('/api/files/faculties/')) {
+    t = `/api/files/photos/${t.slice('/api/files/faculties/'.length)}`
+  }
+  return t
+}
+
 /**
  * Map stored `/uploads/...` paths to display URLs.
  * Subject logos use public `/subject-logos/`; other uploads use authenticated `/api/files/`.
  */
 export function uploadsPathToApiUrl(filePath) {
-  const t = String(filePath ?? '').trim()
+  const t = normalizeStoredUploadPath(filePath)
   if (!t) return ''
   if (t.startsWith('data:') || t.startsWith('http://') || t.startsWith('https://')) return t
 
