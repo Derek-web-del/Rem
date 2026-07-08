@@ -1,3 +1,4 @@
+import AuthenticatedImage from './AuthenticatedImage.jsx'
 import { facultyPhotoDisplaySrc } from '../lib/facultyPhoto.js'
 import { formatSemesterLabel } from '../lib/quizQuestionTypes.js'
 import { uploadsPathToApiUrl } from '../lib/fileUrls.js'
@@ -179,9 +180,7 @@ export default function ArchivedFacultyDetail({ data }) {
   const gradeLevels = formatFacultyGradeLevels(faculty)
   const advisoryText =
     (faculty.advisorySections || []).map((s) => s.name).filter(Boolean).join(', ') || '—'
-  const photoSrc = facultyPhotoDisplaySrc(faculty.photo_url || faculty.photoDataUrl || '', {
-    apiUrlFn: apiUrl,
-  })
+  const photoSrc = facultyPhotoDisplaySrc(faculty.photo_url || faculty.photoDataUrl || '')
 
   return (
     <div className="space-y-6">
@@ -195,7 +194,16 @@ export default function ArchivedFacultyDetail({ data }) {
       <section className="rounded-xl border border-neutral-100 bg-white p-5 shadow-md md:p-6">
         <div className="flex flex-wrap items-center gap-5">
           {photoSrc ? (
-            <img src={photoSrc} alt="" className="size-20 rounded-xl object-cover ring-2 ring-neutral-100" />
+            <AuthenticatedImage
+              src={photoSrc}
+              alt=""
+              className="size-20 rounded-xl object-cover ring-2 ring-neutral-100"
+              fallback={
+                <div className="flex size-20 items-center justify-center rounded-xl bg-sky-100 text-xl font-bold text-sky-800">
+                  {initials(fullName)}
+                </div>
+              }
+            />
           ) : (
             <div className="flex size-20 items-center justify-center rounded-xl bg-sky-100 text-xl font-bold text-sky-800">
               {initials(fullName)}

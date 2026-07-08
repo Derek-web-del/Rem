@@ -5,7 +5,7 @@ import { sendSafeServerError } from '../lib/safeApiError.js'
 import { logUnauthorizedAccessFromRequest } from '../lib/security.js'
 import { fetchStudentRowForSession, normalizeGradeLevel } from '../lib/studentSession.js'
 import { fetchFacultyRowForSession } from '../lib/facultySession.js'
-import { subjectAssetsRoot, uploadsRoot } from '../lib/uploadPaths.js'
+import { subjectAssetsRoot, uploadsRoot, normalizeStoredUploadPath } from '../lib/uploadPaths.js'
 
 const ALLOWED_CATEGORIES = new Set([
   'assignments',
@@ -66,7 +66,55 @@ function isFacultyRole(role) {
 function storedUploadPath(category, relativePath) {
   const dir = CATEGORY_DIRS[category]
   if (!dir) return ''
-  return `/uploads/${dir}/${relativePath.replace(/\\/g, '/')}`.replace(/\/+/g, '/')
+  const raw = `/uploads/${dir}/${relativePath.replace(/\\/g, '/')}`.replace(/\/+/g, '/')
+  return normalizeStoredUploadPath(raw)
+}
+
+function uploadPathLookupVariants(category, filePath) {
+  const normalized = normalizeStoredUploadPath(filePath)
+  const basename = path.basename(normalized)
+  const dir = CATEGORY_DIRS[category]
+  const variants = new Set([filePath, normalized])
+  if (basename && dir) {
+    variants.add(`/uploads/${dir}/${basename}`)
+    variants.add(`uploads/${dir}/${basename}`)
+    variants.add(`public/uploads/${dir}/${basename}`)
+  }
+  return [...variants].filter(Boolean)
+}
+
+function parseDataUrlBuffer(dataUrl) {
+  const raw = String(dataUrl || '').trim()
+  if (!raw.startsWith('data:')) return null
+  const match = /^data:([^;]+);base64,(.+)$/i.exec(raw)
+  if (!match) return null
+  return { mime: match[1], buffer: Buffer.from(match[2], 'base64') }
+}
+
+async function tryServeAnnouncementFromDatabase(filePath, res) {
+  const pool = getPgPool()
+  if (!pool) return false
+
+  const variants = uploadPathLookupVariants('announcements', filePath)
+  const basename = path.basename(normalizeStoredUploadPath(filePath))
+  const { rows } = await pool.query(
+    `
+      SELECT announcement_image
+      FROM announcements
+      WHERE image_path = ANY($1::text[])
+         OR announcement_image = ANY($1::text[])
+         OR ($2 <> '' AND image_path LIKE $3)
+      LIMIT 1
+    `,
+    [variants, basename, `%/${basename}`],
+  )
+
+  const parsed = parseDataUrlBuffer(rows?.[0]?.announcement_image)
+  if (!parsed?.buffer?.length) return false
+
+  res.setHeader('Content-Type', parsed.mime)
+  res.send(parsed.buffer)
+  return true
 }
 
 async function resolveStudentGradeFromSection(pool, studentRow) {
@@ -201,18 +249,16 @@ async function canAccessCategoryFile(req, auth, category, relativePath) {
       if (isFacultyRole(role) || role === 'student' || role === 'admin') return { ok: true }
       return { ok: false, status: 403 }
 
-    case 'announcements': {
-      const { rows } = await pool.query(
-        `SELECT 1 FROM announcements WHERE image_path = $1 OR announcement_image = $1 LIMIT 1`,
-        [filePath],
-      )
-      return { ok: Boolean(rows?.length), status: rows?.length ? 200 : 403 }
-    }
+    case 'announcements':
+      return { ok: true }
 
     case 'curriculum': {
+      const variants = uploadPathLookupVariants('curriculum', filePath)
       const { rows } = await pool.query(
-        `SELECT grade_level FROM curriculum_guides WHERE file_url = $1 AND is_published = true LIMIT 1`,
-        [filePath],
+        `SELECT grade_level FROM curriculum_guides
+         WHERE file_url = ANY($1::text[]) AND is_published = true
+         LIMIT 1`,
+        [variants],
       )
       if (!rows?.length) return { ok: false, status: 403 }
       if (isFacultyRole(role)) return { ok: true }
@@ -273,12 +319,13 @@ async function canAccessCategoryFile(req, auth, category, relativePath) {
       const studyArchived = await archivedAtFilter(pool, 'study_materials')
       const hasStudyUploadedBy = await tableHasColumn(pool, 'study_materials', 'uploaded_by')
       const uploadedBySelect = hasStudyUploadedBy ? 'uploaded_by' : 'NULL::text AS uploaded_by'
+      const materialVariants = uploadPathLookupVariants('materials', filePath)
       const { rows } = await pool.query(
         `SELECT subject_id, grade_level, ${uploadedBySelect}
          FROM study_materials
-         WHERE file_url = $1${studyArchived}
+         WHERE file_url = ANY($1::text[])${studyArchived}
          LIMIT 1`,
-        [filePath],
+        [materialVariants],
       )
       if (rows?.length) {
         const row = rows[0]
@@ -304,9 +351,9 @@ async function canAccessCategoryFile(req, auth, category, relativePath) {
       const { rows: smRows } = await pool.query(
         `SELECT sm.subject_id FROM subject_materials sm
          INNER JOIN subjects sub ON sub.id = sm.subject_id
-         WHERE ${subjectPathMatch}${subjectArchived}
+         WHERE ${subjectPathMatch.replace(/\$1/g, 'ANY($1::text[])')}${subjectArchived}
          LIMIT 1`,
-        [filePath],
+        [materialVariants],
       )
       if (smRows?.length) {
         const subjectId = smRows[0].subject_id
@@ -432,6 +479,10 @@ export function createFileDownloadRouter(express, { auth }) {
       }
 
       if (!fs.existsSync(resolved) || !fs.statSync(resolved).isFile()) {
+        if (category === 'announcements') {
+          const served = await tryServeAnnouncementFromDatabase(storedUploadPath(category, splat), res)
+          if (served) return
+        }
         res.status(404).json({ success: false, error: 'NOT_FOUND', message: 'File not found.' })
         return
       }

@@ -1,5 +1,6 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import BackButton from '../../components/BackButton.jsx'
+import AuthenticatedImage from '../../components/AuthenticatedImage.jsx'
 import { useNotify } from '../../components/notifications.jsx'
 import { authClient } from '../../lib/auth-client.js'
 import { uploadsPathToApiUrl } from '../../lib/fileUrls.js'
@@ -546,7 +547,18 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
   function previewCard(item) {
     const src = curriculumFilePreviewSrc(item)
     if (String(item.fileType || '').startsWith('image/')) {
-      return <img src={src} alt={curriculumCardTitle(item)} className="h-44 w-full rounded-lg border object-cover" />
+      return (
+        <AuthenticatedImage
+          src={src}
+          alt={curriculumCardTitle(item)}
+          className="h-44 w-full rounded-lg border object-cover"
+          fallback={
+            <div className="flex h-44 w-full items-center justify-center rounded-lg border bg-neutral-50 p-4 text-center text-sm text-neutral-600">
+              Image preview unavailable.
+            </div>
+          }
+        />
+      )
     }
     if (!src) {
       return (
@@ -901,7 +913,16 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
               </button>
             </div>
             {String(viewingItem.fileType || '').startsWith('image/') ? (
-              <img src={curriculumFilePreviewSrc(viewingItem)} alt={curriculumCardTitle(viewingItem)} className="max-h-[75vh] w-full object-contain" />
+              <AuthenticatedImage
+                src={curriculumFilePreviewSrc(viewingItem)}
+                alt={curriculumCardTitle(viewingItem)}
+                className="max-h-[75vh] w-full object-contain"
+                fallback={
+                  <div className="flex h-[75vh] w-full items-center justify-center rounded border bg-neutral-50 p-6 text-center text-sm text-neutral-600">
+                    Image preview unavailable.
+                  </div>
+                }
+              />
             ) : (
               <CurriculumPdfEmbed
                 item={viewingItem}

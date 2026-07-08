@@ -25,11 +25,13 @@ export function mapAnnouncementRow(row) {
 
 export function resolveAnnouncementImageSrc(item) {
   if (!item) return ''
+  const dataUrl = String(item.imageDataUrl ?? item.announcement_image ?? item.imageSrc ?? '').trim()
+  if (dataUrl.startsWith('data:')) return dataUrl
+
   const path = String(item.imagePath ?? item.image_path ?? '').trim()
   if (path && !path.startsWith('data:')) {
     return uploadsPathToApiUrl(path)
   }
-  const dataUrl = String(item.imageDataUrl ?? item.announcement_image ?? item.imageSrc ?? '').trim()
   if (dataUrl.startsWith('/uploads/') || dataUrl.startsWith('/api/files/')) {
     return uploadsPathToApiUrl(dataUrl)
   }

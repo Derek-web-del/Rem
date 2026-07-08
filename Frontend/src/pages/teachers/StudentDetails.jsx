@@ -57,7 +57,6 @@ export default function TeacherStudentDetails() {
         <div>
           <p className="text-xs font-semibold uppercase tracking-wider text-neutral-500">VIEW</p>
           <h2 className="text-xl font-bold text-neutral-900 md:text-2xl">Student Profile</h2>
-          <p className="mt-1 text-sm text-neutral-600">Advisory roster — grades only (contact details are admin-only).</p>
         </div>
 
         {loading ? (

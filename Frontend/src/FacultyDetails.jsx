@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import BackButton from './components/BackButton.jsx'
+import AuthenticatedImage from './components/AuthenticatedImage.jsx'
 import { useNotify } from './components/notifications.jsx'
 import { STRONG_PASSWORD_REGEX, passwordPolicyHint } from './lib/auth-client.js'
 import { apiUrl } from './lib/lmsStateStorage.js'
@@ -453,7 +454,16 @@ export default function FacultyDetails({
           <div className="flex items-center gap-3">
             <div className="h-12 w-12 overflow-hidden rounded-full bg-neutral-200">
               {photoUrl ? (
-                <img src={photoUrl} alt="Faculty" className="h-full w-full object-cover" />
+                <AuthenticatedImage
+                  src={photoUrl}
+                  alt="Faculty"
+                  className="h-full w-full object-cover"
+                  fallback={
+                    <div className="flex h-full w-full items-center justify-center text-xs font-bold text-neutral-600">
+                      {initials(`${form.firstName} ${form.lastName}`)}
+                    </div>
+                  }
+                />
               ) : (
                 <div className="flex h-full w-full items-center justify-center text-xs font-bold text-neutral-600">
                   {initials(`${form.firstName} ${form.lastName}`)}

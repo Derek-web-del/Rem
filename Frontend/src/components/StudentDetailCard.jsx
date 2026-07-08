@@ -161,11 +161,6 @@ export default function StudentDetailCard({
               ) : null}
               <p className="mt-1 text-sm font-medium text-neutral-700">SEMESTER: {cell(formatSemesterLabel(normalized.semester))}</p>
               <p className="mt-1 text-sm font-medium text-neutral-700">SECTION: {normalized.sectionLabel}</p>
-              {facultyView ? (
-                <p className="mt-2 text-xs font-medium text-amber-800">
-                  Faculty view — contact, address, and parent information are restricted.
-                </p>
-              ) : null}
               {normalized.createdAt ? (
                 <p className="mt-1 text-sm text-neutral-600">Enrolled: {cell(normalized.createdAt)}</p>
               ) : null}

@@ -51,7 +51,9 @@
     "live:portal-auth": "node --env-file=.env scripts/live-portal-auth-verify.mjs",
     "pwa:icons": "node scripts/generate-pwa-icons.mjs",
     "pii:encrypt": "node --env-file=.env scripts/encrypt-existing-student-pii.mjs",
-    "verify:migrations": "node --env-file=.env scripts/verify-migrations-036-038.mjs"
+    "verify:migrations": "node --env-file=.env scripts/verify-migrations-036-038.mjs",
+    "diagnose:uploads": "node --env-file=.env scripts/diagnose-uploads.mjs",
+    "rehydrate:uploads": "node --env-file=.env scripts/rehydrate-uploads-from-db.mjs"
   },
   "dependencies": {
     "@better-auth/infra": "^0.1.14",
