@@ -17,6 +17,7 @@
  *                                       Set to 0 / false / no to disable 2FA for this account.
  */
 import 'dotenv/config'
+import { enrollSinglePortalEmailOtpMfa } from '../server/lib/enrollEmailOtpMfa.js'
 import { hashPasswordBcrypt } from '../server/password.js'
 import { getPgPool } from '../server/pgPool.js'
 
@@ -168,6 +169,10 @@ async function main() {
   const u = urows[0]
 
   await resetPasswordAndUnlock(pool, u.username, password)
+
+  if (twoFactorEnabled) {
+    await enrollSinglePortalEmailOtpMfa(pool, u.id)
+  }
 
   console.log('')
   console.log(

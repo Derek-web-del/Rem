@@ -621,21 +621,42 @@ async function assertPortalMfaOnStartup() {
   if (nodeEnv !== 'production') return
 
   const { getPgPool } = await import('./pgPool.js')
+  const { enrollPortalEmailOtpMfa } = await import('./lib/enrollEmailOtpMfa.js')
   const pool = getPgPool()
   if (!pool) return
 
   try {
-    const { rows } = await pool.query(`
+    const { rows: flagRows } = await pool.query(`
       SELECT COUNT(*)::int AS missing
       FROM "user"
       WHERE LOWER(role) IN ('admin', 'teacher', 'student', 'faculty')
         AND ("twoFactorEnabled" IS NOT TRUE OR "emailVerified" IS NOT TRUE)
     `)
-    const missing = rows[0]?.missing ?? 0
-    if (missing <= 0) return
+    const { rows: rowRows } = await pool.query(`
+      SELECT COUNT(*)::int AS missing
+      FROM "user" u
+      LEFT JOIN "twoFactor" tf ON tf."userId" = u.id
+      WHERE LOWER(u.role) IN ('admin', 'teacher', 'student', 'faculty')
+        AND tf.id IS NULL
+    `)
+    const missingFlags = flagRows[0]?.missing ?? 0
+    const missingRows = rowRows[0]?.missing ?? 0
+    if (missingFlags <= 0 && missingRows <= 0) return
+
+    const autoEnroll = process.env.AUTH_AUTO_ENROLL_MFA !== 'false'
+    if (autoEnroll) {
+      console.warn(
+        `[auth] Enrolling portal MFA: ${missingFlags} flag issue(s), ${missingRows} missing twoFactor row(s)`,
+      )
+      const result = await enrollPortalEmailOtpMfa(pool)
+      console.warn(
+        `[auth] Portal MFA auto-enroll: ${result.flagsUpdated} flag update(s), ${result.rowsCreated} twoFactor row(s) created`,
+      )
+      return
+    }
 
     console.error(
-      `[auth] ${missing} portal account(s) lack MFA or email verification. Run: npm run ensure:portal-mfa`,
+      `[auth] ${missingFlags} portal account(s) lack MFA flags; ${missingRows} lack twoFactor rows. Run: npm run ensure:portal-mfa`,
     )
     const requireAll = process.env.AUTH_REQUIRE_MFA_ALL !== 'false'
     if (requireAll) {

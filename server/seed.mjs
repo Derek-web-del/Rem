@@ -12,6 +12,7 @@ import './env-bootstrap.js'
 import { INSTITUTE_ADMIN_EMAIL } from '../shared/constants.js'
 import { hashPasswordBcrypt } from './password.js'
 import { getPgPool } from './pgPool.js'
+import { enrollSinglePortalEmailOtpMfa } from './lib/enrollEmailOtpMfa.js'
 
 process.env.AUTH_DISABLE_SIGNUP = 'false'
 if (!process.env.BETTER_AUTH_SECRET || process.env.BETTER_AUTH_SECRET.length < 32) {
@@ -100,6 +101,7 @@ async function ensureAdminUserDirect(pool) {
 
   await ensureCredentialAccount(pool, userId, ADMIN_EMAIL, ADMIN_PASS)
   await resetPasswordAndUnlock(pool, ADMIN_USER, ADMIN_PASS)
+  await enrollSinglePortalEmailOtpMfa(pool, userId)
 }
 
 async function main() {

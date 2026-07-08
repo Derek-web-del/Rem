@@ -4,6 +4,7 @@
  */
 import { findAuthUserIdByEmail, findAuthUserIdByUsername } from '../api/logs.js'
 import { hashPasswordBcrypt } from '../password.js'
+import { ensurePortalUserEmailOtpMfa } from './enrollEmailOtpMfa.js'
 
 async function trySignUp(auth, body) {
   try {
@@ -100,6 +101,10 @@ export async function provisionPortalAuthUser(auth, pool, opts) {
 
   if (password) {
     await setCredentialPassword(pool, authUserId, password)
+  }
+
+  if (twoFactorEnabled) {
+    await ensurePortalUserEmailOtpMfa(pool, authUserId, { role })
   }
 
   return authUserId

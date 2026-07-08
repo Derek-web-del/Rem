@@ -31,6 +31,7 @@ import {
 import { clearPortalTermsOnLogout } from './lib/portalTermsReset.js'
 import { hashPasswordBcrypt, verifyPasswordCompat } from './password.js'
 import { getPgPool, isPgConfigured } from './pgPool.js'
+import { ensurePortalUserEmailOtpMfa } from './lib/enrollEmailOtpMfa.js'
 import { toWebOrigin } from './lib/webOrigin.js'
 import {
   STRONG_PASSWORD_REGEX,
@@ -834,6 +835,37 @@ export const auth = betterAuth({
           })
         } catch {
           /* ignore */
+        }
+        if (authPgPool) {
+          try {
+            await ensurePortalUserEmailOtpMfa(authPgPool, String(returned.user.id), {
+              role: returned.user.role,
+            })
+          } catch (err) {
+            console.warn('[auth] portal MFA enroll after sign-up:', err?.message || err)
+          }
+        }
+      }
+
+      if (
+        !isAPIError(returned) &&
+        authPgPool &&
+        (pathNorm.includes('/admin/create-user') || pathNorm.includes('/admin/update-user'))
+      ) {
+        const adminUserId = String(
+          returned?.user?.id || returned?.data?.user?.id || ctx.body?.userId || '',
+        ).trim()
+        const adminRole = String(
+          returned?.user?.role || ctx.body?.role || ctx.body?.data?.role || '',
+        ).trim()
+        if (adminUserId) {
+          try {
+            await ensurePortalUserEmailOtpMfa(authPgPool, adminUserId, {
+              role: adminRole || undefined,
+            })
+          } catch (err) {
+            console.warn('[auth] portal MFA enroll after admin user save:', err?.message || err)
+          }
         }
       }
 

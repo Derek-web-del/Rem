@@ -7,6 +7,7 @@ import { requireDestructiveConfirm } from '../../lib/security.js'
 import { validateProfilePhotoPayload } from '../../../shared/uploadLimits.js'
 import { findAuthUserIdByEmail } from '../logs.js'
 import { provisionPortalAuthUser } from '../../lib/provisionPortalAuthUser.js'
+import { ensurePortalUserEmailOtpMfa } from '../../lib/enrollEmailOtpMfa.js'
 import {
   decryptStudentPiiFields,
   decryptStudentRows,
@@ -166,6 +167,12 @@ export function registerStudentsRoutes(router, ctx) {
           message: 'Could not create or link the student login account.',
         })
         return
+      }
+
+      try {
+        await ensurePortalUserEmailOtpMfa(pool, authUserId, { role: 'student' })
+      } catch (mfaErr) {
+        console.warn('[POST /v1/students] MFA enroll failed:', mfaErr?.message || mfaErr)
       }
 
       const password_hash = await hashStudentPassword(password)

@@ -13,6 +13,7 @@ import { requireDestructiveConfirm } from '../../lib/security.js'
 import { facultyPhotoUploadMiddleware, getFacultyUploadFile, normalizeFacultyMultipartBody } from '../../lib/facultyMultipart.js'
 import { resolveFacultyPhotoForDb } from '../../lib/facultyPhotoStorage.js'
 import { provisionPortalAuthUser } from '../../lib/provisionPortalAuthUser.js'
+import { ensurePortalUserEmailOtpMfa } from '../../lib/enrollEmailOtpMfa.js'
 import { findAuthUserIdByEmail } from '../logs.js'
 import { validateProfilePhotoPayload } from '../../../shared/uploadLimits.js'
 
@@ -142,6 +143,13 @@ export function registerFacultyRoutes(router, ctx) {
         })
         return
       }
+
+      try {
+        await ensurePortalUserEmailOtpMfa(pool, auth_user_id, { role: 'teacher' })
+      } catch (mfaErr) {
+        console.warn('[POST /v1/faculty] MFA enroll failed:', mfaErr?.message || mfaErr)
+      }
+
       if (sectionIds.length === 0) {
         res.status(400).json({
           success: false,
