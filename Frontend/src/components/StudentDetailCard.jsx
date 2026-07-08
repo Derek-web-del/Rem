@@ -112,6 +112,7 @@ export default function StudentDetailCard({
   onEdit,
   showHero = true,
   showTable = true,
+  facultyView = false,
 }) {
   const normalized = useMemo(() => normalizeStudentRecord(student), [student])
 
@@ -149,7 +150,12 @@ export default function StudentDetailCard({
                 <p className="mt-1 text-sm text-neutral-600">Student ID: {cell(normalized.postgresId)}</p>
               ) : null}
               <p className="mt-1 text-sm font-medium text-neutral-700">SEMESTER: {cell(formatSemesterLabel(normalized.semester))}</p>
-              <p className="text-sm font-medium text-neutral-700">SECTION: {normalized.sectionLabel}</p>
+              <p className="mt-1 text-sm font-medium text-neutral-700">SECTION: {normalized.sectionLabel}</p>
+              {facultyView ? (
+                <p className="mt-2 text-xs font-medium text-amber-800">
+                  Faculty view — contact, address, and parent information are restricted. Grades are available on the Grades tab.
+                </p>
+              ) : null}
               {normalized.createdAt ? (
                 <p className="mt-1 text-sm text-neutral-600">Enrolled: {cell(normalized.createdAt)}</p>
               ) : null}
@@ -225,26 +231,45 @@ export default function StudentDetailCard({
               <tr>
                 <td style={labelStyle}>Roll No.</td>
                 <td style={valueStyle}>{cell(normalized.rollNo)}</td>
-                <td style={labelStyle}>E-mail</td>
-                <td style={valueStyle}>{cell(normalized.email)}</td>
-              </tr>
-              <tr>
-                <td style={labelStyle}>Contact No.</td>
-                <td style={valueStyle}>{cell(normalized.phone)}</td>
-                <td style={labelStyle}>Parent Contact No.</td>
-                <td style={valueStyle}>{cell(normalized.parentContact)}</td>
-              </tr>
-              <tr>
-                <td style={labelStyle}>Date Of Birth</td>
-                <td style={valueStyle}>{cell(normalized.dateOfBirth)}</td>
-                <td style={labelStyle}>Address</td>
-                <td style={valueStyle}>{cell(normalized.address)}</td>
-              </tr>
-              <tr>
                 <td style={labelStyle}>Status</td>
                 <td style={valueStyle}>{normalized.status}</td>
-                <td style={labelStyle}>Student ID</td>
-                <td style={valueStyle}>{cell(normalized.postgresId)}</td>
+              </tr>
+              {!facultyView ? (
+                <>
+                  <tr>
+                    <td style={labelStyle}>E-mail</td>
+                    <td style={valueStyle} colSpan={3}>
+                      {cell(normalized.email)}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style={labelStyle}>Contact No.</td>
+                    <td style={valueStyle}>{cell(normalized.phone)}</td>
+                    <td style={labelStyle}>Parent Contact No.</td>
+                    <td style={valueStyle}>{cell(normalized.parentContact)}</td>
+                  </tr>
+                  <tr>
+                    <td style={labelStyle}>Date Of Birth</td>
+                    <td style={valueStyle}>{cell(normalized.dateOfBirth)}</td>
+                    <td style={labelStyle}>Address</td>
+                    <td style={valueStyle}>{cell(normalized.address)}</td>
+                  </tr>
+                </>
+              ) : null}
+              <tr>
+                {!facultyView ? (
+                  <>
+                    <td style={labelStyle}>Student ID</td>
+                    <td style={valueStyle}>{cell(normalized.postgresId)}</td>
+                  </>
+                ) : (
+                  <>
+                    <td style={labelStyle}>Enrollment No.</td>
+                    <td style={valueStyle} colSpan={3}>
+                      {cell(normalized.enrollmentNo)}
+                    </td>
+                  </>
+                )}
               </tr>
             </tbody>
           </table>

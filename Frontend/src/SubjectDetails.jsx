@@ -58,6 +58,7 @@ export default function SubjectDetails({
   mode,
   gradeOptions,
   facultyOptions,
+  curriculumGuideOptions = [],
   initial,
   onBack,
   onSave,
@@ -76,6 +77,11 @@ export default function SubjectDetails({
     semester: String(initial.semester || '1'),
     semCode: initial.semCode || '',
     assignedFacultyId: initial.assignedFacultyId || '',
+    curriculumGuideId: initial.curriculumGuideId || '',
+    scheduleDayOfWeek: String(initial.schedule?.day_of_week ?? initial.scheduleDayOfWeek ?? '1'),
+    scheduleStartTime: String(initial.schedule?.start_time ?? initial.scheduleStartTime ?? '08:00'),
+    scheduleEndTime: String(initial.schedule?.end_time ?? initial.scheduleEndTime ?? '09:00'),
+    scheduleRoom: String(initial.schedule?.room ?? initial.scheduleRoom ?? ''),
     syllabusFileName: initial.syllabusFileName || '',
     syllabusFileType: initial.syllabusFileType || '',
     syllabusDataUrl: initial.syllabusDataUrl || '',
@@ -106,6 +112,11 @@ export default function SubjectDetails({
       semester: String(initial.semester || '1'),
       semCode: initial.semCode || '',
       assignedFacultyId: initial.assignedFacultyId || '',
+      curriculumGuideId: initial.curriculumGuideId || '',
+      scheduleDayOfWeek: String(initial.schedule?.day_of_week ?? initial.scheduleDayOfWeek ?? '1'),
+      scheduleStartTime: String(initial.schedule?.start_time ?? initial.scheduleStartTime ?? '08:00'),
+      scheduleEndTime: String(initial.schedule?.end_time ?? initial.scheduleEndTime ?? '09:00'),
+      scheduleRoom: String(initial.schedule?.room ?? initial.scheduleRoom ?? ''),
       syllabusFileName: initial.syllabusFileName || '',
       syllabusFileType: initial.syllabusFileType || '',
       syllabusDataUrl: initial.syllabusDataUrl || '',
@@ -182,6 +193,17 @@ export default function SubjectDetails({
       assignedFacultyName: faculty?.name || '',
       facultyCode: faculty?.facultyUsername || faculty?.facultyCode || '',
       facultyEmail: faculty?.email || '',
+      curriculumGuideId: form.curriculumGuideId,
+      scheduleDayOfWeek: form.scheduleDayOfWeek,
+      scheduleStartTime: form.scheduleStartTime,
+      scheduleEndTime: form.scheduleEndTime,
+      scheduleRoom: form.scheduleRoom,
+      schedule: {
+        day_of_week: Number(form.scheduleDayOfWeek),
+        start_time: form.scheduleStartTime,
+        end_time: form.scheduleEndTime,
+        room: form.scheduleRoom,
+      },
       syllabusFileName: form.syllabusFileName,
       syllabusFileType: form.syllabusFileType,
       syllabusDataUrl: form.syllabusDataUrl,
@@ -313,6 +335,66 @@ export default function SubjectDetails({
               ))}
             </SelectField>
 
+            <SelectField
+              label="Institute Curriculum Guide"
+              value={form.curriculumGuideId}
+              onChange={(e) => setForm((p) => ({ ...p, curriculumGuideId: e.target.value }))}
+              disabled={submitting}
+              helper="Links this subject to a published DepEd-aligned curriculum PDF from the institute library."
+            >
+              <option value="">
+                {curriculumGuideOptions.length ? 'Select curriculum guide (optional)' : 'No published guides yet'}
+              </option>
+              {curriculumGuideOptions.map((g) => (
+                <option key={g.id} value={g.id}>
+                  {g.grade} — {g.subject}
+                </option>
+              ))}
+            </SelectField>
+          </div>
+
+          <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-4">
+            <div className="text-sm font-semibold text-neutral-900">Class Schedule</div>
+            <p className="mt-1 text-xs text-neutral-600">Day/time schedule for this subject offering (Glendale workflow).</p>
+            <div className="mt-3 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+              <SelectField
+                label="Day"
+                value={form.scheduleDayOfWeek}
+                onChange={(e) => setForm((p) => ({ ...p, scheduleDayOfWeek: e.target.value }))}
+                disabled={submitting}
+              >
+                <option value="1">Monday</option>
+                <option value="2">Tuesday</option>
+                <option value="3">Wednesday</option>
+                <option value="4">Thursday</option>
+                <option value="5">Friday</option>
+                <option value="6">Saturday</option>
+              </SelectField>
+              <TextField
+                label="Start time"
+                type="time"
+                value={form.scheduleStartTime}
+                onChange={(e) => setForm((p) => ({ ...p, scheduleStartTime: e.target.value }))}
+                disabled={submitting}
+              />
+              <TextField
+                label="End time"
+                type="time"
+                value={form.scheduleEndTime}
+                onChange={(e) => setForm((p) => ({ ...p, scheduleEndTime: e.target.value }))}
+                disabled={submitting}
+              />
+              <TextField
+                label="Room"
+                value={form.scheduleRoom}
+                onChange={(e) => setForm((p) => ({ ...p, scheduleRoom: e.target.value }))}
+                disabled={submitting}
+                placeholder="Room 201"
+              />
+            </div>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
             <TextField
               label="Syllabus"
               disabled

@@ -2,6 +2,8 @@ import { NavLink } from 'react-router-dom'
 import Header from '../components/Header.jsx'
 import OfflineBanner from '../components/OfflineBanner.jsx'
 import PortalSidebarShell from '../components/PortalSidebarShell.jsx'
+import { AdminAccessBadge } from '../components/PortalAccessBadge.jsx'
+import { authClient } from '../lib/auth-client.js'
 import { useSidebarCollapsed, SIDEBAR_COLLAPSED_KEYS } from '../hooks/useSidebarCollapsed.js'
 import { NAV_ID_TO_PATH } from '../lib/adminNavRoutes.js'
 
@@ -20,6 +22,8 @@ const adminNavItems = [
 
 export default function AdminLayout({ onLogout, children }) {
   const { collapsed, toggleCollapsed } = useSidebarCollapsed(SIDEBAR_COLLAPSED_KEYS.admin)
+  const { data: sessionData } = authClient.useSession()
+  const adminName = String(sessionData?.user?.name || sessionData?.user?.email || '').trim()
 
   const baseLinkClass =
     'flex items-center rounded-lg text-sm font-medium transition'
@@ -101,6 +105,9 @@ export default function AdminLayout({ onLogout, children }) {
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-neutral-100">
         <OfflineBanner />
+        <div className="shrink-0 border-b border-neutral-200 bg-white px-4 py-3 md:px-8">
+          <AdminAccessBadge displayName={adminName} />
+        </div>
         {children}
       </div>
     </div>

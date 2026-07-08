@@ -477,15 +477,15 @@ function rawPgDateString(value) {
   return undefined
 }
 
-/** Map DB row → Faculty UI student object (camelCase aliases). */
+/**
+ * Map DB row → Faculty UI student object.
+ * Faculty advisory views exclude PII (contact, address, DOB, email, parent info) per RA 10173 minimum-necessary access.
+ */
 function studentRowForTeacherUi(row, sectionMeta = {}) {
   if (!row) return null
   const idStr = row.id != null ? String(row.id) : ''
   const enrollment_no = pickStudentText(row, 'enrollment_no', 'enrollmentNo') || undefined
-  const login_id = pickStudentText(row, 'login_id', 'loginId') || undefined
   const roll_no = pickStudentText(row, 'roll_no', 'rollNo') || undefined
-  const contact_no =
-    pickStudentText(row, 'contact_no', 'contact_number', 'contactNumber', 'contactNo') || undefined
   const semester = pickStudentText(row, 'semester') || undefined
   const sectionName =
     String(sectionMeta.section_name ?? sectionMeta.name ?? row.section_name ?? '').trim() || undefined
@@ -497,7 +497,6 @@ function studentRowForTeacherUi(row, sectionMeta = {}) {
   const safeFullName =
     staleFullName && !staleFullName.includes('enc:v1:') ? staleFullName : ''
   const apiFullName = studentDisplayName(row) || fullName || safeFullName || pickStudentText(row, 'name')
-  const date_of_birth = pickStudentText(row, 'dob', 'date_of_birth') || undefined
   return {
     id: idStr,
     first_name: String(row.first_name ?? '').trim(),
@@ -508,22 +507,14 @@ function studentRowForTeacherUi(row, sectionMeta = {}) {
     enrollment_no,
     /** Display id alias — enrollment only; never fall back to login_id (avoids "CHECK" login ids). */
     student_id: enrollment_no,
-    login_id,
     roll_no,
-    photo_url: pickStudentText(row, 'photo_url', 'photoUrl', 'photo_data_url') || undefined,
     grade_level: pickStudentText(row, 'grade_level', 'gradeLevel', 'grade') || undefined,
-    email: pickStudentText(row, 'email') || undefined,
-    contact_no,
-    parent_contact_no:
-      pickStudentText(row, 'parent_contact_no', 'parent_contact', 'parentContact', 'parentContactNo') ||
-      undefined,
-    date_of_birth: date_of_birth || undefined,
-    address: pickStudentText(row, 'address') || undefined,
     semester,
     section: sectionName,
     section_name: sectionName,
     gender: pickStudentText(row, 'gender') || null,
     status: pickStudentText(row, 'status') || 'active',
+    access_scope: 'faculty_advisory_roster',
   }
 }
 
@@ -577,13 +568,6 @@ async function fetchStudentDetailForTeacher(pool, facultyRow, studentIdRaw) {
       st.grade_level,
       st.semester,
       st.roll_no,
-      st.email,
-      st.contact_no,
-      st.parent_contact,
-      st.dob,
-      st.dob AS date_of_birth,
-      st.address,
-      st.photo_url,
       st.section_id,
       sec.section_name AS section_name
     FROM students st
@@ -600,7 +584,6 @@ async function fetchStudentDetailForTeacher(pool, facultyRow, studentIdRaw) {
   const mapped = studentRowForTeacherUi(row, { section_name: row.section_name })
   return {
     ...mapped,
-    date_of_birth: rawPgDateString(pickStudentText(row, 'dob', 'date_of_birth')),
     section_id: row.section_id != null ? String(row.section_id) : undefined,
   }
 }
@@ -1668,13 +1651,27 @@ export function createTeacherApiRouter(express, auth) {
         res.status(400).json({ error: 'BAD_REQUEST', message: 'Missing student id.' })
         return
       }
-      console.log('[TEACHER] fetching student id:', studentId)
       const detail = await fetchStudentDetailForTeacher(pool, facultyRow, studentId)
-      console.log('[TEACHER] query result:', detail ? { id: detail.id, name: detail.name } : null)
       if (!detail) {
         res.status(404).json({ error: 'NOT_FOUND', message: 'Student not found.' })
         return
       }
+      await logTeacherAuditEvent(req, {
+        event_type: 'STUDENT_PROFILE_VIEWED',
+        module: 'Advisory',
+        action: 'view',
+        user,
+        facultyRow,
+        target_id: detail.id,
+        target_label: detail.full_name || detail.name || `Student ${detail.id}`,
+        summary: `Faculty viewed advisory student profile (roster scope, PII excluded): ${detail.full_name || detail.name || detail.id}`,
+        new_values: {
+          student_id: detail.id,
+          enrollment_no: detail.enrollment_no || null,
+          section: detail.section_name || detail.section || null,
+          fields_exposed: ['name', 'enrollment_no', 'roll_no', 'grade_level', 'semester', 'section'],
+        },
+      })
       res.json(detail)
     } catch (e) {
       sendSafeServerError(res, e, 'GET /api/teacher/student/:studentId')

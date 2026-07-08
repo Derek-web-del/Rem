@@ -17,6 +17,7 @@ import { saveListSnapshot, getListSnapshot } from './lib/indexedDB.js'
 import { isOnline } from './lib/offlineSync.js'
 import { warmAdminOfflineCache } from './lib/adminPortalOffline.js'
 import OfflineBanner from './components/OfflineBanner.jsx'
+import { AdminAccessBadge } from './components/PortalAccessBadge.jsx'
 import SystemOfflineBanner from './components/SystemOfflineBanner.jsx'
 import AdminAuditBanner from './components/AdminAuditBanner.jsx'
 import { resolveSubjectImageFromMap } from './lib/subjectImages.js'
@@ -248,6 +249,10 @@ function mapPgSubjectRow(row, facultiesList) {
     syllabusFileName: syllabusDataUrl ? 'syllabus.pdf' : '',
     syllabusFileType: syllabusDataUrl ? 'application/pdf' : '',
     syllabusDataUrl,
+    curriculumGuideId: String(row.curriculumGuideId ?? row.curriculum_guide_id ?? '').trim(),
+    curriculumGuideTitle: String(row.curriculumGuideTitle ?? row.curriculum_guide_title ?? '').trim(),
+    schedule: row.schedule || (Array.isArray(row.schedules) ? row.schedules[0] : null) || null,
+    schedules: Array.isArray(row.schedules) ? row.schedules : row.schedule ? [row.schedule] : [],
     subjectPhoto: String(row.subjectPhoto ?? row.subject_photo ?? row.cover_image_url ?? '').trim(),
     subject_photo: String(row.subjectPhoto ?? row.subject_photo ?? row.cover_image_url ?? '').trim(),
   }
@@ -256,6 +261,10 @@ function mapPgSubjectRow(row, facultiesList) {
 function buildSubjectApiBody(payload) {
   const grade = String(payload.grade || '').trim()
   const syllabus = String(payload.syllabusDataUrl || '').trim()
+  const scheduleDay = payload.scheduleDayOfWeek ?? payload.schedule?.day_of_week
+  const scheduleStart = String(payload.scheduleStartTime ?? payload.schedule?.start_time ?? '').trim()
+  const scheduleEnd = String(payload.scheduleEndTime ?? payload.schedule?.end_time ?? '').trim()
+  const scheduleRoom = String(payload.scheduleRoom ?? payload.schedule?.room ?? '').trim()
   return {
     subjectCode: String(payload.subjectCode || '').trim(),
     subjectName: String(payload.subjectName || '').trim(),
@@ -264,6 +273,12 @@ function buildSubjectApiBody(payload) {
     semester: payload.semester,
     assignedFacultyId: String(payload.assignedFacultyId || '').trim(),
     faculty_id: String(payload.assignedFacultyId || '').trim(),
+    curriculumGuideId: String(payload.curriculumGuideId || '').trim(),
+    curriculum_guide_id: String(payload.curriculumGuideId || '').trim(),
+    scheduleDayOfWeek: scheduleDay,
+    scheduleStartTime: scheduleStart,
+    scheduleEndTime: scheduleEnd,
+    scheduleRoom,
     ...(syllabus ? { syllabusDataUrl: syllabus, syllabus_pdf: syllabus } : {}),
   }
 }
@@ -772,65 +787,48 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
     }
   }, [])
 
+  const persistAdminAvatar = useCallback(
+    async (dataUrl) => {
+      if (persistenceMode !== 'server') return
+
+      try {
+        const res = await fetch(getLmsStateEndpointUrl(), {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ state: { adminAvatarDataUrl: dataUrl } }),
+        })
+        if (!res.ok) {
+          let msg = String(res.status)
+          try {
+            const errBody = await res.json()
+            if (errBody?.message) msg = `${res.status}: ${errBody.message}`
+            else if (errBody?.error) msg = `${res.status}: ${errBody.error}`
+          } catch {
+            /* ignore */
+          }
+          const hint =
+            ' Confirm PostgreSQL is running, DATABASE_URL is set on the auth server, and check the server terminal for “PostgreSQL Error”.'
+          toast.error(`Could not save data (${msg}).${hint}`, {
+            title: 'Save failed',
+            durationMs: 12000,
+          })
+        }
+      } catch {
+        toast.error(
+          'Could not reach the server to save data. Ensure the auth API is running and your network is working.',
+          { title: 'Save failed', durationMs: 12000 },
+        )
+      }
+    },
+    [persistenceMode, toast],
+  )
+
   useEffect(() => {
     try {
       localStorage.setItem(ADMIN_AVATAR_STORAGE_KEY, adminAvatarDataUrl || '')
     } catch {}
   }, [adminAvatarDataUrl])
-
-  useEffect(() => {
-    if (persistenceMode !== 'server' || !stateBootstrapDone) return
-
-    const ac = new AbortController()
-    const timeout = setTimeout(() => {
-      const state = {
-        adminAvatarDataUrl,
-      }
-      ;(async () => {
-        try {
-          const res = await fetch(getLmsStateEndpointUrl(), {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
-            signal: ac.signal,
-            body: JSON.stringify({ state }),
-          })
-          if (!res.ok) {
-            let msg = String(res.status)
-            try {
-              const errBody = await res.json()
-              if (errBody?.message) msg = `${res.status}: ${errBody.message}`
-              else if (errBody?.error) msg = `${res.status}: ${errBody.error}`
-            } catch {
-              /* ignore */
-            }
-            const hint =
-              ' Confirm PostgreSQL is running, DATABASE_URL is set on the auth server, and check the server terminal for “PostgreSQL Error”.'
-            toast.error(`Could not save data (${msg}).${hint}`, {
-              title: 'Save failed',
-              durationMs: 12000,
-            })
-          }
-        } catch {
-          if (!ac.signal.aborted) {
-            toast.error(
-              'Could not reach the server to save data. Ensure the auth API is running and your network is working.',
-              { title: 'Save failed', durationMs: 12000 },
-            )
-          }
-        }
-      })()
-    }, 650)
-
-    return () => {
-      clearTimeout(timeout)
-      ac.abort()
-    }
-  }, [
-    persistenceMode,
-    stateBootstrapDone,
-    adminAvatarDataUrl,
-  ])
 
   const sectionsForGrade = useMemo(
     () => sections.filter((section) => section.grade === activeSectionGrade),
@@ -1981,6 +1979,7 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
       try {
         localStorage.setItem(ADMIN_AVATAR_STORAGE_KEY, result)
       } catch {}
+      void persistAdminAvatar(result)
     }
     reader.readAsDataURL(file)
   }
@@ -3069,7 +3068,9 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
       </PortalSidebarShell>
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-neutral-100">
-        <header className="flex shrink-0 flex-wrap items-start justify-between gap-4 border-b border-neutral-200/80 bg-neutral-50/80 px-4 py-4 backdrop-blur-sm md:px-8 md:py-5">
+        <header className="flex shrink-0 flex-col gap-3 border-b border-neutral-200/80 bg-neutral-50/80 px-4 py-4 backdrop-blur-sm md:px-8 md:py-5">
+          <AdminAccessBadge displayName={adminDisplayName} />
+          <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold tracking-tight text-neutral-900 md:text-3xl">
               {activeNav === 'curriculum'
@@ -3101,6 +3102,7 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
           >
             Logout
           </button>
+          </div>
         </header>
 
         <OfflineBanner />
@@ -3194,6 +3196,7 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
             <SubjectsPage
               gradeOptions={GRADE_LEVELS}
               facultyOptions={faculties}
+              curriculumGuideOptions={curriculums.filter((c) => c.isPublished !== false)}
               subjects={subjects}
               onAddSubject={addSubject}
               onUpdateSubject={updateSubject}

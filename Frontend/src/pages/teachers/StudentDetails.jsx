@@ -57,7 +57,8 @@ export default function TeacherStudentDetails() {
         />
         <div>
           <p className="text-xs font-semibold uppercase tracking-wider text-neutral-500">VIEW</p>
-          <h2 className="text-xl font-bold text-neutral-900 md:text-2xl">Students Profile</h2>
+          <h2 className="text-xl font-bold text-neutral-900 md:text-2xl">Student Profile</h2>
+          <p className="mt-1 text-sm text-neutral-600">Advisory roster view — personal contact details are admin-only.</p>
         </div>
 
         {loading ? (
@@ -68,7 +69,7 @@ export default function TeacherStudentDetails() {
           <StudentDetailCard student={null} />
         ) : (
           <>
-            <StudentDetailCard student={student} showHero showTable={false} showEditButton={false} />
+            <StudentDetailCard student={student} showHero showTable={false} showEditButton={false} facultyView />
 
             <div className="flex gap-2 border-b border-neutral-200">
               <button
@@ -96,7 +97,7 @@ export default function TeacherStudentDetails() {
             </div>
 
             {activeTab === 'basic' ? (
-              <StudentDetailCard student={student} showHero={false} showEditButton={false} />
+              <StudentDetailCard student={student} showHero={false} showEditButton={false} facultyView />
             ) : (
               <StudentGradesCard studentId={student.id} student={student} readonly />
             )}

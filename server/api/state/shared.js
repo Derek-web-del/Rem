@@ -992,6 +992,16 @@ export async function ensureSchema(pool) {
 
   await ensureSubjectsTable(pool)
 
+  const { ensureSubjectSchedulesSchema, ensureSubjectsCurriculumGuideColumn, seedDemoSubjectSchedules } =
+    await import('../../lib/subjectSchedulesDb.js')
+  await ensureSubjectsCurriculumGuideColumn(pool)
+  await ensureSubjectSchedulesSchema(pool)
+  try {
+    await seedDemoSubjectSchedules(pool)
+  } catch (e) {
+    logStatePostgresError('seedDemoSubjectSchedules', e)
+  }
+
   await ensureAnnouncementsTable(pool)
 
   await ensureArchivedAtColumns(pool)
@@ -1242,8 +1252,31 @@ export function readSubjectBodyFields(b) {
   const faculty_id =
     readStudentField(b, 'assignedFacultyId', 'assigned_faculty_id') ||
     readStudentField(b, 'facultyId', 'faculty_id')
+  const curriculum_guide_id =
+    readStudentField(b, 'curriculumGuideId', 'curriculum_guide_id') || null
   const syllabus_pdf = readSubjectSyllabus(b)
-  return { subject_code, subject_name, grade_level, semester, faculty_id, syllabus_pdf }
+  const schedule_day_of_week = b?.scheduleDayOfWeek ?? b?.schedule_day_of_week
+  const schedule_start_time = String(b?.scheduleStartTime ?? b?.schedule_start_time ?? '').trim()
+  const schedule_end_time = String(b?.scheduleEndTime ?? b?.schedule_end_time ?? '').trim()
+  const schedule_room = String(b?.scheduleRoom ?? b?.schedule_room ?? '').trim()
+  return {
+    subject_code,
+    subject_name,
+    grade_level,
+    semester,
+    faculty_id,
+    curriculum_guide_id,
+    syllabus_pdf,
+    schedule:
+      schedule_day_of_week != null && schedule_day_of_week !== ''
+        ? {
+            day_of_week: Number(schedule_day_of_week),
+            start_time: schedule_start_time,
+            end_time: schedule_end_time,
+            room: schedule_room,
+          }
+        : null,
+  }
 }
 
 export function subjectPgError(res, e) {
@@ -1285,6 +1318,11 @@ export function subjectRowToResponse(row) {
     subject_photo: subjectPhoto,
     cover_image_url: subjectPhoto,
     faculty_name: String(row.faculty_name ?? '').trim(),
+    curriculumGuideId: row.curriculum_guide_id ?? '',
+    curriculum_guide_id: row.curriculum_guide_id ?? '',
+    curriculumGuideTitle: String(row.curriculum_guide_title ?? '').trim(),
+    schedule: row.schedule ?? null,
+    schedules: Array.isArray(row.schedules) ? row.schedules : row.schedule ? [row.schedule] : [],
     createdAt: row.created_at,
     created_at: row.created_at,
   }

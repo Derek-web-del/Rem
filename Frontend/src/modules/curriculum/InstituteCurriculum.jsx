@@ -202,15 +202,9 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
     if (!file) return false
     const name = String(file.name || '').toLowerCase()
     const ext = name.includes('.') ? name.split('.').pop() : ''
-    const allowedExt = new Set(['pdf', 'doc', 'docx'])
-    const allowedMime = new Set([
-      'application/pdf',
-      'application/msword',
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    ])
-    if (!allowedExt.has(ext)) return false
+    if (ext !== 'pdf') return false
     if (!file.type) return true
-    return allowedMime.has(String(file.type).toLowerCase())
+    return String(file.type).toLowerCase() === 'application/pdf'
   }
 
   async function submitUpload(e) {
@@ -221,11 +215,11 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
       return
     }
     if (!uploadForm.file) {
-      setFormError('Please choose a curriculum file (DOC/DOCX or PDF).')
+      setFormError('Please choose a curriculum PDF file.')
       return
     }
     if (!isAllowedCurriculumGuideFile(uploadForm.file)) {
-      setFormError('File must be DOC, DOCX, or PDF.')
+      setFormError('File must be PDF.')
       return
     }
     setIsUploading(true)
@@ -305,7 +299,7 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
       return
     }
     if (editForm.file && !isAllowedCurriculumGuideFile(editForm.file)) {
-      setEditingError('File must be DOC, DOCX, or PDF.')
+      setEditingError('File must be PDF.')
       return
     }
     let resolvedGuideId = String(target?.id ?? '').trim()
@@ -523,7 +517,7 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
                 </select>
               </label>
               <label className="text-sm font-medium text-neutral-700">
-                Curriculum Guide File (DOC/DOCX or PDF)
+                Curriculum Guide File (PDF)
                 <div className="mt-1 flex items-center gap-2 rounded-lg border bg-white px-3 py-2 text-sm">
                   <label
                     htmlFor="upload-curriculum-file"
@@ -535,7 +529,7 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
                   <input
                     id="upload-curriculum-file"
                     type="file"
-                    accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    accept=".pdf,application/pdf"
                     className="hidden"
                     onChange={(e) =>
                       setUploadForm((prev) => ({
@@ -605,7 +599,7 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
               </select>
             </label>
             <label className="text-sm font-medium text-neutral-700">
-              Curriculum Guide File (DOC/DOCX or PDF)
+              Curriculum Guide File (PDF)
               <div className="mt-1 flex items-center gap-2 rounded-lg border bg-white px-3 py-2 text-sm">
                 <label
                   htmlFor="edit-curriculum-file"
@@ -617,7 +611,7 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
                 <input
                   id="edit-curriculum-file"
                   type="file"
-                  accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                  accept=".pdf,application/pdf"
                   className="hidden"
                   onChange={(e) =>
                     setEditForm((prev) => ({

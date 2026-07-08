@@ -25,6 +25,7 @@ function FilterIcon({ className }) {
 export default function SubjectsPage({
   gradeOptions,
   facultyOptions,
+  curriculumGuideOptions = [],
   subjects,
   onAddSubject,
   onUpdateSubject,
@@ -103,6 +104,11 @@ export default function SubjectsPage({
             syllabusFileName: '',
             syllabusFileType: '',
             syllabusDataUrl: '',
+            curriculumGuideId: '',
+            scheduleDayOfWeek: '1',
+            scheduleStartTime: '08:00',
+            scheduleEndTime: '09:00',
+            scheduleRoom: '',
           }
 
     return (
@@ -110,6 +116,7 @@ export default function SubjectsPage({
         mode={mode}
         gradeOptions={gradeOptions}
         facultyOptions={facultyOptions}
+        curriculumGuideOptions={curriculumGuideOptions}
         initial={initial}
         disableIdentity={mode === 'edit'}
         onBack={() => setScreen('list')}

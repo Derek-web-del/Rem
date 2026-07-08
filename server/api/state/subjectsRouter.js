@@ -10,6 +10,10 @@ import {
   subjectAuditDescription,
   subjectAuditDetails,
 } from '../../lib/subjectAudit.js'
+import {
+  listSchedulesForSubject,
+  upsertPrimarySubjectSchedule,
+} from '../../lib/subjectSchedulesDb.js'
 
 const SUBJECT_SELECT_WITH_FACULTY = `
   SELECT
@@ -21,7 +25,10 @@ const SUBJECT_SELECT_WITH_FACULTY = `
     s.faculty_id,
     s.syllabus_pdf,
     s.subject_photo,
+    s.curriculum_guide_id,
     s.created_at,
+    cg.subject AS curriculum_guide_title,
+    cg.grade AS curriculum_guide_grade,
     COALESCE(
       NULLIF(trim(concat_ws(' ',
         nullif(trim(f.first_name), ''),
@@ -32,11 +39,22 @@ const SUBJECT_SELECT_WITH_FACULTY = `
     ) AS faculty_name
   FROM subjects s
   LEFT JOIN faculties f ON f.id::text = s.faculty_id::text
+  LEFT JOIN curriculum_guides cg ON cg.id::text = s.curriculum_guide_id::text
 `
 
 /** @param {import('express').Router} router @param {{ pool: import('pg').Pool, auth: object }} ctx */
 export function registerSubjectsRoutes(router, ctx) {
   const { pool, auth } = ctx
+
+  async function attachSchedules(rows) {
+    const out = []
+    for (const row of rows || []) {
+      const schedules = await listSchedulesForSubject(pool, row.id)
+      out.push(subjectRowToResponse({ ...row, schedules, schedule: schedules[0] || null }))
+    }
+    return out
+  }
+
   router.get('/v1/subjects', async (req, res) => {
     try {
       if (!(await requireAnyRoleSession(req, res, auth, ['admin', 'faculty', 'student']))) return
@@ -53,31 +71,12 @@ export function registerSubjectsRoutes(router, ctx) {
         clauses.push(`s.semester = $${params.length}`)
       }
       let sql = `
-        SELECT
-          s.id,
-          s.subject_code,
-          s.subject_name,
-          s.grade_level,
-          s.semester,
-          s.faculty_id,
-          s.syllabus_pdf,
-          s.subject_photo,
-          s.created_at,
-          COALESCE(
-            NULLIF(trim(concat_ws(' ',
-              nullif(trim(f.first_name), ''),
-              nullif(trim(f.middle_name), ''),
-              nullif(trim(f.last_name), '')
-            )), ''),
-            NULLIF(trim(f.name), '')
-          ) AS faculty_name
-        FROM subjects s
-        LEFT JOIN faculties f ON f.id::text = s.faculty_id::text
+        ${SUBJECT_SELECT_WITH_FACULTY}
       `
       if (clauses.length) sql += ` WHERE ${clauses.join(' AND ')}`
       sql += ' ORDER BY s.id DESC'
       const { rows } = await pool.query(sql, params)
-      res.json({ ok: true, subjects: rows.map((r) => subjectRowToResponse(r)) })
+      res.json({ ok: true, subjects: await attachSchedules(rows) })
     } catch (e) {
       subjectPgError(res, e)
     }
@@ -88,7 +87,7 @@ export function registerSubjectsRoutes(router, ctx) {
       const adminSession = await requireAdminSession(req, res, auth)
       if (!adminSession) return
       const b = req.body || {}
-      const { subject_code, subject_name, grade_level, semester, faculty_id, syllabus_pdf } =
+      const { subject_code, subject_name, grade_level, semester, faculty_id, curriculum_guide_id, syllabus_pdf, schedule } =
         readSubjectBodyFields(b)
 
       if (!subject_code || !subject_name || !grade_level || !semester) {
@@ -99,18 +98,22 @@ export function registerSubjectsRoutes(router, ctx) {
       }
 
       const facultyIdParam = faculty_id || null
+      const guideIdParam = curriculum_guide_id ? String(curriculum_guide_id).trim() : null
       const subject_photo = resolveSubjectImagePath(subject_name)
       const { rows } = await pool.query(
         `
           INSERT INTO subjects (
-            subject_code, subject_name, grade_level, semester, faculty_id, syllabus_pdf, subject_photo
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+            subject_code, subject_name, grade_level, semester, faculty_id, curriculum_guide_id, syllabus_pdf, subject_photo
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
           RETURNING id, subject_code, subject_name, grade_level, semester,
-            faculty_id, syllabus_pdf, subject_photo, created_at
+            faculty_id, curriculum_guide_id, syllabus_pdf, subject_photo, created_at
         `,
-        [subject_code, subject_name, grade_level, semester, facultyIdParam, syllabus_pdf, subject_photo],
+        [subject_code, subject_name, grade_level, semester, facultyIdParam, guideIdParam, syllabus_pdf, subject_photo],
       )
       const row = rows?.[0]
+      if (row?.id && schedule) {
+        await upsertPrimarySubjectSchedule(pool, row.id, schedule)
+      }
       const createdSnap = subjectPgRowSnapshot(row, row?.faculty_name)
       await auditInstituteRecord(adminSession, 'SUBJECT_CREATED', {
         recordType: 'subject',
@@ -120,7 +123,7 @@ export function registerSubjectsRoutes(router, ctx) {
       })
       res.status(201).json({
         ok: true,
-        subject: subjectRowToResponse(row),
+        subject: (await attachSchedules([row]))[0],
         id: row?.id != null ? Number(row.id) : null,
       })
     } catch (e) {
@@ -138,7 +141,7 @@ export function registerSubjectsRoutes(router, ctx) {
         return
       }
       const b = req.body || {}
-      const { subject_code, subject_name, grade_level, semester, faculty_id, syllabus_pdf } =
+      const { subject_code, subject_name, grade_level, semester, faculty_id, curriculum_guide_id, syllabus_pdf, schedule } =
         readSubjectBodyFields(b)
 
       if (!subject_code || !subject_name || !grade_level || !semester) {
@@ -159,15 +162,16 @@ export function registerSubjectsRoutes(router, ctx) {
       }
 
       const facultyIdParam = faculty_id || null
+      const guideIdParam = curriculum_guide_id ? String(curriculum_guide_id).trim() : null
       const subject_photo = resolveSubjectImagePath(subject_name)
       const { rows } = await pool.query(
         `
           UPDATE subjects
           SET subject_code = $1, subject_name = $2, grade_level = $3, semester = $4,
-            faculty_id = $5, syllabus_pdf = $6, subject_photo = $7
-          WHERE id = $8
+            faculty_id = $5, curriculum_guide_id = $6, syllabus_pdf = $7, subject_photo = $8
+          WHERE id = $9
           RETURNING id, subject_code, subject_name, grade_level, semester,
-            faculty_id, syllabus_pdf, subject_photo, created_at,
+            faculty_id, curriculum_guide_id, syllabus_pdf, subject_photo, created_at,
             (SELECT COALESCE(
               NULLIF(trim(concat_ws(' ',
                 nullif(trim(f.first_name), ''),
@@ -175,15 +179,19 @@ export function registerSubjectsRoutes(router, ctx) {
                 nullif(trim(f.last_name), '')
               )), ''),
               NULLIF(trim(f.name), '')
-            ) FROM faculties f WHERE f.id::text = subjects.faculty_id::text LIMIT 1) AS faculty_name
+            ) FROM faculties f WHERE f.id::text = subjects.faculty_id::text LIMIT 1) AS faculty_name,
+            (SELECT cg.subject FROM curriculum_guides cg WHERE cg.id::text = subjects.curriculum_guide_id::text LIMIT 1) AS curriculum_guide_title
         `,
-        [subject_code, subject_name, grade_level, semester, facultyIdParam, syllabus_pdf, subject_photo, id],
+        [subject_code, subject_name, grade_level, semester, facultyIdParam, guideIdParam, syllabus_pdf, subject_photo, id],
       )
       if (!rows?.length) {
         res.status(404).json({ error: 'Subject not found.' })
         return
       }
       const updatedRow = rows[0]
+      if (schedule !== undefined) {
+        await upsertPrimarySubjectSchedule(pool, id, schedule)
+      }
       const detailedDiffs = computeSubjectDetailedDiffs(existing, updatedRow, {
         oldFacultyName: existing.faculty_name,
         newFacultyName: updatedRow.faculty_name,
@@ -203,7 +211,7 @@ export function registerSubjectsRoutes(router, ctx) {
           },
         })
       }
-      res.json({ ok: true, subject: subjectRowToResponse(updatedRow) })
+      res.json({ ok: true, subject: (await attachSchedules([updatedRow]))[0] })
     } catch (e) {
       subjectPgError(res, e)
     }

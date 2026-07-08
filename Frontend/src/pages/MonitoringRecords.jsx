@@ -143,6 +143,7 @@ const LMS_ACTIVITY_TYPES = [
   'STUDENT_RESTORED',
   'STUDENT_PERMANENTLY_PURGED',
   'STUDENT_IMMEDIATELY_PURGED',
+  'STUDENT_PROFILE_VIEWED',
   'FACULTY_CREATED',
   'FACULTY_UPDATED',
   'FACULTY_DELETED',
@@ -182,6 +183,7 @@ const LMS_EVENTS_DROPDOWN = [
   { id: 'STUDENT_RESTORED', label: 'Student restored' },
   { id: 'STUDENT_PERMANENTLY_PURGED', label: 'Student permanently purged' },
   { id: 'STUDENT_IMMEDIATELY_PURGED', label: 'Student immediately purged' },
+  { id: 'STUDENT_PROFILE_VIEWED', label: 'Student profile viewed (faculty)' },
   { id: 'FACULTY_CREATED', label: 'Faculty created' },
   { id: 'FACULTY_UPDATED', label: 'Faculty updated' },
   { id: 'FACULTY_DELETED', label: 'Faculty archived' },
@@ -788,6 +790,7 @@ function unifiedActivityLabel(e) {
   if (t === 'STUDENT_RESTORED') return 'Student restored'
   if (t === 'STUDENT_PERMANENTLY_PURGED') return 'Student permanently purged'
   if (t === 'STUDENT_IMMEDIATELY_PURGED') return 'Student immediately purged'
+  if (t === 'STUDENT_PROFILE_VIEWED') return 'Student profile viewed (faculty, PII excluded)'
   if (t === 'FACULTY_CREATED') return 'Faculty created'
   if (t === 'FACULTY_UPDATED') return 'Faculty updated'
   if (t === 'FACULTY_DELETED') return 'Faculty archived'
