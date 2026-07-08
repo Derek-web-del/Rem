@@ -45,7 +45,9 @@ export async function ensureCurriculumGuidesPublishColumns(pool) {
 
 function mapGuideRow(row) {
   if (!row) return null
-  const fileUrl = String(row.file_url ?? row.file_data_url ?? '').trim()
+  const fileUrlRaw = String(row.file_url ?? '').trim()
+  const fileData = String(row.file_data_url ?? '').trim()
+  const fileUrl = fileData.startsWith('data:') ? fileData : fileUrlRaw || fileData
   const gradeLevel = String(row.grade_level ?? row.grade ?? '').trim()
   const title =
     String(row.title ?? '').trim() ||

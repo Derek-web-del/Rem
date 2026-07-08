@@ -126,6 +126,18 @@ export async function acceptStudentTerms() {
   )
 }
 
+/** Clear DB terms flag before sign-out so the next login shows the terms gate. */
+export async function resetStudentTermsOnLogout() {
+  try {
+    await apiFetch(apiUrl('/api/v1/student/logout-terms-reset'), {
+      method: 'POST',
+      softAuth: true,
+    })
+  } catch {
+    /* session may already be invalid */
+  }
+}
+
 export function normalizeStudentProfile(profile) {
   if (!profile || typeof profile !== 'object') return profile
   const loginId =

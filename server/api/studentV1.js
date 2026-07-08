@@ -18,6 +18,7 @@ import {
   ensureStudentTermsColumns,
   fetchStudentRowForSession,
   markStudentTermsAccepted,
+  clearStudentTermsAccepted,
 } from '../lib/studentSession.js'
 
 import {
@@ -221,6 +222,20 @@ export function createStudentV1Router(express, auth) {
       res.json({ success: true, accepted_at: acceptedAt })
     } catch (e) {
       sendSafeServerError(res, e, 'POST /api/v1/student/accept-terms')
+    }
+  })
+
+  router.post('/v1/student/logout-terms-reset', async (req, res) => {
+    try {
+      const gate = await requireStudentSession(req, res, auth)
+      if (!gate) return
+      const pool = getPgPool()
+      const studentRow = await resolveStudentContext(pool, gate.user, res)
+      if (!studentRow) return
+      await clearStudentTermsAccepted(pool, studentRow.id)
+      res.json({ success: true, accepted: false })
+    } catch (e) {
+      sendSafeServerError(res, e, 'POST /api/v1/student/logout-terms-reset')
     }
   })
 

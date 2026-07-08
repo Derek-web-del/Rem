@@ -514,6 +514,7 @@ function studentRowForTeacherUi(row, sectionMeta = {}) {
     section_name: sectionName,
     gender: pickStudentText(row, 'gender') || null,
     status: pickStudentText(row, 'status') || 'active',
+    photo_url: String(row.photo_url ?? row.photo_data_url ?? '').trim() || undefined,
     access_scope: 'faculty_advisory_roster',
   }
 }
@@ -761,9 +762,14 @@ function facultyRowToTeacherProfilePayload(row) {
     String(row.faculty_username ?? '').trim() ||
     ''
   const specialization =
-    String(row.specialization ?? '').trim() || String(row.qualification ?? '').trim() || ''
+    String(row.specialization ?? '').trim() ||
+    String(row.qualification ?? '').trim() ||
+    String(row.qualification_title ?? '').trim() ||
+    ''
 
-  const photo_url = String(row.photo_url || row.photo_data_url || '').trim()
+  const photoData = String(row.photo_data_url || '').trim()
+  const photoPath = String(row.photo_url || '').trim()
+  const photo_url = photoData.startsWith('data:') ? photoData : photoPath || photoData
   const grade_level = String(row.grade_level || row.grade || '').trim()
 
   return {

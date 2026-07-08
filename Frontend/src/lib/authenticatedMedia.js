@@ -1,4 +1,5 @@
 import { uploadsPathToApiUrl } from './fileUrls.js'
+import { apiUrl } from './lmsStateStorage.js'
 
 export function isDirectMediaUrl(url) {
   const t = String(url || '').trim()
@@ -14,6 +15,7 @@ export function resolveMediaFetchUrl(storedPathOrUrl) {
   const t = String(storedPathOrUrl || '').trim()
   if (!t) return ''
   if (isDirectMediaUrl(t)) return t
+  if (t.startsWith('/api/')) return apiUrl(t)
   return uploadsPathToApiUrl(t)
 }
 

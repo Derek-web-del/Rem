@@ -378,7 +378,6 @@ export default function TeacherDashboard() {
 
   const photoResolved = facultyPhotoDisplaySrc(
     apiProfile?.photo_url || effectiveFaculty?.photo_url || effectiveFaculty?.photoDataUrl,
-    { apiUrlFn: apiUrl },
   )
 
   const roleLabel = useMemo(() => {

@@ -6,7 +6,7 @@ import PortalTermsMain from '../../components/PortalTermsMain.jsx'
 
 import TermsAndConditions from '../../TermsAndConditions.jsx'
 
-import { setTermsAccepted } from '../../lib/termsSession.js'
+import { clearTermsAcceptance, setTermsAccepted } from '../../lib/termsSession.js'
 
 import { acceptStudentTerms, fetchStudentTermsStatus } from '../../lib/studentPortal.js'
 
@@ -53,6 +53,7 @@ export default function StudentTermsPage() {
           return
         }
 
+        clearTermsAcceptance()
         setGateMode(true)
 
         setSidebarNavLocked?.(true)

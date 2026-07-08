@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useOutletContext } from 'react-router-dom'
-import { uploadsPathToApiUrl } from '../../lib/fileUrls.js'
+import AuthenticatedPdfFrame from '../../components/AuthenticatedPdfFrame.jsx'
+import { fetchAuthenticatedMediaUrl } from '../../lib/authenticatedMedia.js'
 import { apiUrl } from '../../lib/lmsStateStorage.js'
 import { FACULTY_MSG, FACULTY_TOAST_ID, useFacultyNotify } from '../../lib/facultyNotify.js'
 import TeacherBackButton from './TeacherBackButton.jsx'
@@ -30,13 +31,9 @@ function formatUploadDate(raw) {
   return d.toISOString().slice(0, 10)
 }
 
-function resolveFileUrl(fileUrl) {
-  return uploadsPathToApiUrl(fileUrl)
-}
-
 function PdfPreviewFrame({ fileUrl, title, className = '' }) {
-  const src = resolveFileUrl(fileUrl)
-  if (!src) {
+  const path = String(fileUrl || '').trim()
+  if (!path) {
     return (
       <div
         className={`flex items-center justify-center rounded-lg border border-dashed border-neutral-200 bg-neutral-100 text-xs text-neutral-500 ${className}`}
@@ -46,18 +43,50 @@ function PdfPreviewFrame({ fileUrl, title, className = '' }) {
     )
   }
   return (
-    <iframe
+    <AuthenticatedPdfFrame
+      filePath={path}
       title={title || 'Curriculum preview'}
-      src={`${src}#toolbar=0&navpanes=0`}
-      className={`w-full rounded-lg border border-neutral-200 bg-white ${className}`}
+      className={className}
+      emptyClassName={`flex items-center justify-center rounded-lg border border-dashed border-neutral-200 bg-neutral-100 text-xs text-neutral-500 ${className}`}
+      emptyMessage="Preview unavailable"
     />
   )
 }
 
 function CurriculumPdfModal({ guide, onClose }) {
   const [zoom, setZoom] = useState(100)
-  const fileUrl = resolveFileUrl(guide?.file_url)
+  const [viewerSrc, setViewerSrc] = useState('')
+  const [loadError, setLoadError] = useState('')
+  const filePath = String(guide?.file_url || '').trim()
   const fileName = guide?.file_name || guide?.title || 'curriculum.pdf'
+
+  useEffect(() => {
+    let cancelled = false
+    let objectUrl = ''
+
+    async function load() {
+      setLoadError('')
+      setViewerSrc('')
+      if (!filePath) {
+        setLoadError('File unavailable.')
+        return
+      }
+      try {
+        const url = await fetchAuthenticatedMediaUrl(filePath)
+        if (cancelled) return
+        if (url.startsWith('blob:')) objectUrl = url
+        setViewerSrc(url)
+      } catch {
+        if (!cancelled) setLoadError('File unavailable.')
+      }
+    }
+
+    void load()
+    return () => {
+      cancelled = true
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+    }
+  }, [filePath])
 
   useEffect(() => {
     function onKey(e) {
@@ -67,16 +96,23 @@ function CurriculumPdfModal({ guide, onClose }) {
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
 
-  const handleDownload = () => {
-    if (!fileUrl) return
-    const a = document.createElement('a')
-    a.href = fileUrl
-    a.download = fileName
-    a.target = '_blank'
-    a.rel = 'noopener noreferrer'
-    document.body.appendChild(a)
-    a.click()
-    a.remove()
+  const handleDownload = async () => {
+    if (!filePath) return
+    try {
+      const url = await fetchAuthenticatedMediaUrl(filePath)
+      const blob = await (await fetch(url)).blob()
+      const objectUrl = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = objectUrl
+      a.download = fileName
+      a.rel = 'noopener'
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(objectUrl)
+    } catch {
+      /* ignore */
+    }
   }
 
   return (
@@ -134,10 +170,10 @@ function CurriculumPdfModal({ guide, onClose }) {
             className="mx-auto origin-top"
             style={{ transform: `scale(${zoom / 100})`, width: `${10000 / zoom}%`, maxWidth: '100%' }}
           >
-            {fileUrl ? (
-              <iframe title={fileName} src={fileUrl} className="h-[75vh] w-full rounded border border-neutral-200 bg-white" />
+            {viewerSrc ? (
+              <iframe title={fileName} src={`${viewerSrc}#toolbar=0&navpanes=0`} className="h-[75vh] w-full rounded border border-neutral-200 bg-white" />
             ) : (
-              <p className="py-12 text-center text-sm text-neutral-500">File unavailable.</p>
+              <p className="py-12 text-center text-sm text-neutral-500">{loadError || 'Loading…'}</p>
             )}
           </div>
         </div>

@@ -1,8 +1,7 @@
 import { useMemo } from 'react'
 import AuthenticatedImage from './AuthenticatedImage.jsx'
-import { facultyPhotoDisplaySrc } from '../lib/facultyPhoto.js'
+import { studentPhotoDisplaySrc } from '../lib/studentPhoto.js'
 import { formatSemesterLabel } from '../lib/quizQuestionTypes.js'
-import { apiUrl } from '../lib/lmsStateStorage.js'
 
 const labelStyle = {
   padding: '10px 14px',
@@ -74,7 +73,7 @@ export function normalizeStudentRecord(student) {
   const sectionName = String(student.sectionName ?? student.section_name ?? student.section ?? '').trim()
   const semester = String(student.semester ?? student.semester ?? '1').trim()
   const sectionLabel = [grade, sectionName].map((p) => String(p ?? '').trim()).filter(Boolean).join('-') || '—'
-  const photo = facultyPhotoDisplaySrc(student.photo_url || student.photoDataUrl || '', { apiUrlFn: apiUrl })
+  const photo = studentPhotoDisplaySrc(student.photo_url || student.photoDataUrl || '')
   const rawId = student.postgresStudentId ?? student.id
   const postgresId = Number.isFinite(Number(rawId)) && Number(rawId) > 0 ? String(Number(rawId)) : String(rawId || '').trim()
   const status = deriveStatus(student)

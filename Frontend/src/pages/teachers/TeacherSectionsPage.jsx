@@ -6,7 +6,7 @@ import { isOnline } from '../../lib/offlineSync.js'
 import { formatSemesterLabel } from '../../lib/quizQuestionTypes.js'
 import { FACULTY_MSG, FACULTY_TOAST_ID, useFacultyNotify } from '../../lib/facultyNotify.js'
 import OfflineCacheIndicator from '../../components/OfflineCacheIndicator.jsx'
-import { facultyPhotoDisplaySrc } from '../../lib/facultyPhoto.js'
+import { studentPhotoDisplaySrc } from '../../lib/studentPhoto.js'
 import AuthenticatedImage from '../../components/AuthenticatedImage.jsx'
 import TeacherBackButton from './TeacherBackButton.jsx'
 import TeacherMainHeader from './TeacherMainHeader.jsx'
@@ -248,7 +248,7 @@ function SectionStudentsView({ section, search, setSearch, sortRollAsc, setSortR
               </tr>
             ) : (
               students.map((st, index) => {
-                const photo = facultyPhotoDisplaySrc(st.photo_url, { apiUrlFn: apiUrl })
+                const photo = studentPhotoDisplaySrc(st.photo_url)
                 return (
                   <tr key={st.id} className="border-b border-neutral-100 last:border-0">
                     <td className="px-3 py-3 text-neutral-500">{index + 1}</td>

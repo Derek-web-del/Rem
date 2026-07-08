@@ -1,6 +1,5 @@
 import { useState } from 'react'
-import { apiUrl } from '../../lib/lmsStateStorage.js'
-import { facultyPhotoDisplaySrc } from '../../lib/facultyPhoto.js'
+import { studentPhotoDisplaySrc } from '../../lib/studentPhoto.js'
 import AuthenticatedImage from '../../components/AuthenticatedImage.jsx'
 
 /** Advisory sections from GET /api/teacher/advisory-sections — expandable roster + filter. */
@@ -121,7 +120,7 @@ export default function TeacherAdvisorySections({ sections, loading, error }) {
                   <div className="flex max-h-[300px] flex-col gap-2 overflow-y-auto pr-1">
                     {filteredStudents.map((student, index) => {
                       const pk = student?.id != null ? String(student.id) : `${index}-${name}`
-                      const photoSrc = facultyPhotoDisplaySrc(student?.photo_url, { apiUrlFn: apiUrl })
+                      const photoSrc = studentPhotoDisplaySrc(student?.photo_url)
                       const enr =
                         student?.enrollment_no || student?.student_id
                           ? String(student.enrollment_no || student.student_id).trim()

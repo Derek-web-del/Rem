@@ -13,12 +13,10 @@ export async function clearPortalTermsOnLogout(pool, user) {
   if (!pool || !user?.id) return
 
   const role = String(user.role || '').trim().toLowerCase()
-  const userId = String(user.id)
 
   try {
     if (role === 'admin') {
-      await clearAdminTermsAccepted(pool, userId)
-      return
+      await clearAdminTermsAccepted(pool, String(user.id))
     }
 
     if (role === 'teacher' || role === 'faculty') {
@@ -26,14 +24,11 @@ export async function clearPortalTermsOnLogout(pool, user) {
       if (facultyRow?.id) {
         await clearFacultyTermsAccepted(pool, facultyRow.id)
       }
-      return
     }
 
-    if (role === 'student') {
-      const studentRow = await fetchStudentRowForSession(pool, user)
-      if (studentRow?.id) {
-        await clearStudentTermsAccepted(pool, studentRow.id)
-      }
+    const studentRow = await fetchStudentRowForSession(pool, user)
+    if (studentRow?.id && (role === 'student' || role === 'user')) {
+      await clearStudentTermsAccepted(pool, studentRow.id)
     }
   } catch (e) {
     console.warn('[portalTermsReset] clear on logout failed:', e?.message || e)

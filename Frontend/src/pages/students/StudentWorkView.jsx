@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import AuthenticatedPdfFrame from '../../components/AuthenticatedPdfFrame.jsx'
 import OfflineCacheIndicator from '../../components/OfflineCacheIndicator.jsx'
 import {
   STUDENT_SUBMISSION_MAX_BYTES,
@@ -9,7 +10,7 @@ import {
   fetchStudentWorkDetail,
   formatWorkDate,
   formatWorkDateTime,
-  resolveStudentWorkFileUrl,
+  resolveStudentWorkPromptApiUrl,
   STUDENT_SUBMISSION_TYPE_MSG,
   submitStudentWorkFile,
   validateStudentSubmissionFileType,
@@ -89,12 +90,9 @@ export default function StudentWorkView({ config }) {
   }, [load])
 
   const previewUrl = useMemo(() => {
-    if (!item?.file_path) return ''
-    const base = resolveStudentWorkFileUrl(item.file_path)
-    if (!base) return ''
-    const name = encodeURIComponent(item.file_name || 'document.pdf')
-    return `${base}#toolbar=1&navpanes=0&filename=${name}`
-  }, [item])
+    if (!item?.file_path || !id) return ''
+    return resolveStudentWorkPromptApiUrl(config.kind, id)
+  }, [item, id, config.kind])
 
   const hasSubmission = Boolean(submission?.submitted_at || submission?.file_path || item?.has_submission_file)
   const submissionOpen = item?.submission_open !== false
@@ -238,11 +236,15 @@ export default function StudentWorkView({ config }) {
                       style={{ height: previewOpen ? '400px' : '0px', maxHeight: previewOpen ? '400px' : '0px' }}
                     >
                       <div className="relative h-[400px] w-full overflow-hidden bg-neutral-100">
-                        <iframe
-                          title={config.previewLabel}
-                          src={previewOpen ? previewUrl : undefined}
-                          className="absolute inset-0 h-full w-full border-0"
-                        />
+                        {previewOpen ? (
+                          <AuthenticatedPdfFrame
+                            fileUrl={previewUrl}
+                            title={config.previewLabel}
+                            className="absolute inset-0 h-full w-full border-0"
+                            emptyClassName="absolute inset-0 flex h-full w-full items-center justify-center bg-neutral-100 text-sm text-neutral-500"
+                            emptyMessage="Preview unavailable"
+                          />
+                        ) : null}
                       </div>
                     </div>
                   </div>

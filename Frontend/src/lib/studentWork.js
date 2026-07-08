@@ -45,6 +45,12 @@ export function resolveStudentWorkFileUrl(filePath) {
   return uploadsPathToApiUrl(filePath)
 }
 
+/** Scoped student API stream for assignment/activity prompt PDFs (session + grade gate). */
+export function resolveStudentWorkPromptApiUrl(kind, id) {
+  const base = workApiBase(kind)
+  return apiUrl(`${base}/${encodeURIComponent(String(id))}/prompt-file`)
+}
+
 async function parseWorkResponse(res, fallbackMessage) {
   const data = await res.json().catch(() => ({}))
   if (!res.ok) {

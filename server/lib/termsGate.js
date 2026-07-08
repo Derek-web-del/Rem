@@ -2,9 +2,12 @@
 
 export function isTermsExemptRequest(req) {
   const path = String(req.path || req.originalUrl || '').toLowerCase()
-  return path.includes('/terms-status') || path.includes('/accept-terms')
+  return (
+    path.includes('/terms-status') ||
+    path.includes('/accept-terms') ||
+    path.includes('/logout-terms-reset')
+  )
 }
-
 export function sendTermsNotAccepted(res, portal = 'portal') {
   res.status(403).json({
     success: false,

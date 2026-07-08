@@ -1,6 +1,12 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import AuthenticatedImage from './AuthenticatedImage.jsx'
 import { apiUrl } from '../lib/lmsStateStorage.js'
 import { subjectImageDisplaySrc, subjectImagePlaceholderSrc } from '../lib/subjectImages.js'
+
+function isProtectedSubjectImageSrc(src) {
+  const t = String(src || '').trim()
+  return t.includes('/api/files/') || t.includes('/uploads/')
+}
 
 /**
  * Subject cover image with automatic fallback to placeholder on load failure.
@@ -9,19 +15,39 @@ export default function SubjectCoverImage({ subject, subjectName, className, alt
   const target = subject ?? subjectName ?? ''
   const primary = subjectImageDisplaySrc(target, { apiUrlFn: apiUrl })
   const placeholder = subjectImagePlaceholderSrc({ apiUrlFn: apiUrl })
-  const [src, setSrc] = useState(primary)
+  const [failed, setFailed] = useState(false)
+  const useAuth = useMemo(() => isProtectedSubjectImageSrc(primary), [primary])
 
   useEffect(() => {
-    setSrc(primary)
+    setFailed(false)
   }, [primary])
+
+  const displaySrc = failed ? placeholder : primary
+
+  if (useAuth && !failed) {
+    return (
+      <AuthenticatedImage
+        src={displaySrc}
+        alt={alt}
+        className={className}
+        fallback={
+          <img
+            src={placeholder}
+            alt={alt}
+            className={className}
+          />
+        }
+      />
+    )
+  }
 
   return (
     <img
-      src={src}
+      src={displaySrc}
       alt={alt}
       className={className}
       onError={() => {
-        if (src !== placeholder) setSrc(placeholder)
+        if (!failed) setFailed(true)
       }}
     />
   )

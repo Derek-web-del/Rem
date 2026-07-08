@@ -117,6 +117,126 @@ async function tryServeAnnouncementFromDatabase(filePath, res) {
   return true
 }
 
+async function tryServeCurriculumFromDatabase(filePath, res) {
+  const pool = getPgPool()
+  if (!pool) return false
+
+  const variants = uploadPathLookupVariants('curriculum', filePath)
+  const basename = path.basename(normalizeStoredUploadPath(filePath))
+  const { rows } = await pool.query(
+    `
+      SELECT file_data_url, subject, file_name, title
+      FROM curriculum_guides
+      WHERE is_published = true
+        AND (
+          file_url = ANY($1::text[])
+          OR file_data_url = ANY($1::text[])
+          OR ($2 <> '' AND (file_url LIKE $3 OR file_data_url LIKE $3 OR file_name = $2))
+        )
+      LIMIT 1
+    `,
+    [variants, basename, `%/${basename}`],
+  )
+
+  const guide = rows?.[0]
+  const inlineCandidates = [
+    String(guide?.file_data_url || '').trim(),
+  ]
+
+  const subjectKey = String(guide?.subject || guide?.title || '').trim()
+  if (subjectKey) {
+    try {
+      const { rows: subRows } = await pool.query(
+        `
+          SELECT syllabus_pdf
+          FROM subjects
+          WHERE lower(trim(subject_name)) = lower(trim($1))
+             OR lower(trim(subject_code)) = lower(trim($1))
+          LIMIT 1
+        `,
+        [subjectKey],
+      )
+      inlineCandidates.push(String(subRows?.[0]?.syllabus_pdf || '').trim())
+    } catch {
+      /* ignore */
+    }
+  }
+
+  if (basename) {
+    try {
+      const stem = basename.replace(/\.[^.]+$/, '').replace(/_Syllabus$/i, '')
+      const subjectHint = stem.includes('_') ? stem.split('_').slice(1).join(' ') : stem
+      if (subjectHint) {
+        const { rows: subRows } = await pool.query(
+          `
+            SELECT syllabus_pdf
+            FROM subjects
+            WHERE lower(replace(subject_name, ' ', '')) = lower(replace($1, ' ', ''))
+               OR lower(subject_name) LIKE lower($2)
+            LIMIT 1
+          `,
+          [subjectHint, `%${subjectHint.replace(/_/g, '%')}%`],
+        )
+        inlineCandidates.push(String(subRows?.[0]?.syllabus_pdf || '').trim())
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
+  for (const raw of inlineCandidates) {
+    const parsed = parseDataUrlBuffer(raw)
+    if (!parsed?.buffer?.length) continue
+    res.setHeader('Content-Type', parsed.mime || 'application/pdf')
+    res.setHeader('Content-Disposition', 'inline')
+    res.send(parsed.buffer)
+    return true
+  }
+
+  return false
+}
+
+async function tryServeFacultyPhotoFromDatabase(filePath, res) {
+  const pool = getPgPool()
+  if (!pool) return false
+
+  const variants = uploadPathLookupVariants('photos', filePath)
+  const basename = path.basename(normalizeStoredUploadPath(filePath))
+  try {
+    const { rows } = await pool.query(
+      `
+        SELECT photo_url, photo_data_url
+        FROM faculties
+        WHERE photo_url = ANY($1::text[])
+           OR ($2 <> '' AND photo_url LIKE $3)
+        LIMIT 1
+      `,
+      [variants, basename, `%/${basename}`],
+    )
+    let row = rows?.[0]
+    if (!row && basename) {
+      const { rows: rows2 } = await pool.query(
+        `
+          SELECT photo_url, photo_data_url
+          FROM faculties
+          WHERE photo_url LIKE $1 OR photo_data_url LIKE $1
+          LIMIT 1
+        `,
+        [`%/${basename}`],
+      )
+      row = rows2?.[0]
+    }
+    const raw = String(row?.photo_data_url || row?.photo_url || '').trim()
+    const parsed = parseDataUrlBuffer(raw)
+    if (!parsed?.buffer?.length) return false
+    res.setHeader('Content-Type', parsed.mime)
+    res.send(parsed.buffer)
+    return true
+  } catch {
+    return false
+  }
+}
+
 async function resolveStudentGradeFromSection(pool, studentRow) {
   const sectionId = Number(studentRow.section_id)
   if (!Number.isFinite(sectionId) || sectionId <= 0) return ''
@@ -256,7 +376,8 @@ async function canAccessCategoryFile(req, auth, category, relativePath) {
       const variants = uploadPathLookupVariants('curriculum', filePath)
       const { rows } = await pool.query(
         `SELECT grade_level FROM curriculum_guides
-         WHERE file_url = ANY($1::text[]) AND is_published = true
+         WHERE is_published = true
+           AND (file_url = ANY($1::text[]) OR file_data_url = ANY($1::text[]))
          LIMIT 1`,
         [variants],
       )
@@ -481,6 +602,14 @@ export function createFileDownloadRouter(express, { auth }) {
       if (!fs.existsSync(resolved) || !fs.statSync(resolved).isFile()) {
         if (category === 'announcements') {
           const served = await tryServeAnnouncementFromDatabase(storedUploadPath(category, splat), res)
+          if (served) return
+        }
+        if (category === 'curriculum') {
+          const served = await tryServeCurriculumFromDatabase(storedUploadPath(category, splat), res)
+          if (served) return
+        }
+        if (category === 'photos') {
+          const served = await tryServeFacultyPhotoFromDatabase(storedUploadPath(category, splat), res)
           if (served) return
         }
         res.status(404).json({ success: false, error: 'NOT_FOUND', message: 'File not found.' })

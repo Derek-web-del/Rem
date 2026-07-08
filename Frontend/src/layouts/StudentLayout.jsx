@@ -4,7 +4,7 @@ import { authClient } from '../lib/auth-client.js'
 import { clearTermsAcceptance } from '../lib/termsSession.js'
 import { loginPathWithPortalId } from '../lib/loginRoutes.js'
 import { useIdleSession } from '../hooks/useIdleSession.js'
-import { warmStudentOfflineCache } from '../lib/studentPortal.js'
+import { warmStudentOfflineCache, resetStudentTermsOnLogout } from '../lib/studentPortal.js'
 import { isOnline } from '../lib/offlineSync.js'
 import StudentSidebar from '../pages/students/StudentSidebar.jsx'
 import OfflineBanner from '../components/OfflineBanner.jsx'
@@ -28,6 +28,7 @@ export default function StudentLayout() {
 
   const logoutToPortal = useCallback(async () => {
     clearTermsAcceptance()
+    await resetStudentTermsOnLogout()
     await authClient.signOut()
     navigate(loginPathWithPortalId('STUDENT'), { replace: true })
   }, [navigate])
