@@ -39,6 +39,8 @@ import { NAV_ID_TO_PATH, navIdFromPath, pathForNavId } from './lib/adminNavRoute
 const SIDEBAR_GOLD = '#1e4fa3'
 const SIDEBAR_GOLD_DARK = '#15397a'
 const ACTION_BLUE = '#1e4fa3'
+const ADMIN_AVATAR_STORAGE_KEY = 'lenlearn.adminAvatarDataUrl'
+const ADMIN_PROFILE_DISPLAY_NAME = 'Aldrich Juachon'
 /** UI-only local preference (not roster data). */
 
 const GRADE_LEVELS = ['Grade 7', 'Grade 8', 'Grade 9', 'Grade 10']
@@ -690,6 +692,13 @@ function Avatar({ seed, size = 40 }) {
   )
 }
 
+function normalizeAdminDisplayName(raw) {
+  const name = String(raw || '').trim()
+  if (!name) return ADMIN_PROFILE_DISPLAY_NAME
+  if (/^derek(\s+john)?\s+bantad$/i.test(name)) return ADMIN_PROFILE_DISPLAY_NAME
+  return name
+}
+
 function DashboardFacultyThumb({ faculty }) {
   const [imgFailed, setImgFailed] = useState(false)
   const src = facultyPhotoDisplaySrc(faculty?.photo_url || faculty?.photoDataUrl || '')
@@ -711,15 +720,16 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
   const { data: adminSession } = authClient.useSession()
   const adminDisplayName = useMemo(() => {
     const u = adminSession?.user
-    const name = String(u?.name || u?.email || '').trim()
-    return name || 'Administrator'
+    return normalizeAdminDisplayName(u?.name || u?.email || '')
   }, [adminSession])
   const location = useLocation()
   const navigate = useNavigate()
   const { collapsed: sidebarCollapsed, toggleCollapsed: toggleSidebarCollapsed } = useSidebarCollapsed(
     SIDEBAR_COLLAPSED_KEYS.admin,
   )
+  const fileInputRef = useRef(null)
   const curriculumRef = useRef(null)
+  const [adminAvatarDataUrl, setAdminAvatarDataUrl] = useState('')
   const [activeNav, setActiveNav] = useState(
     () => navIdFromPath(typeof window !== 'undefined' ? window.location.pathname : '') || 'dashboard',
   )
@@ -768,6 +778,7 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
         if (cancelled) return
         if (payload?.state) {
           const s = payload.state
+          setAdminAvatarDataUrl(String(s.adminAvatarDataUrl || ''))
           setCurriculums([])
           setSections([])
           setStudents(Array.isArray(s.students) ? s.students : [])
@@ -778,6 +789,10 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
         }
         setPersistenceMode('server')
       } catch {
+        try {
+          const saved = localStorage.getItem(ADMIN_AVATAR_STORAGE_KEY) || ''
+          if (saved) setAdminAvatarDataUrl(saved)
+        } catch {}
         setCurriculums([])
         setSections([])
         setStudents([])
@@ -795,6 +810,47 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
       cancelled = true
     }
   }, [])
+
+  const persistAdminAvatar = useCallback(
+    async (dataUrl) => {
+      if (persistenceMode !== 'server') return
+
+      try {
+        const res = await fetch(getLmsStateEndpointUrl(), {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ state: { adminAvatarDataUrl: dataUrl } }),
+        })
+        if (!res.ok) {
+          let msg = String(res.status)
+          try {
+            const errBody = await res.json()
+            if (errBody?.message) msg = `${res.status}: ${errBody.message}`
+            else if (errBody?.error) msg = `${res.status}: ${errBody.error}`
+          } catch {
+            /* ignore */
+          }
+          toast.error(`Could not save admin profile photo (${msg}).`, {
+            title: 'Save failed',
+            durationMs: 12000,
+          })
+        }
+      } catch {
+        toast.error('Could not reach the server to save admin profile photo.', {
+          title: 'Save failed',
+          durationMs: 12000,
+        })
+      }
+    },
+    [persistenceMode, toast],
+  )
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(ADMIN_AVATAR_STORAGE_KEY, adminAvatarDataUrl || '')
+    } catch {}
+  }, [adminAvatarDataUrl])
 
   const sectionsForGrade = useMemo(
     () => sections.filter((section) => section.grade === activeSectionGrade),
@@ -1925,6 +1981,31 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
     return { ok: true }
   }
 
+  function handleChooseAvatar() {
+    fileInputRef.current?.click()
+  }
+
+  function handleAvatarFileChange(event) {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+    if (!['image/png', 'image/jpeg', 'image/jpg'].includes(file.type)) {
+      window.alert('Please select a PNG, JPG, or JPEG image.')
+      return
+    }
+    const reader = new FileReader()
+    reader.onload = () => {
+      const result = typeof reader.result === 'string' ? reader.result : ''
+      if (!result) return
+      setAdminAvatarDataUrl(result)
+      try {
+        localStorage.setItem(ADMIN_AVATAR_STORAGE_KEY, result)
+      } catch {}
+      void persistAdminAvatar(result)
+    }
+    reader.readAsDataURL(file)
+  }
+
   function openSectionManagePage() {
     navigateToNav('section')
   }
@@ -2326,6 +2407,7 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
       if (!res.ok) return
       const payload = await res.json()
       if (!payload?.state) return
+      setAdminAvatarDataUrl(String(payload.state.adminAvatarDataUrl || ''))
       void refreshCurriculumFromPostgres()
       void refreshSectionsFromPostgres()
     } catch (e) {
@@ -3117,6 +3199,40 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
             />
           ) : activeNav === 'dashboard' ? (
             <>
+            <section className="mb-6 rounded-xl border border-neutral-100 bg-white p-5 shadow-md md:p-6">
+              <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:gap-6">
+                {adminAvatarDataUrl ? (
+                  <img
+                    src={adminAvatarDataUrl}
+                    alt="Admin profile"
+                    className="h-[72px] w-[72px] rounded-full object-cover ring-2 ring-white shadow-sm"
+                  />
+                ) : (
+                  <Avatar seed="admin" size={72} />
+                )}
+                <div className="min-w-0 text-left">
+                  <h2 className="text-xl font-bold text-neutral-900 md:text-2xl">{adminDisplayName}</h2>
+                  <p className="mt-1 text-sm text-neutral-600">
+                    Admin |{' '}
+                    <button
+                      type="button"
+                      onClick={handleChooseAvatar}
+                      className="font-medium text-[#3182ce] underline-offset-2 hover:underline"
+                    >
+                      Change Image
+                    </button>
+                  </p>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/png,image/jpeg,image/jpg"
+                    onChange={handleAvatarFileChange}
+                    className="hidden"
+                  />
+                </div>
+              </div>
+            </section>
+
             <div className="grid gap-6 lg:grid-cols-3 lg:gap-8">
               <div className="lg:col-span-2">
               <section className="rounded-xl border border-neutral-100 bg-white shadow-md">
