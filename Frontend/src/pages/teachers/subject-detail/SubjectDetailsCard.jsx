@@ -1,4 +1,4 @@
-import { formatSubjectScheduleLabel } from '../../lib/subjectScheduleDisplay.js'
+import { formatSubjectScheduleLabel } from '../../../lib/subjectScheduleDisplay.js'
 
 const ROWS = [
   { key: 'faculty_name', label: 'Faculty', icon: 'ti-user' },
