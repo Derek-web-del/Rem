@@ -89,6 +89,7 @@ import { deleteSubmissionFileByUrl } from '../lib/submissionStorage.js'
 import { validateGradeComponentForWork } from '../lib/subjectGradeCriteriaDb.js'
 
 let facultyArchivedColumnMemo = null
+let subjectsArchivedColumnMemo = null
 
 async function facultiesHasArchivedAt(pool) {
   if (facultyArchivedColumnMemo != null) return facultyArchivedColumnMemo
@@ -112,6 +113,31 @@ async function facultiesHasArchivedAt(pool) {
 
 async function facultyActivePredicate(pool, alias = 'f') {
   const ok = await facultiesHasArchivedAt(pool)
+  return ok ? ` AND ${alias}.archived_at IS NULL ` : ''
+}
+
+async function subjectsHasArchivedAt(pool) {
+  if (subjectsArchivedColumnMemo != null) return subjectsArchivedColumnMemo
+  try {
+    const { rows } = await pool.query(
+      `
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'subjects'
+          AND column_name = 'archived_at'
+        LIMIT 1
+      `,
+    )
+    subjectsArchivedColumnMemo = rows?.length > 0
+    return subjectsArchivedColumnMemo
+  } catch {
+    subjectsArchivedColumnMemo = false
+    return false
+  }
+}
+
+async function subjectActivePredicate(pool, alias = 'sub') {
+  const ok = await subjectsHasArchivedAt(pool)
   return ok ? ` AND ${alias}.archived_at IS NULL ` : ''
 }
 
@@ -1444,8 +1470,9 @@ async function teacherOwnsSubject(pool, facultyId, subjectId) {
   const fid = String(facultyId ?? '').trim()
   if (!fid) return false
   try {
+    const subjectArchive = await subjectActivePredicate(pool, 'subjects')
     const { rows } = await pool.query(
-      `SELECT 1 FROM subjects WHERE id = $1 AND faculty_id::text = $2::text LIMIT 1`,
+      `SELECT 1 FROM subjects sub WHERE sub.id = $1 AND sub.faculty_id::text = $2::text ${subjectArchive} LIMIT 1`,
       [sid, fid],
     )
     return rows?.length > 0
@@ -1696,12 +1723,14 @@ export function createTeacherApiRouter(express, auth) {
         return
       }
       const facultyId = String(facultyRow.id).trim()
+      const subjectArchive = await subjectActivePredicate(pool, 'sub')
       const { rows } = await pool.query(
         `
         SELECT ${TEACHER_SUBJECT_SELECT}
         FROM subjects sub
         ${TEACHER_SUBJECT_FACULTY_JOIN}
         WHERE sub.faculty_id::text = $1
+        ${subjectArchive}
         ORDER BY sub.subject_name ASC
         `,
         [facultyId],

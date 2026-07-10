@@ -26,7 +26,6 @@ import ArchiveVault from './pages/ArchiveVault.jsx'
 import AuditStatisticsSection from './components/AuditStatisticsSection.jsx'
 import AdminLatestAnnouncementsExpanded from './components/admin/AdminLatestAnnouncementsExpanded.jsx'
 import AuthenticatedImage from './components/AuthenticatedImage.jsx'
-import { AdminAccessBadge } from './components/PortalAccessBadge.jsx'
 import Header from './components/Header.jsx'
 import PortalSidebarShell from './components/PortalSidebarShell.jsx'
 import { useSidebarCollapsed, SIDEBAR_COLLAPSED_KEYS } from './hooks/useSidebarCollapsed.js'
@@ -3218,9 +3217,6 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
             />
           ) : activeNav === 'dashboard' ? (
             <>
-            <section className="mb-4 rounded-xl border border-blue-100 bg-blue-50/60 px-4 py-3 md:px-5">
-              <AdminAccessBadge displayName={adminDisplayName} />
-            </section>
             <section className="mb-6 rounded-xl border border-neutral-100 bg-white p-5 shadow-md md:p-6">
               <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:gap-6">
                 {adminAvatarDataUrl ? (

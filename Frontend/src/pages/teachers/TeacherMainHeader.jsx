@@ -1,5 +1,3 @@
-import TeacherPortalAccessBar from './TeacherPortalAccessBar.jsx'
-
 export default function TeacherMainHeader({ pageTitle = 'Dashboard' }) {
   return (
     <header className="flex shrink-0 flex-col gap-3 border-b border-neutral-200/80 bg-neutral-50/80 px-4 py-4 backdrop-blur-sm md:px-8 md:py-5">
@@ -11,7 +9,6 @@ export default function TeacherMainHeader({ pageTitle = 'Dashboard' }) {
           </h1>
         </div>
       </div>
-      <TeacherPortalAccessBar />
     </header>
   )
 }

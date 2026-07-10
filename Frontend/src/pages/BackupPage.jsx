@@ -33,12 +33,6 @@ const RESTORE_STEPS = [
   'Complete',
 ]
 
-const EXPECTED_RESTORE_ENGINE = '2026-07-05-nuclear-v12'
-
-function isRestoreEngineReady(engine) {
-  return typeof engine === 'string' && engine.includes('nuclear-v12')
-}
-
 function formatRestoreErrorMessage(errOrPayload) {
   const p = errOrPayload?.restoreDetails || errOrPayload || {}
   const failedTable = p.failed_table || p.failedTable
@@ -396,7 +390,6 @@ export default function BackupPage() {
   const [isRestoring, setIsRestoring] = useState(false)
   const [restoreStep, setRestoreStep] = useState(0)
   const [restoreEngineLive, setRestoreEngineLive] = useState(null)
-  const [deployedRestoreEngine, setDeployedRestoreEngine] = useState(null)
   const [showConfirm, setShowConfirm] = useState(false)
   const [restoreConfirmText, setRestoreConfirmText] = useState('')
   const [restoreResult, setRestoreResult] = useState(null)
@@ -409,25 +402,12 @@ export default function BackupPage() {
     setLoading(true)
     setLoadError('')
     try {
-      const [mainRes, schedRes, engineRes, healthRes] = await Promise.all([
+      const [mainRes, schedRes] = await Promise.all([
         fetch(apiUrl('/api/backup'), { credentials: 'include' }),
         fetch(apiUrl('/api/backup/schedule'), { credentials: 'include' }),
-        fetch(apiUrl('/api/backup/engine-version')).catch(() => null),
-        fetch(apiUrl('/api/health')).catch(() => null),
       ])
       const main = await readJson(mainRes)
       const sched = await readJson(schedRes)
-      let detectedEngine = null
-      if (engineRes?.ok) {
-        const engine = await engineRes.json().catch(() => ({}))
-        if (engine?.restore_engine) detectedEngine = String(engine.restore_engine)
-      }
-      if (!detectedEngine && healthRes?.ok) {
-        const health = await healthRes.json().catch(() => ({}))
-        if (health?.restore_engine) detectedEngine = String(health.restore_engine)
-        else if (health?.status === 'ok') detectedEngine = 'legacy-pre-v12 (redeploy required)'
-      }
-      setDeployedRestoreEngine(detectedEngine)
       setBackups(Array.isArray(main.backups) ? main.backups : [])
       setStats(main.stats || {})
       setSchedule(sched.schedule || schedule)
@@ -590,13 +570,6 @@ export default function BackupPage() {
 
   async function handleRestoreUpload() {
     if (!droppedFile) return
-    if (!isRestoreEngineReady(deployedRestoreEngine)) {
-      toast.error(
-        `Server is not running restore engine ${EXPECTED_RESTORE_ENGINE}. Redeploy DigitalOcean from GitHub main, then confirm /api/health shows restore_engine before restoring.`,
-        { title: 'Restore blocked — update required', durationMs: 14000 },
-      )
-      return
-    }
     setIsRestoring(true)
     setRestoreStep(0)
     setRestoreFailure(null)
@@ -732,13 +705,6 @@ export default function BackupPage() {
 
   async function handleHistoryRestore() {
     if (!restoreTarget) return
-    if (!isRestoreEngineReady(deployedRestoreEngine)) {
-      toast.error(
-        `Server is not running restore engine ${EXPECTED_RESTORE_ENGINE}. Redeploy DigitalOcean from GitHub main, then confirm /api/health shows restore_engine before restoring.`,
-        { title: 'Restore blocked — update required', durationMs: 14000 },
-      )
-      return
-    }
     setHistoryRestoreSubmitting(true)
     setIsRestoring(true)
     setRestoreStep(0)
@@ -774,9 +740,8 @@ export default function BackupPage() {
     }
   }
 
-  const restoreEngineReady = isRestoreEngineReady(deployedRestoreEngine)
-  const historyRestoreReady = historyRestoreConfirm.trim() === 'RESTORE' && restoreEngineReady
-  const uploadRestoreReady = restoreConfirmText.trim() === 'RESTORE' && restoreEngineReady
+  const historyRestoreReady = historyRestoreConfirm.trim() === 'RESTORE'
+  const uploadRestoreReady = restoreConfirmText.trim() === 'RESTORE'
 
   return (
     <div className="space-y-6">
@@ -797,25 +762,6 @@ export default function BackupPage() {
 
       {loadError ? (
         <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{loadError}</div>
-      ) : null}
-
-      {!restoreEngineReady ? (
-        <div className="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-950">
-          <p className="font-semibold">Restore is blocked until DigitalOcean deploys the v12 fix</p>
-          <p className="mt-2">
-            Detected engine:{' '}
-            <span className="font-mono font-semibold">{deployedRestoreEngine || 'unknown (could not detect)'}</span>
-          </p>
-          <p className="mt-2">
-            Required: <span className="font-mono font-semibold">{EXPECTED_RESTORE_ENGINE}</span>
-          </p>
-          <ol className="mt-2 list-decimal space-y-1 pl-5 text-xs">
-            <li>DigitalOcean → Apps → Force Rebuild from branch <span className="font-mono">main</span></li>
-            <li>Build command: <span className="font-mono">npm install --include=dev &amp;&amp; npm run build</span></li>
-            <li>Open <span className="font-mono">/api/health</span> — must include <span className="font-mono">restore_engine</span></li>
-            <li>If health is OK on your <span className="font-mono">.ondigitalocean.app</span> URL but not on glendalehs-lms.com, update Cloudflare DNS to DigitalOcean</li>
-          </ol>
-        </div>
       ) : null}
 
       <section className="rounded-xl border border-neutral-100 bg-white p-5 shadow-sm">

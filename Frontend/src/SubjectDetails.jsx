@@ -344,7 +344,6 @@ export default function SubjectDetails({
               value={form.assignedFacultyId}
               onChange={(e) => setForm((p) => ({ ...p, assignedFacultyId: e.target.value }))}
               disabled={facultyOptions.length === 0 || submitting}
-              helper="Teachers only see subjects assigned to them in the Teacher portal."
             >
               <option value="">{facultyOptions.length ? 'Select Faculty' : 'No faculty available'}</option>
               {facultyOptions.map((f) => (
@@ -360,7 +359,6 @@ export default function SubjectDetails({
               value={form.curriculumGuideId}
               onChange={(e) => setForm((p) => ({ ...p, curriculumGuideId: e.target.value }))}
               disabled={submitting}
-              helper="Links this subject to a published DepEd-aligned curriculum PDF from the institute library."
             >
               <option value="">
                 {matchingCurriculumGuides.length ? 'Select curriculum guide (optional)' : 'No matching guides — upload in Curriculum first'}
@@ -429,9 +427,6 @@ export default function SubjectDetails({
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <div className="text-sm font-semibold text-neutral-900">Syllabus (PDF)</div>
-                <p className="mt-1 text-xs text-neutral-600">
-                  Create a Glendale syllabus aligned to the linked DepEd curriculum guide.
-                </p>
               </div>
               <a
                 href={SYLLABUS_TEMPLATE_URL}

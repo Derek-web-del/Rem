@@ -32,11 +32,6 @@ function displayRoll(st) {
   return roll || '—'
 }
 
-function displayPhone(st) {
-  const phone = String(st?.contact_no ?? '').trim()
-  return phone || '—'
-}
-
 function displaySemester(st) {
   return formatSemesterLabel(st?.semester) || '—'
 }
@@ -234,7 +229,6 @@ function SectionStudentsView({ section, search, setSearch, sortRollAsc, setSortR
               <th className="px-3 py-3">Name</th>
               <th className="px-3 py-3">Enrollment No.</th>
               <th className="px-3 py-3">Section</th>
-              <th className="px-3 py-3">Phone</th>
               <th className="px-3 py-3">Semester</th>
               <th className="px-3 py-3">Action</th>
             </tr>
@@ -242,7 +236,7 @@ function SectionStudentsView({ section, search, setSearch, sortRollAsc, setSortR
           <tbody>
             {students.length === 0 ? (
               <tr>
-                <td colSpan={8} className="px-3 py-10 text-center text-neutral-500">
+                <td colSpan={7} className="px-3 py-10 text-center text-neutral-500">
                   No students found.
                 </td>
               </tr>
@@ -277,7 +271,6 @@ function SectionStudentsView({ section, search, setSearch, sortRollAsc, setSortR
                     </td>
                     <td className="px-3 py-3">{displayEnrollment(st)}</td>
                     <td className="px-3 py-3">{st.section || st.section_name || sectionName}</td>
-                    <td className="px-3 py-3">{displayPhone(st)}</td>
                     <td className="px-3 py-3">{displaySemester(st)}</td>
                     <td className="px-3 py-3">
                       <button

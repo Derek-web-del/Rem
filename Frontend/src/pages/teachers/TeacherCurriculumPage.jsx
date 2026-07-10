@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useOutletContext } from 'react-router-dom'
-import AuthenticatedPdfFrame from '../../components/AuthenticatedPdfFrame.jsx'
+import PdfCardThumbnail from '../../components/PdfCardThumbnail.jsx'
 import { fetchAuthenticatedMediaUrl } from '../../lib/authenticatedMedia.js'
 import { apiUrl } from '../../lib/lmsStateStorage.js'
 import { FACULTY_MSG, FACULTY_TOAST_ID, useFacultyNotify } from '../../lib/facultyNotify.js'
@@ -43,11 +43,10 @@ function PdfPreviewFrame({ fileUrl, title, className = '' }) {
     )
   }
   return (
-    <AuthenticatedPdfFrame
+    <PdfCardThumbnail
       filePath={path}
       title={title || 'Curriculum preview'}
-      className={className}
-      emptyClassName={`flex items-center justify-center rounded-lg border border-dashed border-neutral-200 bg-neutral-100 text-xs text-neutral-500 ${className}`}
+      className={className || 'h-44'}
       emptyMessage="Preview unavailable"
     />
   )
@@ -196,8 +195,8 @@ function CurriculumGuideCard({ guide, onView }) {
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
     >
-      <div className="relative bg-neutral-50 p-3">
-        <PdfPreviewFrame fileUrl={guide.file_url} title={title} className="h-44" />
+      <div className="relative overflow-hidden bg-neutral-50 p-3">
+        <PdfPreviewFrame fileUrl={guide.file_url} title={title} className="h-44 w-full" />
         {hover ? (
           <button
             type="button"
