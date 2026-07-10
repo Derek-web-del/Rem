@@ -11,6 +11,13 @@ export function isDirectMediaUrl(url) {
   )
 }
 
+export function requiresAuthenticatedFetch(pathOrUrl) {
+  const t = String(pathOrUrl || '').trim()
+  if (!t) return false
+  if (t.startsWith('/api/')) return true
+  return t.includes('/api/files/') || t.includes('/api/teacher/')
+}
+
 export function resolveMediaFetchUrl(storedPathOrUrl) {
   const t = String(storedPathOrUrl || '').trim()
   if (!t) return ''

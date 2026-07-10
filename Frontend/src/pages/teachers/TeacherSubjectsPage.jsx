@@ -47,7 +47,6 @@ export default function TeacherSubjectsPage() {
   const toast = useFacultyNotify()
   const toastRef = useRef(toast)
   toastRef.current = toast
-  const hasFetched = useRef(false)
 
   const [subjects, setSubjects] = useState([])
   const [loading, setLoading] = useState(true)
@@ -59,18 +58,19 @@ export default function TeacherSubjectsPage() {
   }, [setSidebarNavLocked])
 
   useEffect(() => {
-    if (hasFetched.current) return
-    hasFetched.current = true
+    let cancelled = false
 
     const loadSubjects = async () => {
       setLoading(true)
       setError(null)
       try {
         const offline = !isOnline()
-        const list = await fetchTeacherSubjects()
+        const list = await fetchTeacherSubjects({ forceRefresh: !offline })
+        if (cancelled) return
         setSubjects(list)
         setFromCache(offline)
       } catch (e) {
+        if (cancelled) return
         const msg = String(e?.message || e)
         console.error('[TeacherSubjectsPage] fetch error:', msg)
         setSubjects([])
@@ -79,11 +79,14 @@ export default function TeacherSubjectsPage() {
           toastId: FACULTY_TOAST_ID.subjectsFetchError,
         })
       } finally {
-        setLoading(false)
+        if (!cancelled) setLoading(false)
       }
     }
 
     void loadSubjects()
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   return (

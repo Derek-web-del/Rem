@@ -1823,12 +1823,14 @@ export function createTeacherApiRouter(express, auth) {
         res.status(404).json({ error: 'NOT_FOUND', message: 'Subject not found.' })
         return
       }
+      const subjectArchive = await subjectActivePredicate(pool, 'sub')
       const { rows } = await pool.query(
         `
         SELECT ${TEACHER_SUBJECT_SELECT}
         FROM subjects sub
         ${TEACHER_SUBJECT_FACULTY_JOIN}
         WHERE sub.id = $1 AND sub.faculty_id::text = $2
+        ${subjectArchive}
         LIMIT 1
         `,
         [subjectId, String(facultyRow.id).trim()],

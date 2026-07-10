@@ -1008,6 +1008,8 @@ export async function ensureSchema(pool) {
 
   await ensureOperationalArchivedAtColumns(pool)
 
+  await ensureSubjectsActiveCodeUnique(pool)
+
   await ensureTeacherDashboardAggregateTables(pool)
 }
 
@@ -1399,6 +1401,59 @@ export function subjectRowToResponse(row) {
     schedule_label: String(row.schedule_label ?? '').trim(),
     createdAt: row.created_at,
     created_at: row.created_at,
+  }
+}
+
+/** Suffix archived subject codes so active rows can reuse the same code. */
+export function buildArchivedSubjectCode(subjectCode, subjectId) {
+  const code = String(subjectCode ?? '').trim()
+  const id = Number(subjectId)
+  const suffix = Number.isFinite(id) && id > 0 ? `__a${id}` : '__arch'
+  const maxBase = Math.max(1, 50 - suffix.length)
+  return `${code.slice(0, maxBase)}${suffix}`
+}
+
+/** Allow subject_code reuse after soft-delete; uniqueness applies only to active subjects. */
+export async function ensureSubjectsActiveCodeUnique(pool) {
+  try {
+    const { rows: archived } = await pool.query(
+      `
+      SELECT id, subject_code
+      FROM subjects
+      WHERE archived_at IS NOT NULL
+        AND subject_code NOT LIKE '%\_\_a%'
+      `,
+    )
+    for (const row of archived || []) {
+      const freed = buildArchivedSubjectCode(row.subject_code, row.id)
+      await pool.query(`UPDATE subjects SET subject_code = $2 WHERE id = $1`, [row.id, freed])
+    }
+
+    const { rows: constraints } = await pool.query(
+      `
+      SELECT con.conname AS name
+      FROM pg_constraint con
+      INNER JOIN pg_class rel ON rel.oid = con.conrelid
+      INNER JOIN pg_namespace nsp ON nsp.oid = rel.relnamespace
+      WHERE nsp.nspname = 'public'
+        AND rel.relname = 'subjects'
+        AND con.contype = 'u'
+        AND pg_get_constraintdef(con.oid) ILIKE '%subject_code%'
+      `,
+    )
+    for (const row of constraints || []) {
+      const name = String(row.name || '').trim()
+      if (!name || !/^[a-zA-Z0-9_]+$/.test(name)) continue
+      await pool.query(`ALTER TABLE subjects DROP CONSTRAINT IF EXISTS "${name}"`)
+    }
+
+    await pool.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_subjects_subject_code_active
+      ON subjects (LOWER(subject_code))
+      WHERE archived_at IS NULL
+    `)
+  } catch (e) {
+    logStatePostgresError('ensureSubjectsActiveCodeUnique', e)
   }
 }
 

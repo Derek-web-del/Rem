@@ -1,4 +1,14 @@
-import { requireAdminSession, logStatePostgresError, auditInstituteRecord, subjectPgError, subjectRowToResponse, readSubjectBodyFields, readSubjectSyllabus, normalizeSubjectSemester } from './shared.js'
+import {
+  requireAdminSession,
+  logStatePostgresError,
+  auditInstituteRecord,
+  subjectPgError,
+  subjectRowToResponse,
+  readSubjectBodyFields,
+  readSubjectSyllabus,
+  normalizeSubjectSemester,
+  buildArchivedSubjectCode,
+} from './shared.js'
 import { requireAnyRoleSession } from '../../lib/security.js'
 import { GENERIC_SERVER_ERROR, sendSafeServerError } from '../../lib/safeApiError.js'
 import { resolveSubjectImagePath } from '../../lib/subjectImageStorage.js'
@@ -252,9 +262,10 @@ export function registerSubjectsRoutes(router, ctx) {
         return
       }
       console.log(`Archiving ID ${id} in subjects (PostgreSQL)`)
+      const archivedCode = buildArchivedSubjectCode(existing.subject_code, id)
       const r = await pool.query(
-        'UPDATE subjects SET archived_at = NOW() WHERE id = $1 AND archived_at IS NULL',
-        [id],
+        'UPDATE subjects SET archived_at = NOW(), subject_code = $2 WHERE id = $1 AND archived_at IS NULL',
+        [id, archivedCode],
       )
       if (Number(r?.rowCount ?? 0) === 0) {
         res.status(404).json({ error: 'Subject not found.' })

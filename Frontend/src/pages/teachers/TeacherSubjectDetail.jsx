@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
-import { useOutletContext, useParams, useSearchParams } from 'react-router-dom'
+import { useNavigate, useOutletContext, useParams, useSearchParams } from 'react-router-dom'
 import { fetchTeacherSubject } from '../../lib/teacherSubjectCurriculum.js'
+import { invalidateTeacherSubjectsCache } from '../../lib/teacherPortalOffline.js'
 import { useFacultyNotify } from '../../lib/facultyNotify.js'
 import TeacherBackButton from './TeacherBackButton.jsx'
 import TeacherMainHeader from './TeacherMainHeader.jsx'
@@ -14,6 +15,7 @@ import SubjectModulesTab from './subject-detail/tabs/SubjectModulesTab.jsx'
 
 export default function TeacherSubjectDetail() {
   const { subjectId } = useParams()
+  const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const { logoutToPortal, setSidebarNavLocked } = useOutletContext() || {}
   const toast = useFacultyNotify()
@@ -38,12 +40,19 @@ export default function TeacherSubjectDetail() {
       const row = await fetchTeacherSubject(subjectId)
       setSubject(row)
     } catch (e) {
-      toast.error(String(e?.message || 'Subject not found.'))
+      const msg = String(e?.message || 'Subject not found.')
+      if (/not found/i.test(msg)) {
+        await invalidateTeacherSubjectsCache().catch(() => {})
+        toast.error('This subject is no longer available. It may have been removed or replaced.')
+        navigate('/teacher/subjects', { replace: true })
+        return
+      }
+      toast.error(msg)
       setSubject(null)
     } finally {
       setLoading(false)
     }
-  }, [subjectId, toast])
+  }, [subjectId, toast, navigate])
 
   useEffect(() => {
     setSidebarNavLocked?.(false)

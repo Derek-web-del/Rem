@@ -26,7 +26,11 @@ async function teacherFetchJson(path) {
 
 
 
-export async function fetchTeacherSubjects() {
+export async function invalidateTeacherSubjectsCache() {
+  await saveListSnapshot('teacher_subjects', [])
+}
+
+export async function fetchTeacherSubjects({ forceRefresh = false } = {}) {
 
   if (!isOnline()) {
 
@@ -36,6 +40,10 @@ export async function fetchTeacherSubjects() {
 
     throw new Error('No offline data — connect to load content.')
 
+  }
+
+  if (forceRefresh) {
+    await saveListSnapshot('teacher_subjects', [])
   }
 
   const data = await teacherFetchJson('/api/teacher/subjects')

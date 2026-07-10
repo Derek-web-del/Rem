@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import AuthenticatedPdfFrame from '../../../components/AuthenticatedPdfFrame.jsx'
+import PdfCardThumbnail from '../../../components/PdfCardThumbnail.jsx'
 import { apiUrl } from '../../../lib/lmsStateStorage.js'
 import { FACULTY_MSG, useFacultyNotify } from '../../../lib/facultyNotify.js'
 
@@ -108,12 +108,11 @@ export default function SubjectSyllabusCard({ subject, subjectId, onUpdated }) {
       </div>
 
       {previewPath ? (
-        <div className="mt-3 h-52 overflow-hidden rounded-lg border border-neutral-200 bg-neutral-100">
-          <AuthenticatedPdfFrame
+        <div className="mt-3">
+          <PdfCardThumbnail
             filePath={previewPath}
             title={syllabusFileName}
-            className="h-full w-full"
-            emptyClassName="flex h-full items-center justify-center text-xs text-neutral-500"
+            className="h-52"
             emptyMessage="Preview unavailable"
           />
         </div>

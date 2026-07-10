@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { fetchAuthenticatedMediaUrl, isDirectMediaUrl } from '../lib/authenticatedMedia.js'
+import { fetchAuthenticatedMediaUrl, isDirectMediaUrl, requiresAuthenticatedFetch } from '../lib/authenticatedMedia.js'
 import { resolvePdfUrl } from '../lib/pdfCacheStatus.js'
 import { uploadsPathToApiUrl } from '../lib/fileUrls.js'
 
@@ -26,6 +26,23 @@ export default function AuthenticatedPdfFrame({
       setViewerSrc('')
 
       const path = String(filePath || fileUrl || '').trim()
+      if (!path) {
+        setFailed(true)
+        return
+      }
+
+      if (requiresAuthenticatedFetch(path)) {
+        try {
+          const url = await fetchAuthenticatedMediaUrl(path)
+          if (cancelled) return
+          if (url.startsWith('blob:')) objectUrl = url
+          setViewerSrc(`${url}#toolbar=0&navpanes=0&page=1`)
+        } catch {
+          if (!cancelled) setFailed(true)
+        }
+        return
+      }
+
       const direct =
         (path && (isDirectMediaUrl(path) ? path : resolvePdfUrl(path) || uploadsPathToApiUrl(path))) ||
         String(fileUrl || '').trim()

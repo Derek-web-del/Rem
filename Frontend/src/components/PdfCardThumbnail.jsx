@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import * as pdfjsLib from 'pdfjs-dist'
 import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
-import { fetchAuthenticatedMediaUrl, isDirectMediaUrl } from '../lib/authenticatedMedia.js'
+import { fetchAuthenticatedMediaUrl, isDirectMediaUrl, requiresAuthenticatedFetch } from '../lib/authenticatedMedia.js'
 import { resolvePdfUrl } from '../lib/pdfCacheStatus.js'
 import { uploadsPathToApiUrl } from '../lib/fileUrls.js'
 
@@ -29,20 +29,29 @@ export default function PdfCardThumbnail({
       setStatus('loading')
 
       const path = String(filePath || fileUrl || '').trim()
-      const direct =
-        (path && (isDirectMediaUrl(path) ? path : resolvePdfUrl(path) || uploadsPathToApiUrl(path))) ||
-        String(fileUrl || '').trim()
-
-      if (!direct) {
+      if (!path) {
         setStatus('error')
         return
       }
 
       try {
-        let pdfUrl = direct
-        if (!isDirectMediaUrl(direct)) {
-          pdfUrl = await fetchAuthenticatedMediaUrl(path || direct)
+        let pdfUrl = ''
+        if (requiresAuthenticatedFetch(path)) {
+          pdfUrl = await fetchAuthenticatedMediaUrl(path)
           if (pdfUrl.startsWith('blob:')) objectUrl = pdfUrl
+        } else {
+          const direct =
+            (path && (isDirectMediaUrl(path) ? path : resolvePdfUrl(path) || uploadsPathToApiUrl(path))) ||
+            String(fileUrl || '').trim()
+          if (!direct) {
+            setStatus('error')
+            return
+          }
+          pdfUrl = direct
+          if (!isDirectMediaUrl(direct)) {
+            pdfUrl = await fetchAuthenticatedMediaUrl(path || direct)
+            if (pdfUrl.startsWith('blob:')) objectUrl = pdfUrl
+          }
         }
 
         const task = pdfjsLib.getDocument({ url: pdfUrl, withCredentials: !pdfUrl.startsWith('blob:') })
