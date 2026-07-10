@@ -132,6 +132,11 @@ export async function replaceSubjectWeekdaySchedules(pool, subjectId, spec) {
 
   await pool.query(`DELETE FROM public.subject_schedules WHERE subject_id = $1`, [sid])
   if (!days.length || !start || !end) return []
+  if (start >= end) {
+    const err = new Error('Class end time must be after the start time.')
+    err.code = '23514'
+    throw err
+  }
 
   const inserted = []
   for (const day of days) {

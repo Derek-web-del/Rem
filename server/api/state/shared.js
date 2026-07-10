@@ -1314,6 +1314,43 @@ export function readSubjectBodyFields(b) {
 }
 
 export function subjectPgError(res, e) {
+  const code = String(e?.code || '')
+  const constraint = String(e?.constraint || '')
+  const detail = String(e?.detail || e?.message || '')
+
+  if (code === '23505') {
+    if (constraint.includes('subject_code') || /subject_code/i.test(detail)) {
+      res.status(409).json({
+        error: 'Subject code already exists.',
+        message: 'Subject code already exists.',
+      })
+      return
+    }
+    if (constraint.includes('subject_schedules') || /subject_schedules/i.test(detail)) {
+      res.status(409).json({
+        error: 'This class schedule conflicts with an existing slot.',
+        message: 'This class schedule conflicts with an existing slot.',
+      })
+      return
+    }
+  }
+
+  if (code === '23503') {
+    res.status(400).json({
+      error: 'Invalid faculty or curriculum guide reference.',
+      message: 'Invalid faculty or curriculum guide reference.',
+    })
+    return
+  }
+
+  if (code === '23514' || /subject_schedules_time_order/i.test(constraint) || /end_time > start_time/i.test(detail)) {
+    res.status(400).json({
+      error: 'Class end time must be after the start time.',
+      message: 'Class end time must be after the start time.',
+    })
+    return
+  }
+
   sendSafeServerError(res, e, 'subjects')
 }
 

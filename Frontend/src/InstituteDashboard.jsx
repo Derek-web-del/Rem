@@ -1719,6 +1719,9 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
     const semester = Number(payload.semester || 0)
     if (!subjectCode || !subjectName || !grade || !(semester >= 1)) return { error: 'Please complete all required fields.' }
 
+    const dupCode = subjects.some((s) => String(s.subjectCode || '').trim().toLowerCase() === subjectCode.toLowerCase())
+    if (dupCode) return { error: 'Subject code already exists.' }
+
     if (persistenceMode === 'server') {
       try {
         const res = await fetchStateApi(apiUrl('/api/v1/subjects'), {
@@ -1745,9 +1748,6 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
         return { error: String(e?.message || e) }
       }
     }
-
-    const dupCode = subjects.some((s) => String(s.subjectCode || '').trim().toLowerCase() === subjectCode.toLowerCase())
-    if (dupCode) return { error: 'Subject code already exists.' }
 
     const next = [
       {

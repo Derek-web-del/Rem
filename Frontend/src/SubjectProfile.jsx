@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react'
 import BackButton from './components/BackButton.jsx'
-import { apiUrl } from './lib/lmsStateStorage.js'
 import { formatSemesterLabel } from './lib/quizQuestionTypes.js'
 import SubjectCoverImage from './components/SubjectCoverImage.jsx'
 import { formatSubjectScheduleLabel } from './lib/subjectScheduleDisplay.js'
@@ -69,10 +68,6 @@ export default function SubjectProfile({ subject, onBack, onEdit }) {
   const semester = formatSemesterLabel(subject?.semester) || '—'
   const scheduleLabel = formatSubjectSchedule(subject)
   const curriculumGuide = curriculumGuideDisplay(subject)
-  const syllabusRaw = String(subject.syllabusDataUrl || subject.syllabus_pdf || '').trim()
-  const syllabusFileName = subject.syllabusFileName || 'syllabus.pdf'
-  const syllabusUrl =
-    syllabusRaw && subject.id ? apiUrl(`/api/v1/subjects/${subject.id}/syllabus-file`) : ''
 
   return (
     <div className="space-y-5">
@@ -176,21 +171,6 @@ export default function SubjectProfile({ subject, onBack, onEdit }) {
             </table>
           </div>
         ) : null}
-
-        <div className="mt-5 rounded-xl border border-neutral-200 bg-white p-4">
-          <div>
-            <div className="text-sm font-semibold text-neutral-900">Syllabus Preview</div>
-            <div className="text-xs text-neutral-500">
-              {syllabusUrl ? syllabusFileName : 'Assigned teacher uploads the syllabus from the Teacher portal.'}
-            </div>
-          </div>
-
-          {syllabusUrl ? (
-            <div className="mt-3 h-[420px] overflow-hidden rounded-xl border border-neutral-200 bg-white">
-              <iframe title="Syllabus PDF" src={syllabusUrl} className="h-full w-full" />
-            </div>
-          ) : null}
-        </div>
       </section>
     </div>
   )

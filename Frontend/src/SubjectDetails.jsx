@@ -145,6 +145,9 @@ export default function SubjectDetails({
     if (!String(form.scheduleStartTime || '').trim() || !String(form.scheduleEndTime || '').trim()) {
       return 'Class start and end time are required.'
     }
+    if (String(form.scheduleStartTime) >= String(form.scheduleEndTime)) {
+      return 'Class end time must be after the start time.'
+    }
     return ''
   }
 

@@ -396,7 +396,6 @@ export default function TeacherSectionsPage() {
               loading={loading}
               error={error}
               onViewStudents={(id) => {
-                toast.success(FACULTY_MSG.sections.loaded)
                 navigate(`/teacher/sections/${id}/students`)
               }}
             />

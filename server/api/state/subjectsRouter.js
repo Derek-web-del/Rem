@@ -14,6 +14,7 @@ import {
   listSchedulesForSubject,
   replaceSubjectWeekdaySchedules,
   formatSchedulesSummary,
+  ensureSubjectSchedulesSchema,
 } from '../../lib/subjectSchedulesDb.js'
 
 const SUBJECT_SELECT_WITH_FACULTY = `
@@ -120,6 +121,7 @@ export function registerSubjectsRoutes(router, ctx) {
       )
       const row = rows?.[0]
       if (row?.id && has_schedule_fields) {
+        await ensureSubjectSchedulesSchema(pool)
         await replaceSubjectWeekdaySchedules(pool, row.id, schedule_spec || {})
       }
       const createdSnap = subjectPgRowSnapshot(row, row?.faculty_name)
@@ -203,6 +205,7 @@ export function registerSubjectsRoutes(router, ctx) {
       }
       const updatedRow = rows[0]
       if (has_schedule_fields) {
+        await ensureSubjectSchedulesSchema(pool)
         await replaceSubjectWeekdaySchedules(pool, id, schedule_spec || {})
       }
       const detailedDiffs = computeSubjectDetailedDiffs(existing, updatedRow, {
