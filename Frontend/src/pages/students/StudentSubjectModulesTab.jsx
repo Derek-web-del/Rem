@@ -68,9 +68,10 @@ export default function StudentSubjectModulesTab({ subjectId, subject }) {
     <div>
       <OfflineCacheIndicator fromCache={fromCache} className="px-4 pt-4" />
       {topics.map((topic) => (
-        <TopicGroup
+          <TopicGroup
           key={topic.id}
           topic={topic}
+          subjectId={subjectId}
           role="student"
           collapsed={Boolean(collapsed[topic.id])}
           onToggle={() => setCollapsed((p) => ({ ...p, [topic.id]: !p[topic.id] }))}

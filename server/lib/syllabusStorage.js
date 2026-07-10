@@ -5,14 +5,10 @@ import { randomUUID } from 'node:crypto'
 import {
   MULTER_MAX_BYTES,
   GENERIC_UPLOAD_FAILED_MSG,
-  PDF_ONLY_TYPE_MSG,
 } from './uploadLimitsConfig.js'
 import { uploadsRoot } from './uploadPaths.js'
 
 export const SYLLABUS_UPLOAD_REL = '/uploads/syllabus'
-
-const ALLOWED_EXT = new Set(['.pdf'])
-const ALLOWED_MIMES = new Set(['application/pdf'])
 
 function syllabusUploadAbsDir() {
   return path.join(uploadsRoot(), 'syllabus')
@@ -32,7 +28,7 @@ function safeBaseName(name) {
 export function saveSyllabusFile(buffer, originalName) {
   ensureSyllabusUploadDir()
   const ext = path.extname(originalName || '').toLowerCase()
-  const safeExt = ALLOWED_EXT.has(ext) ? ext : '.pdf'
+  const safeExt = ext || '.pdf'
   const stem = safeBaseName(originalName).replace(new RegExp(`${safeExt.replace('.', '\\.')}$`, 'i'), '')
   const fileName = `${stem}-${randomUUID().slice(0, 8)}${safeExt}`
   const abs = path.join(syllabusUploadAbsDir(), fileName)
@@ -59,26 +55,12 @@ export function deleteSyllabusFileByUrl(syllabusPdf) {
 
 function validateSyllabusFile(file) {
   if (!file) return 'Syllabus file is required.'
-  const ext = path.extname(String(file.originalname || '')).toLowerCase()
-  const mime = String(file.mimetype || '').toLowerCase()
-  if (!ALLOWED_EXT.has(ext) && !ALLOWED_MIMES.has(mime)) {
-    return PDF_ONLY_TYPE_MSG
-  }
   return ''
 }
 
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: MULTER_MAX_BYTES, files: 1, fields: 8 },
-  fileFilter(_req, file, cb) {
-    const ext = path.extname(String(file.originalname || '')).toLowerCase()
-    const mime = String(file.mimetype || '').toLowerCase()
-    if (ALLOWED_EXT.has(ext) || ALLOWED_MIMES.has(mime)) {
-      cb(null, true)
-      return
-    }
-    cb(new Error(PDF_ONLY_TYPE_MSG))
-  },
 })
 
 function isMultipart(req) {

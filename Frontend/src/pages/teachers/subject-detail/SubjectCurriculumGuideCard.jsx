@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import PdfCardThumbnail from '../../../components/PdfCardThumbnail.jsx'
+import CurriculumPdfPreview from '../../../components/CurriculumPdfPreview.jsx'
 
 function curriculumGuideLabel(subject) {
   const grade = String(subject?.curriculumGuideGrade ?? '').trim()
@@ -15,8 +15,14 @@ export default function SubjectCurriculumGuideCard({ subject }) {
 
   const guideId = String(subject.curriculumGuideId || subject.curriculum_guide_id || '').trim()
   const label = curriculumGuideLabel(subject)
-  const filePath = String(subject.curriculumGuideFileUrl || subject.curriculum_guide_file_url || '').trim()
+  const fileUrl = String(subject.curriculumGuideFileUrl || subject.curriculum_guide_file_url || '').trim()
   const fileName = String(subject.curriculumGuideFileName || '').trim() || 'curriculum-guide.pdf'
+  const guide = {
+    id: guideId || subject.id,
+    file_url: fileUrl,
+    file_name: fileName,
+    title: label,
+  }
 
   if (!guideId && !label) {
     return (
@@ -49,10 +55,10 @@ export default function SubjectCurriculumGuideCard({ subject }) {
         </Link>
       </div>
 
-      {filePath ? (
+      {fileUrl ? (
         <div className="mt-3">
-          <PdfCardThumbnail
-            filePath={filePath}
+          <CurriculumPdfPreview
+            guide={guide}
             title={fileName}
             className="h-44"
             emptyMessage="Preview unavailable"

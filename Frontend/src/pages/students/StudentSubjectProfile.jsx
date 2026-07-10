@@ -116,8 +116,8 @@ export default function StudentSubjectProfile() {
         ) : subjectError ? (
           <p className="mt-4 text-sm text-red-600">{subjectError}</p>
         ) : subject ? (
-          <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_320px]">
-            <div className="overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-sm">
+          <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_320px] lg:items-start">
+            <div className="flex max-h-[min(560px,70vh)] flex-col overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-sm">
               <div className="border-b border-neutral-200 bg-neutral-50 px-4 py-3">
                 <div className="text-sm font-semibold text-neutral-900">
                   {subject.subject_code ? `${subject.subject_code} — ` : ''}
@@ -131,15 +131,19 @@ export default function StudentSubjectProfile() {
                 ) : null}
               </div>
               <SubjectTabBar activeTab={activeTab} onTabChange={handleTabChange} />
-              {activeTab === 'modules' ? (
-                <StudentSubjectModulesTab subjectId={subjectId} subject={subject} />
-              ) : activeTab === 'materials' ? (
-                <StudentSubjectMaterialsTab subjectId={subjectId} />
-              ) : (
-                <StudentSubjectGradesTab subjectId={subjectId} />
-              )}
+              <div className="min-h-0 flex-1 overflow-y-auto">
+                {activeTab === 'modules' ? (
+                  <StudentSubjectModulesTab subjectId={subjectId} subject={subject} />
+                ) : activeTab === 'materials' ? (
+                  <StudentSubjectMaterialsTab subjectId={subjectId} />
+                ) : (
+                  <StudentSubjectGradesTab subjectId={subjectId} />
+                )}
+              </div>
             </div>
-            <SubjectDetailsCard subject={subject} />
+            <div className="space-y-4 lg:sticky lg:top-4">
+              <SubjectDetailsCard subject={subject} />
+            </div>
           </div>
         ) : null}
       </div>

@@ -9,8 +9,6 @@ import SubjectDetailTabs from './subject-detail/SubjectDetailTabs.jsx'
 import SubjectDetailTopBar from './subject-detail/SubjectDetailTopBar.jsx'
 import SubjectDetailsCard from './subject-detail/SubjectDetailsCard.jsx'
 import SubjectCurriculumGuideCard from './subject-detail/SubjectCurriculumGuideCard.jsx'
-import SubjectWorkflowStrip from './subject-detail/SubjectWorkflowStrip.jsx'
-import SubjectSyllabusCard from './subject-detail/SubjectSyllabusCard.jsx'
 import SubjectClassworkTab from './subject-detail/tabs/SubjectClassworkTab.jsx'
 import SubjectGradesTab from './subject-detail/tabs/SubjectGradesTab.jsx'
 import SubjectModulesTab from './subject-detail/tabs/SubjectModulesTab.jsx'
@@ -94,21 +92,21 @@ export default function TeacherSubjectDetail() {
         ) : !subject ? (
           <p className="text-sm text-red-600">Subject not found.</p>
         ) : (
-          <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
-            <div className="overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-sm">
+          <div className="grid gap-4 lg:grid-cols-[1fr_320px] lg:items-start">
+            <div className="flex max-h-[min(560px,70vh)] flex-col overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-sm">
               <SubjectDetailTopBar subject={subject} />
               <SubjectDetailTabs activeTab={activeTab} onChange={setActiveTab} />
-              <div className="overflow-visible">
+              <div className="min-h-0 flex-1 overflow-y-auto">
                 {activeTab === 'modules' ? <SubjectModulesTab subjectId={subjectId} subject={subject} /> : null}
-                {activeTab === 'classwork' ? <SubjectClassworkTab subjectId={subjectId} /> : null}
+                {activeTab === 'classwork' ? (
+                  <SubjectClassworkTab subjectId={subjectId} subject={subject} onSyllabusUpdated={loadSubject} />
+                ) : null}
                 {activeTab === 'grades' ? <SubjectGradesTab subjectId={subjectId} subject={subject} /> : null}
               </div>
             </div>
-            <div className="space-y-4">
-              <SubjectWorkflowStrip subject={subject} />
+            <div className="space-y-4 lg:sticky lg:top-4">
               <SubjectDetailsCard subject={subject} />
               <SubjectCurriculumGuideCard subject={subject} />
-              <SubjectSyllabusCard subject={subject} subjectId={subjectId} onUpdated={loadSubject} />
             </div>
           </div>
         )}

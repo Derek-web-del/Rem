@@ -624,10 +624,6 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
                     </option>
                   ))}
                 </select>
-                <p className="mt-1 text-xs font-normal text-neutral-500">
-                  If the PDF covers Grades 2–10 or 4–10, select the JHS grade you use (7–10) and note the full span in
-                  Description.
-                </p>
               </label>
               <label className="text-sm font-medium text-neutral-700">
                 Subject

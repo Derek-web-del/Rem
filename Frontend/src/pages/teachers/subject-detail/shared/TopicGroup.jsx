@@ -163,9 +163,11 @@ export default function TopicGroup({
               >
                 <WorkRow
                   item={entry.data}
+                  subjectId={subjectId}
+                  role={role}
                   navPath={editable ? null : navFn(entry.data)}
                   editable={editable}
-                  draggable={editable}
+                  draggable={editable && !entry.data?.is_syllabus && !entry.data?.is_locked}
                   onDragStart={onDragStart}
                   onDragEnd={onItemDragEnd}
                   isDragOver={isOver}

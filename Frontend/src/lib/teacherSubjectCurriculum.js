@@ -259,3 +259,25 @@ export async function updateSubjectLessonMultipart(subjectId, lessonId, formData
   })
   return parseJson(res)
 }
+
+export async function uploadSubjectSyllabus(subjectId, file, subject = {}) {
+  const fd = new FormData()
+  fd.append('file', file)
+  fd.append('subject_name', String(subject?.subject_name || '').trim())
+  fd.append('grade_level', String(subject?.grade_level || '').trim())
+  fd.append('semester', String(subject?.semester || '').trim())
+  const res = await fetch(curriculumPath(subjectId, '/syllabus'), {
+    method: 'PATCH',
+    credentials: 'include',
+    body: fd,
+  })
+  return parseJson(res)
+}
+
+export async function deleteSubjectSyllabus(subjectId) {
+  const res = await fetch(curriculumPath(subjectId, '/syllabus'), {
+    method: 'DELETE',
+    credentials: 'include',
+  })
+  return parseJson(res)
+}

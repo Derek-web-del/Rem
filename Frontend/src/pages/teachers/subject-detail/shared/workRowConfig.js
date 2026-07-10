@@ -3,7 +3,15 @@ export const WORK_TYPE_CONFIG = {
   activity: { label: 'Activity', icon: 'ti-run', color: 'text-green-600', bg: 'bg-green-50 border-green-200' },
   quiz: { label: 'Quiz', icon: 'ti-pencil', color: 'text-purple-600', bg: 'bg-purple-50 border-purple-200' },
   material: { label: 'Material', icon: 'ti-file-text', color: 'text-blue-600', bg: 'bg-blue-50 border-blue-200' },
+  syllabus: { label: 'Syllabus', icon: 'ti-file-description', color: 'text-amber-700', bg: 'bg-amber-50 border-amber-200' },
   lesson: { label: 'Lesson', icon: 'ti-book-2', color: 'text-neutral-600', bg: 'bg-neutral-50 border-neutral-200' },
+}
+
+export function syllabusFilePath(subjectId, role = 'teacher') {
+  const sid = encodeURIComponent(subjectId)
+  return role === 'student'
+    ? `/api/v1/student/subjects/${sid}/syllabus-file`
+    : `/api/teacher/subjects/${sid}/syllabus-file`
 }
 
 export function formatDueDate(val) {
@@ -23,6 +31,8 @@ export function teacherNavPath(item) {
     case 'quiz':
       return `/teacher/quizzes/${id}`
     case 'material':
+      return null
+    case 'syllabus':
       return null
     default:
       return null

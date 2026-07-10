@@ -1,5 +1,7 @@
 import { Link } from 'react-router-dom'
-import { WORK_TYPE_CONFIG, formatDueDate } from './workRowConfig.js'
+import { apiUrl } from '../../../../lib/lmsStateStorage.js'
+import { fetchAuthenticatedMediaUrl } from '../../../../lib/authenticatedMedia.js'
+import { WORK_TYPE_CONFIG, formatDueDate, syllabusFilePath } from './workRowConfig.js'
 
 const actionBtnProps = {
   draggable: false,
@@ -10,6 +12,8 @@ const actionBtnProps = {
 export default function WorkRow({
   item,
   navPath,
+  subjectId,
+  role = 'teacher',
   editable = false,
   onEdit,
   onDelete,
@@ -20,6 +24,19 @@ export default function WorkRow({
 }) {
   const cfg = WORK_TYPE_CONFIG[item.item_type] || WORK_TYPE_CONFIG.material
   const points = item.total_score != null ? `${item.total_score} pts` : null
+  const isSyllabus = item.item_type === 'syllabus' || item.is_syllabus
+  const canDrag = editable && draggable && !isSyllabus && !item.is_locked
+  const filePath = isSyllabus && subjectId ? syllabusFilePath(subjectId, role) : ''
+
+  const openSyllabus = async () => {
+    if (!filePath) return
+    try {
+      const url = await fetchAuthenticatedMediaUrl(filePath)
+      window.open(url, '_blank', 'noopener,noreferrer')
+    } catch {
+      window.open(apiUrl(filePath), '_blank', 'noopener,noreferrer')
+    }
+  }
 
   const handleDragStart = (e) => {
     if (e.target.closest('button, a, input, textarea, select, [data-no-drag]')) {
@@ -30,7 +47,7 @@ export default function WorkRow({
   }
 
   const dragProps =
-    editable && draggable
+    canDrag
       ? {
           draggable: true,
           onDragStart: handleDragStart,
@@ -40,7 +57,7 @@ export default function WorkRow({
 
   const inner = (
     <div className="flex flex-1 items-center justify-between gap-3 py-2.5">
-      {editable && draggable ? (
+      {canDrag ? (
         <span className="shrink-0 cursor-grab rounded p-1 text-neutral-400 active:cursor-grabbing" aria-hidden="true">
           <i className="ti ti-grip-vertical" />
         </span>
@@ -63,18 +80,32 @@ export default function WorkRow({
         <span className="text-[11px] text-neutral-500">{formatDueDate(item.submission_deadline)}</span>
         {editable ? (
           <>
-            <button
-              type="button"
-              className="rounded p-1 text-neutral-400 hover:bg-neutral-100"
-              aria-label="Edit"
-              {...actionBtnProps}
-              onClick={(e) => {
-                e.stopPropagation()
-                onEdit?.(item)
-              }}
-            >
-              <i className="ti ti-pencil" aria-hidden="true" />
-            </button>
+            {isSyllabus ? (
+              <button
+                type="button"
+                className="rounded-md border border-neutral-200 px-2 py-1 text-xs font-medium text-neutral-700 hover:bg-neutral-50"
+                {...actionBtnProps}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  void openSyllabus()
+                }}
+              >
+                Open
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="rounded p-1 text-neutral-400 hover:bg-neutral-100"
+                aria-label="Edit"
+                {...actionBtnProps}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onEdit?.(item)
+                }}
+              >
+                <i className="ti ti-pencil" aria-hidden="true" />
+              </button>
+            )}
             <button
               type="button"
               className="rounded-md border border-red-200 px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50"
@@ -97,6 +128,17 @@ export default function WorkRow({
       <Link to={navPath} className={`block border-b border-neutral-100 px-4 hover:bg-neutral-50 ${isDragOver ? 'bg-sky-50' : ''}`}>
         {inner}
       </Link>
+    )
+  }
+  if (isSyllabus && filePath && !editable) {
+    return (
+      <button
+        type="button"
+        className={`block w-full border-b border-neutral-100 px-4 text-left hover:bg-neutral-50 ${isDragOver ? 'bg-sky-50' : ''}`}
+        onClick={() => void openSyllabus()}
+      >
+        {inner}
+      </button>
     )
   }
   return (

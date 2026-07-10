@@ -253,6 +253,14 @@ function mapSubjectRow(row, extras = {}) {
     syllabus_pdf: String(row.syllabus_pdf ?? '').trim(),
     syllabus_file_name: syllabusDisplayFileName(row.syllabus_pdf, row.subject_code),
     section_name: String(extras.section_name ?? '').trim() || '—',
+    curriculumGuideId: String(row.curriculum_guide_id ?? '').trim(),
+    curriculum_guide_id: String(row.curriculum_guide_id ?? '').trim(),
+    curriculumGuideTitle: String(row.curriculum_guide_title ?? '').trim(),
+    curriculumGuideGrade: String(row.curriculum_guide_grade ?? '').trim(),
+    curriculumGuideLabel: String(row.curriculum_guide_label ?? '').trim(),
+    curriculumGuideFileUrl: String(row.curriculum_guide_file_url ?? '').trim(),
+    curriculum_guide_file_url: String(row.curriculum_guide_file_url ?? '').trim(),
+    curriculumGuideFileName: String(row.curriculum_guide_file_name ?? '').trim(),
   }
   return enrichSubjectDetailsFields(base, extras)
 }
@@ -264,10 +272,16 @@ const SUBJECT_DETAIL_SELECT = `
   sub.grade_level,
   sub.semester,
   sub.faculty_id,
+  sub.curriculum_guide_id,
   sub.subject_photo AS cover_image_url,
   sub.subject_photo,
   sub.syllabus_pdf AS syllabus_url,
   sub.syllabus_pdf,
+  cg.subject AS curriculum_guide_title,
+  cg.grade AS curriculum_guide_grade,
+  cg.title AS curriculum_guide_label,
+  COALESCE(NULLIF(trim(cg.file_url), ''), NULLIF(trim(cg.file_data_url), '')) AS curriculum_guide_file_url,
+  cg.file_name AS curriculum_guide_file_name,
   COALESCE(
     NULLIF(trim(concat_ws(' ',
       nullif(trim(f.first_name), ''),
@@ -292,6 +306,7 @@ export async function fetchStudentSubjectDetails(pool, subjectId) {
         SELECT ${SUBJECT_DETAIL_SELECT}
         FROM subjects sub
         LEFT JOIN faculties f ON f.id::text = sub.faculty_id::text
+        LEFT JOIN curriculum_guides cg ON cg.id::text = sub.curriculum_guide_id::text
         WHERE sub.id = $1
         LIMIT 1
       `,

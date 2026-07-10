@@ -5,6 +5,7 @@ import { ensureFacultyStudyMaterialsSchema } from './facultyStudyMaterialsDb.js'
 import { ensureSubjectGradeCriteriaSchema } from './subjectGradeCriteriaDb.js'
 import { studentDisplayName } from './studentPiiCrypto.js'
 import { normalizeGradeLevel } from './assignmentsDb.js'
+import { syllabusDisplayFileName } from './syllabusResponse.js'
 
 const ITEM_TABLES = {
   assignment: { table: 'assignments', idCol: 'id' },
@@ -86,7 +87,7 @@ export async function ensureSubjectCurriculumSchema(pool) {
 
 export async function fetchSubjectRow(pool, subjectId) {
   const { rows } = await pool.query(
-    `SELECT id, subject_name, subject_code, grade_level, faculty_id FROM subjects WHERE id = $1 LIMIT 1`,
+    `SELECT id, subject_name, subject_code, grade_level, faculty_id, syllabus_pdf FROM subjects WHERE id = $1 LIMIT 1`,
     [Number(subjectId)],
   )
   return rows[0] || null
@@ -153,6 +154,51 @@ function mapCurriculumItem(row, type, enrolled) {
     submitted_count: submitted ?? 0,
     enrolled_count: enrolled,
     file_type: row.file_type ? String(row.file_type) : null,
+  }
+}
+
+function inferSyllabusFileType(syllabusRaw) {
+  const t = String(syllabusRaw || '').trim().toLowerCase()
+  if (!t) return 'application/pdf'
+  if (t.startsWith('data:')) {
+    if (t.includes('pdf')) return 'application/pdf'
+    if (t.includes('wordprocessingml') || t.includes('msword')) {
+      return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    }
+    return 'application/pdf'
+  }
+  if (t.endsWith('.docx')) {
+    return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+  }
+  if (t.endsWith('.doc')) return 'application/msword'
+  return 'application/pdf'
+}
+
+function buildSyllabusClassworkItem(subjectRow) {
+  const syllabusRaw = String(subjectRow?.syllabus_pdf ?? '').trim()
+  if (!syllabusRaw) return null
+  const sid = String(subjectRow.id)
+  const code = String(subjectRow.subject_code ?? '').trim()
+  const fileName = syllabusDisplayFileName(syllabusRaw, code)
+  return {
+    item_type: 'syllabus',
+    id: `syllabus-${sid}`,
+    title: fileName.replace(/\.[^.]+$/, '') || 'Syllabus',
+    status: 'published',
+    is_published: true,
+    is_syllabus: true,
+    is_locked: true,
+    module_id: null,
+    topic_id: null,
+    module_order: -1,
+    subtopic_label: null,
+    total_score: null,
+    submission_deadline: null,
+    created_at: null,
+    submitted_count: 0,
+    enrolled_count: 0,
+    file_type: inferSyllabusFileType(syllabusRaw),
+    file_name: fileName,
   }
 }
 
@@ -333,14 +379,22 @@ export async function fetchSubjectTopicsWithItems(pool, subjectId, { publishedOn
 
   const uncategorizedItems = allItems.filter((it) => !it.topic_id)
   const uncategorizedLessons = allLessons.filter((l) => !l.topic_id)
+  const syllabusItem = buildSyllabusClassworkItem(subjectRow)
+  if (syllabusItem) {
+    uncategorizedItems.unshift(syllabusItem)
+  }
   if (uncategorizedItems.length || uncategorizedLessons.length) {
     const byType = splitItemsByType(uncategorizedItems)
     grouped.unshift({
       id: 'uncategorized',
-      title: 'Uncategorized',
+      title: 'Unassigned',
       topic_order: -1,
       lessons: uncategorizedLessons,
-      items: uncategorizedItems.sort((a, b) => a.module_order - b.module_order),
+      items: uncategorizedItems.sort((a, b) => {
+        if (a.is_syllabus) return -1
+        if (b.is_syllabus) return 1
+        return a.module_order - b.module_order
+      }),
       ...byType,
     })
   }

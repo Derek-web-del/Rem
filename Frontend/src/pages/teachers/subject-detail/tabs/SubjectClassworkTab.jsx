@@ -4,11 +4,13 @@ import {
   createSubjectTopic,
   deleteSubjectTopic,
   deleteSubjectLesson,
+  deleteSubjectSyllabus,
   deleteTeacherMaterial,
   fetchSubjectTopics,
   moveClassworkEntry,
   reorderSubjectTopics,
   updateSubjectTopic,
+  uploadSubjectSyllabus,
 } from '../../../../lib/teacherSubjectCurriculum.js'
 import { deleteTeacherAssignment } from '../../../../lib/teacherAssignments.js'
 import { deleteTeacherActivity } from '../../../../lib/teacherActivities.js'
@@ -60,11 +62,13 @@ async function persistTopicEntryOrders(subjectId, topic) {
   )
 }
 
-export default function SubjectClassworkTab({ subjectId }) {
+export default function SubjectClassworkTab({ subjectId, subject, onSyllabusUpdated }) {
   const navigate = useNavigate()
   const toast = useFacultyNotify()
+  const syllabusInputRef = useRef(null)
   const [topics, setTopics] = useState([])
   const [loading, setLoading] = useState(true)
+  const [uploadingSyllabus, setUploadingSyllabus] = useState(false)
   const [collapsed, setCollapsed] = useState({})
   const [topicModal, setTopicModal] = useState({ open: false, topic: null })
   const [savingTopic, setSavingTopic] = useState(false)
@@ -138,6 +142,7 @@ export default function SubjectClassworkTab({ subjectId }) {
   }
 
   const handleEditWork = (item) => {
+    if (item?.item_type === 'syllabus' || item?.is_syllabus) return
     const subjectQ = `subject_id=${encodeURIComponent(subjectId)}`
     const paths = {
       assignment: `/teacher/assignments/${item.id}/edit?${subjectQ}`,
@@ -159,7 +164,7 @@ export default function SubjectClassworkTab({ subjectId }) {
       return {
         title: 'Delete Topic',
         message:
-          'Are you sure you want to delete this topic? Items will move to Uncategorized. This action cannot be undone.',
+          'Are you sure you want to delete this topic? Items will move to Unassigned. This action cannot be undone.',
       }
     }
     if (deleteTarget.kind === 'lesson') {
@@ -173,6 +178,7 @@ export default function SubjectClassworkTab({ subjectId }) {
       activity: 'Activity',
       quiz: 'Quiz',
       material: 'Material',
+      syllabus: 'Syllabus',
     }
     const label = labels[deleteTarget.data?.item_type] || 'Item'
     return {
@@ -193,7 +199,10 @@ export default function SubjectClassworkTab({ subjectId }) {
         toast.success('Lesson deleted.')
       } else if (deleteTarget.kind === 'work') {
         const item = deleteTarget.data
-        if (item.item_type === 'assignment') await deleteTeacherAssignment(item.id)
+        if (item.item_type === 'syllabus' || item.is_syllabus) {
+          await deleteSubjectSyllabus(subjectId)
+          toast.success('Syllabus removed.')
+        } else if (item.item_type === 'assignment') await deleteTeacherAssignment(item.id)
         else if (item.item_type === 'activity') await deleteTeacherActivity(item.id)
         else if (item.item_type === 'quiz') await deleteTeacherQuiz(item.id)
         else if (item.item_type === 'material') await deleteTeacherMaterial(item.id)
@@ -262,6 +271,7 @@ export default function SubjectClassworkTab({ subjectId }) {
   }
 
   const handleItemDragStart = (e, entry, sourceTopicId) => {
+    if (entry.kind === 'work' && (entry.data?.is_syllabus || entry.data?.is_locked)) return
     const payload = entryDragPayload(entry)
     draggedItemRef.current = { ...payload, sourceTopicId, entry }
     dragKindRef.current = 'item'
@@ -336,6 +346,21 @@ export default function SubjectClassworkTab({ subjectId }) {
     }
   }
 
+  const handleSyllabusUpload = async (file) => {
+    if (!file) return
+    setUploadingSyllabus(true)
+    try {
+      await uploadSubjectSyllabus(subjectId, file, subject)
+      toast.success('Syllabus uploaded to Unassigned.')
+      await onSyllabusUpdated?.()
+      await load()
+    } catch (e) {
+      toast.error(String(e?.message || 'Could not upload syllabus.'))
+    } finally {
+      setUploadingSyllabus(false)
+    }
+  }
+
   if (loading) {
     return <p className="px-4 py-8 text-sm text-neutral-500">Loading classwork…</p>
   }
@@ -344,6 +369,25 @@ export default function SubjectClassworkTab({ subjectId }) {
     <div>
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-neutral-200 px-4 py-2.5">
         <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            className="rounded-md border border-neutral-300 px-3 py-1.5 text-xs font-medium"
+            disabled={uploadingSyllabus}
+            onClick={() => syllabusInputRef.current?.click()}
+          >
+            {uploadingSyllabus ? 'Uploading…' : '+ Add Syllabus'}
+          </button>
+          <input
+            ref={syllabusInputRef}
+            type="file"
+            className="hidden"
+            disabled={uploadingSyllabus}
+            onChange={(e) => {
+              const file = e.target.files?.[0]
+              e.target.value = ''
+              void handleSyllabusUpload(file)
+            }}
+          />
           <button
             type="button"
             className="rounded-md border border-neutral-300 px-3 py-1.5 text-xs font-medium"
