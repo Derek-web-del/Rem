@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useOutletContext } from 'react-router-dom'
 import {
-  ACCEPT_FILE_TYPES,
   contentPreview,
   deletePlagiarismReport,
   fetchPlagiarismReports,
@@ -81,13 +80,9 @@ export default function TeacherOriginalityCheckerPage() {
   const toast = useFacultyNotify()
   const toastRef = useRef(toast)
   toastRef.current = toast
-  const fileRef = useRef(null)
   const reportsRef = useRef(null)
 
-  const [activeTab, setActiveTab] = useState('text')
   const [text, setText] = useState('')
-  const [file, setFile] = useState(null)
-  const [dragOver, setDragOver] = useState(false)
   const [analyzing, setAnalyzing] = useState(false)
   const [reports, setReports] = useState([])
   const [loadingReports, setLoadingReports] = useState(true)
@@ -165,28 +160,14 @@ export default function TeacherOriginalityCheckerPage() {
     [reports.length, lastReportDate],
   )
 
-  function onFilePick(nextFile) {
-    if (!nextFile) return
-    const ext = nextFile.name.split('.').pop()?.toLowerCase()
-    if (!['txt', 'pdf'].includes(ext || '')) {
-      toastRef.current.error('Supported formats: .txt, .pdf')
-      return
-    }
-    setFile(nextFile)
-  }
-
   async function handleAnalyze() {
     if (analyzing) return
 
-    if (activeTab === 'file') {
-      if (!file) {
-        toastRef.current.error('Choose a file to analyze.')
-        return
-      }
-    } else if (!text.trim()) {
+    if (!text.trim()) {
       toastRef.current.error('Enter text to analyze.')
       return
-    } else if (text.trim().length < 50) {
+    }
+    if (text.trim().length < 50) {
       toastRef.current.error('Minimum 50 characters required.')
       return
     }
@@ -194,11 +175,10 @@ export default function TeacherOriginalityCheckerPage() {
     setAnalyzing(true)
 
     try {
-      const report = await submitForAnalysis(
-        activeTab === 'file'
-          ? { file, runAiDetection: true }
-          : { content: text.trim(), runAiDetection: true },
-      )
+      const report = await submitForAnalysis({
+        content: text.trim(),
+        runAiDetection: true,
+      })
       await refreshReports()
       setPage(1)
       reportsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -231,109 +211,26 @@ export default function TeacherOriginalityCheckerPage() {
               <section className="flex flex-col overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-sm">
               <GradientCardHeader
                 title="AI Plagiarism Analysis"
-                subtitle="Upload or paste your content for instant analysis"
+                subtitle="Paste your content for instant analysis"
               />
 
-              <div className="border-b border-neutral-200 px-4 pt-3 md:px-5">
-                <div className="inline-flex rounded-lg border border-neutral-200 bg-neutral-50 p-1">
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('text')}
-                    className={`inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-semibold transition md:px-4 md:py-2 ${
-                      activeTab === 'text'
-                        ? 'bg-white shadow-sm'
-                        : 'text-neutral-600 hover:text-neutral-900'
-                    }`}
-                    style={activeTab === 'text' ? { color: ACTION_BLUE } : undefined}
-                  >
-                    <i className="ti ti-forms" aria-hidden="true" />
-                    Text Input
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('file')}
-                    className={`inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-semibold transition md:px-4 md:py-2 ${
-                      activeTab === 'file'
-                        ? 'bg-white shadow-sm'
-                        : 'text-neutral-600 hover:text-neutral-900'
-                    }`}
-                    style={activeTab === 'file' ? { color: ACTION_BLUE } : undefined}
-                  >
-                    <i className="ti ti-upload" aria-hidden="true" />
-                    File Upload
-                  </button>
-                </div>
-              </div>
-
               <div className="space-y-3 p-4 md:space-y-4 md:p-5">
-                {activeTab === 'text' ? (
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-neutral-700">
-                      Enter your text to analyze
-                    </label>
-                    <textarea
-                      value={text}
-                      onChange={(e) => setText(e.target.value)}
-                      rows={6}
-                      placeholder="Paste your content here for plagiarism analysis..."
-                      className="w-full resize-y rounded-lg border border-neutral-300 px-4 py-3 text-sm text-neutral-900 outline-none ring-blue-500/30 focus-visible:ring-2"
-                    />
-                    <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2 text-xs text-neutral-500">
-                      <span>{charCount} characters</span>
-                      <span>Minimum 50 characters recommended</span>
-                    </div>
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium text-neutral-700">
+                    Enter your text to analyze
+                  </label>
+                  <textarea
+                    value={text}
+                    onChange={(e) => setText(e.target.value)}
+                    rows={6}
+                    placeholder="Paste your content here for plagiarism analysis..."
+                    className="w-full resize-y rounded-lg border border-neutral-300 px-4 py-3 text-sm text-neutral-900 outline-none ring-blue-500/30 focus-visible:ring-2"
+                  />
+                  <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2 text-xs text-neutral-500">
+                    <span>{charCount} characters</span>
+                    <span>Minimum 50 characters recommended</span>
                   </div>
-                ) : (
-                  <div
-                    className={`flex min-h-[140px] cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed px-4 py-6 text-center transition ${
-                      dragOver ? 'border-blue-400 bg-blue-50' : 'border-neutral-300 bg-neutral-50'
-                    }`}
-                    onClick={() => fileRef.current?.click()}
-                    onDragOver={(ev) => {
-                      ev.preventDefault()
-                      setDragOver(true)
-                    }}
-                    onDragLeave={() => setDragOver(false)}
-                    onDrop={(ev) => {
-                      ev.preventDefault()
-                      setDragOver(false)
-                      onFilePick(ev.dataTransfer.files?.[0])
-                    }}
-                    role="button"
-                    tabIndex={0}
-                    onKeyDown={(ev) => {
-                      if (ev.key === 'Enter' || ev.key === ' ') fileRef.current?.click()
-                    }}
-                  >
-                    <input
-                      ref={fileRef}
-                      type="file"
-                      accept={ACCEPT_FILE_TYPES}
-                      className="hidden"
-                      onChange={(ev) => {
-                        onFilePick(ev.target.files?.[0])
-                        ev.target.value = ''
-                      }}
-                    />
-                    <i className="ti ti-cloud-upload mb-2 text-3xl" style={{ color: ACTION_BLUE }} aria-hidden="true" />
-                    <p className="text-sm text-neutral-600">Drag &amp; drop your file here</p>
-                    <button
-                      type="button"
-                      className="mt-2 rounded-lg border bg-white px-4 py-2 text-sm font-semibold hover:bg-blue-50"
-                      style={{ borderColor: ACTION_BLUE, color: ACTION_BLUE }}
-                      onClick={(ev) => {
-                        ev.stopPropagation()
-                        fileRef.current?.click()
-                      }}
-                    >
-                      Choose File
-                    </button>
-                    <p className="mt-2 text-xs text-neutral-500">
-                      Supported formats: .txt, .pdf
-                    </p>
-                    {file ? <p className="mt-1 text-sm font-medium text-neutral-800">{file.name}</p> : null}
-                  </div>
-                )}
+                </div>
 
                 <button
                   type="button"

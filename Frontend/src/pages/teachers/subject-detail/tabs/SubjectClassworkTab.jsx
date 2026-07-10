@@ -348,6 +348,10 @@ export default function SubjectClassworkTab({ subjectId, subject, onSyllabusUpda
 
   const handleSyllabusUpload = async (file) => {
     if (!file) return
+    if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
+      toast.error('Syllabus must be a PDF file.')
+      return
+    }
     setUploadingSyllabus(true)
     try {
       await uploadSubjectSyllabus(subjectId, file, subject)
@@ -380,6 +384,7 @@ export default function SubjectClassworkTab({ subjectId, subject, onSyllabusUpda
           <input
             ref={syllabusInputRef}
             type="file"
+            accept="application/pdf,.pdf"
             className="hidden"
             disabled={uploadingSyllabus}
             onChange={(e) => {
