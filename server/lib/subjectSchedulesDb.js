@@ -1,4 +1,58 @@
 const DAY_LABELS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+const DAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+
+export const WEEKDAY_NUMBERS = [1, 2, 3, 4, 5]
+
+/** Normalize schedule days to unique Mon–Fri numbers (1–5). */
+export function normalizeWeekdayDays(raw) {
+  const items = Array.isArray(raw)
+    ? raw
+    : raw == null || raw === ''
+      ? []
+      : String(raw)
+          .split(/[,;\s]+/)
+          .map((part) => part.trim())
+          .filter(Boolean)
+
+  const set = new Set()
+  for (const item of items) {
+    const day = Number(item)
+    if (Number.isFinite(day) && day >= 1 && day <= 5) set.add(day)
+  }
+  return [...set].sort((a, b) => a - b)
+}
+
+function formatWeekdayRange(days) {
+  if (!days.length) return ''
+  if (days.length === 5 && days.every((d, i) => d === i + 1)) return 'Mon–Fri'
+  if (days.length === 1) return DAY_LABELS[days[0]] || DAY_SHORT[days[0]] || `Day ${days[0]}`
+  return days.map((d) => DAY_SHORT[d] || DAY_LABELS[d] || `Day ${d}`).join(', ')
+}
+
+export function formatSchedulesSummary(schedules) {
+  const list = Array.isArray(schedules) ? schedules.filter(Boolean) : []
+  if (!list.length) return ''
+
+  const groups = new Map()
+  for (const slot of list) {
+    const start = String(slot.start_time ?? '').trim().slice(0, 5)
+    const end = String(slot.end_time ?? '').trim().slice(0, 5)
+    const room = String(slot.room ?? '').trim()
+    const key = `${start}|${end}|${room}`
+    if (!groups.has(key)) groups.set(key, { start, end, room, days: [] })
+    groups.get(key).days.push(Number(slot.day_of_week))
+  }
+
+  return [...groups.values()]
+    .map((group) => {
+      const days = normalizeWeekdayDays(group.days)
+      const dayLabel = formatWeekdayRange(days)
+      const time = group.start && group.end ? `${group.start}–${group.end}` : group.start || group.end || ''
+      return [dayLabel, time, group.room].filter(Boolean).join(' · ')
+    })
+    .filter(Boolean)
+    .join('; ')
+}
 
 export function formatScheduleRow(row) {
   if (!row) return null
@@ -67,28 +121,44 @@ export async function listSchedulesForSubject(pool, subjectId) {
   return (rows || []).map(formatScheduleRow).filter(Boolean)
 }
 
-/** Replace all schedules for a subject with a single primary slot (capstone scope). */
+/** Replace all weekday schedules for a subject (Mon–Fri only, same time/room per day). */
+export async function replaceSubjectWeekdaySchedules(pool, subjectId, spec) {
+  const sid = Number(subjectId)
+  if (!Number.isFinite(sid) || sid <= 0) return []
+  const days = normalizeWeekdayDays(spec?.days ?? spec?.day_of_week)
+  const start = String(spec?.start_time || '').trim()
+  const end = String(spec?.end_time || '').trim()
+  const room = String(spec?.room || '').trim() || null
+
+  await pool.query(`DELETE FROM public.subject_schedules WHERE subject_id = $1`, [sid])
+  if (!days.length || !start || !end) return []
+
+  const inserted = []
+  for (const day of days) {
+    const { rows } = await pool.query(
+      `
+        INSERT INTO public.subject_schedules (subject_id, day_of_week, start_time, end_time, room)
+        VALUES ($1, $2, $3::time, $4::time, $5)
+        RETURNING id, subject_id, day_of_week, start_time, end_time, room, created_at
+      `,
+      [sid, day, start, end, room],
+    )
+    const formatted = formatScheduleRow(rows?.[0])
+    if (formatted) inserted.push(formatted)
+  }
+  return inserted
+}
+
+/** @deprecated Use replaceSubjectWeekdaySchedules — kept for single-slot callers. */
 export async function upsertPrimarySubjectSchedule(pool, subjectId, schedule) {
   const sid = Number(subjectId)
   if (!Number.isFinite(sid) || sid <= 0) return null
-  const day = Number(schedule?.day_of_week)
-  const start = String(schedule?.start_time || '').trim()
-  const end = String(schedule?.end_time || '').trim()
-  const room = String(schedule?.room || '').trim() || null
-  if (!Number.isFinite(day) || day < 0 || day > 6 || !start || !end) {
+  if (!schedule) {
     await pool.query(`DELETE FROM public.subject_schedules WHERE subject_id = $1`, [sid])
     return null
   }
-  await pool.query(`DELETE FROM public.subject_schedules WHERE subject_id = $1`, [sid])
-  const { rows } = await pool.query(
-    `
-      INSERT INTO public.subject_schedules (subject_id, day_of_week, start_time, end_time, room)
-      VALUES ($1, $2, $3::time, $4::time, $5)
-      RETURNING id, subject_id, day_of_week, start_time, end_time, room, created_at
-    `,
-    [sid, day, start, end, room],
-  )
-  return formatScheduleRow(rows?.[0])
+  const rows = await replaceSubjectWeekdaySchedules(pool, sid, schedule)
+  return rows[0] || null
 }
 
 export async function seedDemoSubjectSchedules(pool) {

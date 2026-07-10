@@ -7,6 +7,7 @@ import TeacherMainHeader from './TeacherMainHeader.jsx'
 import SubjectDetailTabs from './subject-detail/SubjectDetailTabs.jsx'
 import SubjectDetailTopBar from './subject-detail/SubjectDetailTopBar.jsx'
 import SubjectDetailsCard from './subject-detail/SubjectDetailsCard.jsx'
+import SubjectSyllabusCard from './subject-detail/SubjectSyllabusCard.jsx'
 import SubjectClassworkTab from './subject-detail/tabs/SubjectClassworkTab.jsx'
 import SubjectGradesTab from './subject-detail/tabs/SubjectGradesTab.jsx'
 import SubjectModulesTab from './subject-detail/tabs/SubjectModulesTab.jsx'
@@ -65,7 +66,7 @@ export default function TeacherSubjectDetail() {
         ) : !subject ? (
           <p className="text-sm text-red-600">Subject not found.</p>
         ) : (
-          <div className="grid gap-4 lg:grid-cols-[1fr_280px]">
+          <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
             <div className="overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-sm">
               <SubjectDetailTopBar subject={subject} />
               <SubjectDetailTabs activeTab={activeTab} onChange={setActiveTab} />
@@ -75,7 +76,10 @@ export default function TeacherSubjectDetail() {
                 {activeTab === 'grades' ? <SubjectGradesTab subjectId={subjectId} subject={subject} /> : null}
               </div>
             </div>
-            <SubjectDetailsCard subject={subject} />
+            <div className="space-y-4">
+              <SubjectDetailsCard subject={subject} />
+              <SubjectSyllabusCard subject={subject} subjectId={subjectId} onUpdated={loadSubject} />
+            </div>
           </div>
         )}
       </div>

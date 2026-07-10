@@ -1255,10 +1255,50 @@ export function readSubjectBodyFields(b) {
   const curriculum_guide_id =
     readStudentField(b, 'curriculumGuideId', 'curriculum_guide_id') || null
   const syllabus_pdf = readSubjectSyllabus(b)
-  const schedule_day_of_week = b?.scheduleDayOfWeek ?? b?.schedule_day_of_week
+  const schedule_days_raw = b?.scheduleDays ?? b?.schedule_days ?? b?.scheduleDayOfWeek ?? b?.schedule_day_of_week
   const schedule_start_time = String(b?.scheduleStartTime ?? b?.schedule_start_time ?? '').trim()
   const schedule_end_time = String(b?.scheduleEndTime ?? b?.schedule_end_time ?? '').trim()
   const schedule_room = String(b?.scheduleRoom ?? b?.schedule_room ?? '').trim()
+  const has_schedule_fields = [
+    'scheduleDays',
+    'schedule_days',
+    'scheduleDayOfWeek',
+    'schedule_day_of_week',
+    'scheduleStartTime',
+    'schedule_start_time',
+    'scheduleEndTime',
+    'schedule_end_time',
+    'scheduleRoom',
+    'schedule_room',
+  ].some((key) => Object.prototype.hasOwnProperty.call(b, key))
+  const schedule_days = Array.isArray(schedule_days_raw)
+    ? schedule_days_raw
+    : schedule_days_raw != null && schedule_days_raw !== ''
+      ? String(schedule_days_raw)
+          .split(/[,;\s]+/)
+          .map((part) => part.trim())
+          .filter(Boolean)
+      : []
+  const schedule_spec = has_schedule_fields
+    ? {
+        days: schedule_days,
+        start_time: schedule_start_time,
+        end_time: schedule_end_time,
+        room: schedule_room,
+      }
+    : undefined
+  const schedule =
+    schedule_days.length && schedule_start_time && schedule_end_time
+      ? {
+          days: schedule_days,
+          day_of_week: Number(schedule_days[0]),
+          start_time: schedule_start_time,
+          end_time: schedule_end_time,
+          room: schedule_room,
+        }
+      : has_schedule_fields
+        ? null
+        : undefined
   return {
     subject_code,
     subject_name,
@@ -1267,15 +1307,9 @@ export function readSubjectBodyFields(b) {
     faculty_id,
     curriculum_guide_id,
     syllabus_pdf,
-    schedule:
-      schedule_day_of_week != null && schedule_day_of_week !== ''
-        ? {
-            day_of_week: Number(schedule_day_of_week),
-            start_time: schedule_start_time,
-            end_time: schedule_end_time,
-            room: schedule_room,
-          }
-        : null,
+    schedule_spec,
+    schedule,
+    has_schedule_fields,
   }
 }
 
@@ -1325,6 +1359,7 @@ export function subjectRowToResponse(row) {
     curriculum_guide_grade: String(row.curriculum_guide_grade ?? '').trim(),
     schedule: row.schedule ?? null,
     schedules: Array.isArray(row.schedules) ? row.schedules : row.schedule ? [row.schedule] : [],
+    schedule_label: String(row.schedule_label ?? '').trim(),
     createdAt: row.created_at,
     created_at: row.created_at,
   }

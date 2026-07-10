@@ -7,6 +7,7 @@ import SubjectDetailsCard from '../teachers/subject-detail/SubjectDetailsCard.js
 import StudentSubjectModulesTab from './StudentSubjectModulesTab.jsx'
 import StudentSubjectMaterialsTab from './StudentSubjectMaterialsTab.jsx'
 import StudentSubjectGradesTab from './StudentSubjectGradesTab.jsx'
+import { formatSubjectScheduleLabel } from '../../lib/subjectScheduleDisplay.js'
 
 function SubjectTabBar({ activeTab, onTabChange }) {
   const tabs = [
@@ -100,6 +101,8 @@ export default function StudentSubjectProfile() {
     void loadSubject()
   }, [loadSubject, location.key])
 
+  const scheduleLabel = subject ? formatSubjectScheduleLabel(subject) : ''
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <StudentMainHeader />
@@ -113,13 +116,19 @@ export default function StudentSubjectProfile() {
         ) : subjectError ? (
           <p className="mt-4 text-sm text-red-600">{subjectError}</p>
         ) : subject ? (
-          <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_280px]">
+          <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_320px]">
             <div className="overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-sm">
               <div className="border-b border-neutral-200 bg-neutral-50 px-4 py-3">
                 <div className="text-sm font-semibold text-neutral-900">
                   {subject.subject_code ? `${subject.subject_code} — ` : ''}
                   {subject.subject_name}
                 </div>
+                {scheduleLabel ? (
+                  <div className="mt-1 inline-flex items-center gap-1.5 rounded-md bg-sky-50 px-2 py-1 text-xs font-medium text-sky-900">
+                    <i className="ti ti-clock" aria-hidden="true" />
+                    {scheduleLabel}
+                  </div>
+                ) : null}
               </div>
               <SubjectTabBar activeTab={activeTab} onTabChange={handleTabChange} />
               {activeTab === 'modules' ? (

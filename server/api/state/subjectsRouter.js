@@ -12,7 +12,8 @@ import {
 } from '../../lib/subjectAudit.js'
 import {
   listSchedulesForSubject,
-  upsertPrimarySubjectSchedule,
+  replaceSubjectWeekdaySchedules,
+  formatSchedulesSummary,
 } from '../../lib/subjectSchedulesDb.js'
 
 const SUBJECT_SELECT_WITH_FACULTY = `
@@ -50,7 +51,14 @@ export function registerSubjectsRoutes(router, ctx) {
     const out = []
     for (const row of rows || []) {
       const schedules = await listSchedulesForSubject(pool, row.id)
-      out.push(subjectRowToResponse({ ...row, schedules, schedule: schedules[0] || null }))
+      out.push(
+        subjectRowToResponse({
+          ...row,
+          schedules,
+          schedule: schedules[0] || null,
+          schedule_label: formatSchedulesSummary(schedules),
+        }),
+      )
     }
     return out
   }
@@ -87,7 +95,7 @@ export function registerSubjectsRoutes(router, ctx) {
       const adminSession = await requireAdminSession(req, res, auth)
       if (!adminSession) return
       const b = req.body || {}
-      const { subject_code, subject_name, grade_level, semester, faculty_id, curriculum_guide_id, syllabus_pdf, schedule } =
+      const { subject_code, subject_name, grade_level, semester, faculty_id, curriculum_guide_id, syllabus_pdf, schedule_spec, has_schedule_fields } =
         readSubjectBodyFields(b)
 
       if (!subject_code || !subject_name || !grade_level || !semester) {
@@ -111,8 +119,8 @@ export function registerSubjectsRoutes(router, ctx) {
         [subject_code, subject_name, grade_level, semester, facultyIdParam, guideIdParam, syllabus_pdf, subject_photo],
       )
       const row = rows?.[0]
-      if (row?.id && schedule) {
-        await upsertPrimarySubjectSchedule(pool, row.id, schedule)
+      if (row?.id && has_schedule_fields) {
+        await replaceSubjectWeekdaySchedules(pool, row.id, schedule_spec || {})
       }
       const createdSnap = subjectPgRowSnapshot(row, row?.faculty_name)
       await auditInstituteRecord(adminSession, 'SUBJECT_CREATED', {
@@ -141,8 +149,11 @@ export function registerSubjectsRoutes(router, ctx) {
         return
       }
       const b = req.body || {}
-      const { subject_code, subject_name, grade_level, semester, faculty_id, curriculum_guide_id, syllabus_pdf, schedule } =
+      const { subject_code, subject_name, grade_level, semester, faculty_id, curriculum_guide_id, syllabus_pdf, schedule_spec, has_schedule_fields } =
         readSubjectBodyFields(b)
+      const hasSyllabusField = ['syllabusDataUrl', 'syllabus_data_url', 'syllabus_pdf', 'syllabusPdf'].some((key) =>
+        Object.prototype.hasOwnProperty.call(b, key),
+      )
 
       if (!subject_code || !subject_name || !grade_level || !semester) {
         res.status(400).json({
@@ -164,6 +175,7 @@ export function registerSubjectsRoutes(router, ctx) {
       const facultyIdParam = faculty_id || null
       const guideIdParam = curriculum_guide_id ? String(curriculum_guide_id).trim() : null
       const subject_photo = resolveSubjectImagePath(subject_name)
+      const syllabusToSave = hasSyllabusField ? syllabus_pdf : existing.syllabus_pdf
       const { rows } = await pool.query(
         `
           UPDATE subjects
@@ -183,15 +195,15 @@ export function registerSubjectsRoutes(router, ctx) {
             (SELECT cg.subject FROM curriculum_guides cg WHERE cg.id::text = subjects.curriculum_guide_id::text LIMIT 1) AS curriculum_guide_title,
             (SELECT cg.grade FROM curriculum_guides cg WHERE cg.id::text = subjects.curriculum_guide_id::text LIMIT 1) AS curriculum_guide_grade
         `,
-        [subject_code, subject_name, grade_level, semester, facultyIdParam, guideIdParam, syllabus_pdf, subject_photo, id],
+        [subject_code, subject_name, grade_level, semester, facultyIdParam, guideIdParam, syllabusToSave, subject_photo, id],
       )
       if (!rows?.length) {
         res.status(404).json({ error: 'Subject not found.' })
         return
       }
       const updatedRow = rows[0]
-      if (schedule !== undefined) {
-        await upsertPrimarySubjectSchedule(pool, id, schedule)
+      if (has_schedule_fields) {
+        await replaceSubjectWeekdaySchedules(pool, id, schedule_spec || {})
       }
       const detailedDiffs = computeSubjectDetailedDiffs(existing, updatedRow, {
         oldFacultyName: existing.faculty_name,

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import BackButton from './components/BackButton.jsx'
 import SubjectCoverImage from './components/SubjectCoverImage.jsx'
 import {
@@ -6,20 +6,15 @@ import {
   resolveSubjectImageFromMap,
 } from './lib/subjectImages.js'
 import { formatSemesterLabel, SEMESTER_LABELS } from './lib/quizQuestionTypes.js'
-
-const SYLLABUS_TEMPLATE_URL = '/templates/glendale-subject-syllabus-template.pdf'
+import {
+  WEEKDAY_OPTIONS,
+  formatSubjectScheduleLabel,
+  scheduleDaysFromSubject,
+  scheduleTimesFromSubject,
+} from './lib/subjectScheduleDisplay.js'
 
 function normalizeSubjectKey(name) {
   return String(name || '').trim().toLowerCase()
-}
-
-function readFileAsDataUrl(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : '')
-    reader.onerror = () => reject(new Error('Could not read file.'))
-    reader.readAsDataURL(file)
-  })
 }
 
 function TextField({ label, required, disabled, value, onChange, type = 'text', helper, placeholder }) {
@@ -71,46 +66,27 @@ export default function SubjectDetails({
   savingLabel = 'Save Changes',
   disableIdentity,
 }) {
-  const pdfInputRef = useRef(null)
-  const blobUrlRef = useRef(null)
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
-  const [pdfPreviewUrl, setPdfPreviewUrl] = useState('')
-  const [form, setForm] = useState(() => ({
-    subjectCode: initial.subjectCode || '',
-    subjectName: initial.subjectName || '',
-    grade: initial.grade || '',
-    semester: String(initial.semester || '1'),
-    semCode: initial.semCode || '',
-    assignedFacultyId: initial.assignedFacultyId || '',
-    curriculumGuideId: initial.curriculumGuideId || '',
-    scheduleDayOfWeek: String(initial.schedule?.day_of_week ?? initial.scheduleDayOfWeek ?? '1'),
-    scheduleStartTime: String(initial.schedule?.start_time ?? initial.scheduleStartTime ?? '08:00'),
-    scheduleEndTime: String(initial.schedule?.end_time ?? initial.scheduleEndTime ?? '09:00'),
-    scheduleRoom: String(initial.schedule?.room ?? initial.scheduleRoom ?? ''),
-    syllabusFileName: initial.syllabusFileName || '',
-    syllabusFileType: initial.syllabusFileType || '',
-    syllabusDataUrl: initial.syllabusDataUrl || '',
-  }))
-
-  function revokeBlobPreview() {
-    if (blobUrlRef.current) {
-      URL.revokeObjectURL(blobUrlRef.current)
-      blobUrlRef.current = null
+  const [form, setForm] = useState(() => {
+    const times = scheduleTimesFromSubject(initial)
+    return {
+      subjectCode: initial.subjectCode || '',
+      subjectName: initial.subjectName || '',
+      grade: initial.grade || '',
+      semester: String(initial.semester || '1'),
+      semCode: initial.semCode || '',
+      assignedFacultyId: initial.assignedFacultyId || '',
+      curriculumGuideId: initial.curriculumGuideId || '',
+      scheduleDays: scheduleDaysFromSubject(initial).length ? scheduleDaysFromSubject(initial) : ['1'],
+      scheduleStartTime: times.scheduleStartTime,
+      scheduleEndTime: times.scheduleEndTime,
+      scheduleRoom: times.scheduleRoom,
     }
-  }
-
-  function applyPdfPreviewFromExisting(dataUrl) {
-    revokeBlobPreview()
-    const s = String(dataUrl || '').trim()
-    if (s.startsWith('data:application/pdf') || s.startsWith('blob:')) {
-      setPdfPreviewUrl(s)
-    } else {
-      setPdfPreviewUrl('')
-    }
-  }
+  })
 
   useEffect(() => {
+    const times = scheduleTimesFromSubject(initial)
     setForm({
       subjectCode: initial.subjectCode || '',
       subjectName: initial.subjectName || '',
@@ -119,19 +95,13 @@ export default function SubjectDetails({
       semCode: initial.semCode || '',
       assignedFacultyId: initial.assignedFacultyId || '',
       curriculumGuideId: initial.curriculumGuideId || '',
-      scheduleDayOfWeek: String(initial.schedule?.day_of_week ?? initial.scheduleDayOfWeek ?? '1'),
-      scheduleStartTime: String(initial.schedule?.start_time ?? initial.scheduleStartTime ?? '08:00'),
-      scheduleEndTime: String(initial.schedule?.end_time ?? initial.scheduleEndTime ?? '09:00'),
-      scheduleRoom: String(initial.schedule?.room ?? initial.scheduleRoom ?? ''),
-      syllabusFileName: initial.syllabusFileName || '',
-      syllabusFileType: initial.syllabusFileType || '',
-      syllabusDataUrl: initial.syllabusDataUrl || '',
+      scheduleDays: scheduleDaysFromSubject(initial).length ? scheduleDaysFromSubject(initial) : ['1'],
+      scheduleStartTime: times.scheduleStartTime,
+      scheduleEndTime: times.scheduleEndTime,
+      scheduleRoom: times.scheduleRoom,
     })
-    applyPdfPreviewFromExisting(initial.syllabusDataUrl)
     setError('')
   }, [initial])
-
-  useEffect(() => () => revokeBlobPreview(), [])
 
   const faculty = useMemo(
     () => facultyOptions.find((f) => f.id === form.assignedFacultyId) || null,
@@ -165,32 +135,16 @@ export default function SubjectDetails({
     }
   }, [computedSemCode])
 
-  async function choosePdf(file) {
-    if (!file) return
-    if (file.type !== 'application/pdf') {
-      setError('Syllabus must be a PDF file.')
-      return
-    }
-    revokeBlobPreview()
-    const objectUrl = URL.createObjectURL(file)
-    blobUrlRef.current = objectUrl
-    setPdfPreviewUrl(objectUrl)
-    const dataUrl = await readFileAsDataUrl(file)
-    setForm((p) => ({
-      ...p,
-      syllabusDataUrl: dataUrl,
-      syllabusFileName: file.name,
-      syllabusFileType: file.type,
-    }))
-    setError('')
-  }
-
   function validate() {
     if (!String(form.subjectCode || '').trim()) return 'Subject Code is required.'
     if (!String(form.subjectName || '').trim()) return 'Subject Name is required.'
     if (!String(form.grade || '').trim()) return 'Subject Grade Level is required.'
     if (!String(form.semester || '').trim()) return 'Subject Semester is required.'
     if (!String(form.assignedFacultyId || '').trim()) return 'Faculty ID is required.'
+    if (!form.scheduleDays.length) return 'Select at least one weekday for the class schedule.'
+    if (!String(form.scheduleStartTime || '').trim() || !String(form.scheduleEndTime || '').trim()) {
+      return 'Class start and end time are required.'
+    }
     return ''
   }
 
@@ -214,19 +168,16 @@ export default function SubjectDetails({
       facultyCode: faculty?.facultyUsername || faculty?.facultyCode || '',
       facultyEmail: faculty?.email || '',
       curriculumGuideId: form.curriculumGuideId,
-      scheduleDayOfWeek: form.scheduleDayOfWeek,
+      scheduleDays: form.scheduleDays,
       scheduleStartTime: form.scheduleStartTime,
       scheduleEndTime: form.scheduleEndTime,
       scheduleRoom: form.scheduleRoom,
       schedule: {
-        day_of_week: Number(form.scheduleDayOfWeek),
+        days: form.scheduleDays.map(Number),
         start_time: form.scheduleStartTime,
         end_time: form.scheduleEndTime,
         room: form.scheduleRoom,
       },
-      syllabusFileName: form.syllabusFileName,
-      syllabusFileType: form.syllabusFileType,
-      syllabusDataUrl: form.syllabusDataUrl,
       subjectPhoto,
       subject_photo: subjectPhoto,
       cover_image_url: subjectPhoto,
@@ -373,24 +324,65 @@ export default function SubjectDetails({
 
           <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-4">
             <div className="text-sm font-semibold text-neutral-900">Class Schedule</div>
-            <p className="mt-1 text-xs text-neutral-600">Day/time schedule for this subject offering (Glendale workflow).</p>
-            <div className="mt-3 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-              <SelectField
-                label="Day"
-                value={form.scheduleDayOfWeek}
-                onChange={(e) => setForm((p) => ({ ...p, scheduleDayOfWeek: e.target.value }))}
-                disabled={submitting}
-              >
-                <option value="1">Monday</option>
-                <option value="2">Tuesday</option>
-                <option value="3">Wednesday</option>
-                <option value="4">Thursday</option>
-                <option value="5">Friday</option>
-                <option value="6">Saturday</option>
-              </SelectField>
+            <p className="mt-1 text-xs text-neutral-600">Select weekdays (Monday–Friday), then set the class time and room.</p>
+            <div className="mt-3">
+              <p className="text-sm font-medium text-neutral-700">
+                Weekdays<span className="text-red-600"> *</span>
+              </p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {WEEKDAY_OPTIONS.map((day) => {
+                  const checked = form.scheduleDays.includes(day.value)
+                  return (
+                    <label
+                      key={day.value}
+                      className={`inline-flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm ${
+                        checked
+                          ? 'border-blue-300 bg-blue-50 text-blue-900'
+                          : 'border-neutral-200 bg-white text-neutral-700 hover:border-neutral-300'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        className="rounded border-neutral-300 text-blue-600 focus:ring-blue-500"
+                        checked={checked}
+                        disabled={submitting}
+                        onChange={() => {
+                          setForm((prev) => {
+                            const set = new Set(prev.scheduleDays)
+                            if (set.has(day.value)) set.delete(day.value)
+                            else set.add(day.value)
+                            return {
+                              ...prev,
+                              scheduleDays: [...set].sort((a, b) => Number(a) - Number(b)),
+                            }
+                          })
+                        }}
+                      />
+                      {day.label}
+                    </label>
+                  )
+                })}
+              </div>
+              {form.scheduleDays.length ? (
+                <p className="mt-2 text-xs text-neutral-500">
+                  Preview: {formatSubjectScheduleLabel({
+                    schedules: form.scheduleDays.map((day) => ({
+                      day_of_week: Number(day),
+                      start_time: form.scheduleStartTime,
+                      end_time: form.scheduleEndTime,
+                      room: form.scheduleRoom,
+                    })),
+                  })}
+                </p>
+              ) : (
+                <p className="mt-2 text-xs text-amber-700">Select at least one weekday.</p>
+              )}
+            </div>
+            <div className="mt-4 grid gap-4 md:grid-cols-3">
               <TextField
                 label="Start time"
                 type="time"
+                required
                 value={form.scheduleStartTime}
                 onChange={(e) => setForm((p) => ({ ...p, scheduleStartTime: e.target.value }))}
                 disabled={submitting}
@@ -398,6 +390,7 @@ export default function SubjectDetails({
               <TextField
                 label="End time"
                 type="time"
+                required
                 value={form.scheduleEndTime}
                 onChange={(e) => setForm((p) => ({ ...p, scheduleEndTime: e.target.value }))}
                 disabled={submitting}
@@ -410,64 +403,6 @@ export default function SubjectDetails({
                 placeholder="Room 201"
               />
             </div>
-          </div>
-
-          <div className="grid gap-4 md:grid-cols-2">
-            <TextField
-              label="Syllabus"
-              disabled
-              value={form.syllabusFileName ? form.syllabusFileName : ''}
-              onChange={() => {}}
-              placeholder="Upload PDF"
-              helper={form.syllabusDataUrl ? 'PDF ready to save' : ''}
-            />
-          </div>
-
-          <div className="rounded-xl border border-neutral-200 bg-white p-4">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <div className="text-sm font-semibold text-neutral-900">Syllabus (PDF)</div>
-              </div>
-              <a
-                href={SYLLABUS_TEMPLATE_URL}
-                download="glendale-subject-syllabus-template.pdf"
-                className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-800 hover:bg-blue-100"
-              >
-                Download Syllabus Template
-              </a>
-            </div>
-            <div
-              className="mt-3 flex min-h-23 cursor-pointer items-center justify-center rounded-xl border-2 border-dashed border-neutral-200 bg-neutral-50 px-4 py-4 text-center"
-              onClick={() => !submitting && pdfInputRef.current?.click()}
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={async (e) => {
-                e.preventDefault()
-                if (submitting) return
-                const file = e.dataTransfer.files?.[0]
-                await choosePdf(file)
-              }}
-              role="button"
-              tabIndex={0}
-            >
-              <input
-                ref={pdfInputRef}
-                type="file"
-                accept="application/pdf"
-                className="hidden"
-                disabled={submitting}
-                onChange={async (e) => {
-                  const file = e.target.files?.[0]
-                  e.target.value = ''
-                  await choosePdf(file)
-                }}
-              />
-              <div className="text-sm font-medium text-neutral-600">
-                Drag &amp; drop your PDF here or <span className="text-blue-700 underline">browse</span>
-              </div>
-            </div>
-            {pdfPreviewUrl ? (
-              <iframe src={pdfPreviewUrl} className="mt-2 h-64 w-full rounded border" title="Syllabus Preview" />
-            ) : null}
           </div>
 
           <div className="flex justify-end">

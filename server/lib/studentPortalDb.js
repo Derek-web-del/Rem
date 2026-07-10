@@ -5,6 +5,7 @@ import { mapFacultyStudyMaterialRow, ensureFacultyStudyMaterialsSchema } from '.
 import { normalizeGradeLevel, resolveStudentGradeLevel } from './studentSession.js'
 import { mapStudentWorkListRow } from './studentWorkPortal.js'
 import { resolveSubjectImagePath } from './subjectImageStorage.js'
+import { withSubjectSchedulesList } from './subjectScheduleAttach.js'
 
 const ANNOUNCEMENT_SELECT = `id, title, type, message, announcement_image, image_path, image_name, uploaded_by, created_at, updated_at`
 
@@ -29,20 +30,23 @@ export async function fetchStudentSubjects(pool, studentRow) {
     `,
     params,
   )
-  return (rows || []).map((row) => {
-    const subject_name = String(row.subject_name ?? '').trim()
-    const stored = String(row.subject_photo ?? '').trim()
-    const cover = stored || resolveSubjectImagePath(subject_name)
-    return {
-      id: row.id != null ? String(row.id) : '',
-      subject_code: String(row.subject_code ?? '').trim(),
-      subject_name,
-      grade_level: String(row.grade_level ?? '').trim(),
-      semester: String(row.semester ?? '').trim(),
-      subject_photo: cover,
-      cover_image_url: cover,
-    }
-  })
+  return withSubjectSchedulesList(
+    pool,
+    (rows || []).map((row) => {
+      const subject_name = String(row.subject_name ?? '').trim()
+      const stored = String(row.subject_photo ?? '').trim()
+      const cover = stored || resolveSubjectImagePath(subject_name)
+      return {
+        id: row.id != null ? String(row.id) : '',
+        subject_code: String(row.subject_code ?? '').trim(),
+        subject_name,
+        grade_level: String(row.grade_level ?? '').trim(),
+        semester: String(row.semester ?? '').trim(),
+        subject_photo: cover,
+        cover_image_url: cover,
+      }
+    }),
+  )
 }
 
 function submissionRowFromJoin(row) {

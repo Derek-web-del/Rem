@@ -256,6 +256,7 @@ function mapPgSubjectRow(row, facultiesList) {
     curriculumGuideGrade: String(row.curriculumGuideGrade ?? row.curriculum_guide_grade ?? '').trim(),
     schedule: row.schedule || (Array.isArray(row.schedules) ? row.schedules[0] : null) || null,
     schedules: Array.isArray(row.schedules) ? row.schedules : row.schedule ? [row.schedule] : [],
+    schedule_label: String(row.schedule_label ?? row.scheduleLabel ?? '').trim(),
     subjectPhoto: String(row.subjectPhoto ?? row.subject_photo ?? row.cover_image_url ?? '').trim(),
     subject_photo: String(row.subjectPhoto ?? row.subject_photo ?? row.cover_image_url ?? '').trim(),
   }
@@ -263,8 +264,15 @@ function mapPgSubjectRow(row, facultiesList) {
 
 function buildSubjectApiBody(payload) {
   const grade = String(payload.grade || '').trim()
-  const syllabus = String(payload.syllabusDataUrl || '').trim()
-  const scheduleDay = payload.scheduleDayOfWeek ?? payload.schedule?.day_of_week
+  const scheduleDays = Array.isArray(payload.scheduleDays)
+    ? payload.scheduleDays
+    : payload.scheduleDayOfWeek != null && payload.scheduleDayOfWeek !== ''
+      ? [payload.scheduleDayOfWeek]
+      : Array.isArray(payload.schedule?.days)
+        ? payload.schedule.days
+        : payload.schedule?.day_of_week != null
+          ? [payload.schedule.day_of_week]
+          : []
   const scheduleStart = String(payload.scheduleStartTime ?? payload.schedule?.start_time ?? '').trim()
   const scheduleEnd = String(payload.scheduleEndTime ?? payload.schedule?.end_time ?? '').trim()
   const scheduleRoom = String(payload.scheduleRoom ?? payload.schedule?.room ?? '').trim()
@@ -278,11 +286,10 @@ function buildSubjectApiBody(payload) {
     faculty_id: String(payload.assignedFacultyId || '').trim(),
     curriculumGuideId: String(payload.curriculumGuideId || '').trim(),
     curriculum_guide_id: String(payload.curriculumGuideId || '').trim(),
-    scheduleDayOfWeek: scheduleDay,
+    scheduleDays,
     scheduleStartTime: scheduleStart,
     scheduleEndTime: scheduleEnd,
     scheduleRoom,
-    ...(syllabus ? { syllabusDataUrl: syllabus, syllabus_pdf: syllabus } : {}),
   }
 }
 
@@ -1778,7 +1785,6 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
       subjectName,
       grade,
       semester,
-      syllabusDataUrl: String(patch.syllabusDataUrl ?? current.syllabusDataUrl ?? '').trim(),
     }
 
     const pgId = Number(current.postgresSubjectId ?? current.id)

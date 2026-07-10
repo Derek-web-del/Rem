@@ -7,10 +7,12 @@ import OfflineCacheIndicator from '../../components/OfflineCacheIndicator.jsx'
 import StudentMainHeader from './StudentMainHeader.jsx'
 import StudentViewHeader from './StudentViewHeader.jsx'
 import { ACTION_BLUE } from '../teachers/instituteChrome.js'
+import { formatSubjectScheduleLabel } from '../../lib/subjectScheduleDisplay.js'
 
 function SubjectCard({ subject, onDetails }) {
   const name = String(subject.subject_name || '').trim() || '—'
   const grade = String(subject.grade_level || '').trim() || '—'
+  const schedule = formatSubjectScheduleLabel(subject)
 
   return (
     <article className="flex flex-col overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-sm transition hover:shadow-md">
@@ -20,6 +22,11 @@ function SubjectCard({ subject, onDetails }) {
       <div className="flex flex-1 flex-col gap-1 p-4">
         <p className="truncate text-base font-bold text-neutral-900">{name}</p>
         <p className="truncate text-sm text-neutral-600">{grade}</p>
+        {schedule ? (
+          <p className="mt-1 text-xs font-medium leading-snug text-sky-800">{schedule}</p>
+        ) : (
+          <p className="mt-1 text-xs text-neutral-400">No schedule set</p>
+        )}
         <div className="mt-3">
           <button
             type="button"

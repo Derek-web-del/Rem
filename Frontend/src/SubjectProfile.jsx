@@ -3,27 +3,10 @@ import BackButton from './components/BackButton.jsx'
 import { apiUrl } from './lib/lmsStateStorage.js'
 import { formatSemesterLabel } from './lib/quizQuestionTypes.js'
 import SubjectCoverImage from './components/SubjectCoverImage.jsx'
-
-const SYLLABUS_TEMPLATE_URL = '/templates/glendale-subject-syllabus-template.pdf'
-
-const SCHEDULE_DAY_LABELS = {
-  1: 'Monday',
-  2: 'Tuesday',
-  3: 'Wednesday',
-  4: 'Thursday',
-  5: 'Friday',
-  6: 'Saturday',
-}
+import { formatSubjectScheduleLabel } from './lib/subjectScheduleDisplay.js'
 
 function formatSubjectSchedule(subject) {
-  const schedule = subject?.schedule || (Array.isArray(subject?.schedules) ? subject.schedules[0] : null)
-  if (!schedule) return '—'
-  const day = SCHEDULE_DAY_LABELS[String(schedule.day_of_week ?? '')] || '—'
-  const start = String(schedule.start_time ?? '').trim().slice(0, 5)
-  const end = String(schedule.end_time ?? '').trim().slice(0, 5)
-  const room = String(schedule.room ?? '').trim()
-  const time = start && end ? `${start}–${end}` : start || end || ''
-  return [day, time, room].filter(Boolean).join(' · ') || '—'
+  return formatSubjectScheduleLabel(subject) || '—'
 }
 
 function curriculumGuideDisplay(subject) {
@@ -195,29 +178,18 @@ export default function SubjectProfile({ subject, onBack, onEdit }) {
         ) : null}
 
         <div className="mt-5 rounded-xl border border-neutral-200 bg-white p-4">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <div className="text-sm font-semibold text-neutral-900">Syllabus Preview</div>
-              <div className="text-xs text-neutral-500">{syllabusUrl ? syllabusFileName : 'No syllabus uploaded'}</div>
+          <div>
+            <div className="text-sm font-semibold text-neutral-900">Syllabus Preview</div>
+            <div className="text-xs text-neutral-500">
+              {syllabusUrl ? syllabusFileName : 'Assigned teacher uploads the syllabus from the Teacher portal.'}
             </div>
-            <a
-              href={SYLLABUS_TEMPLATE_URL}
-              download="glendale-subject-syllabus-template.pdf"
-              className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-800 hover:bg-blue-100"
-            >
-              Download Syllabus Template
-            </a>
           </div>
 
           {syllabusUrl ? (
             <div className="mt-3 h-[420px] overflow-hidden rounded-xl border border-neutral-200 bg-white">
               <iframe title="Syllabus PDF" src={syllabusUrl} className="h-full w-full" />
             </div>
-          ) : (
-            <div className="mt-3 rounded-xl border border-dashed border-neutral-200 p-5 text-sm font-medium text-neutral-500">
-              Upload a PDF syllabus to preview it here.
-            </div>
-          )}
+          ) : null}
         </div>
       </section>
     </div>

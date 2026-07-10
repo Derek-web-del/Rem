@@ -1,6 +1,7 @@
 import { ensureAnnouncementsMetadataColumns } from './announcementsDb.js'
 import { ensureFacultyStudyMaterialsSchema } from './facultyStudyMaterialsDb.js'
 import { enrichSubjectDetailsFields } from './subjectDetailsEnrich.js'
+import { withSubjectSchedules } from './subjectScheduleAttach.js'
 import {
   sendStudentSubjectSyllabusResponse,
   syllabusDisplayFileName,
@@ -296,7 +297,7 @@ export async function fetchStudentSubjectDetails(pool, subjectId) {
       `,
       [sid],
     )
-    return mapSubjectRow(rows?.[0])
+    return withSubjectSchedules(pool, mapSubjectRow(rows?.[0]))
   } catch (err) {
     console.error('[studentSubjectMaterials] fetchStudentSubjectDetails join failed:', err?.message || err)
     try {
@@ -320,7 +321,7 @@ export async function fetchStudentSubjectDetails(pool, subjectId) {
         `,
         [sid],
       )
-      return mapSubjectRow(rows?.[0])
+      return withSubjectSchedules(pool, mapSubjectRow(rows?.[0]))
     } catch (fallbackErr) {
       console.error('[studentSubjectMaterials] fetchStudentSubjectDetails fallback failed:', fallbackErr?.message || fallbackErr)
       return null

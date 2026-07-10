@@ -41,6 +41,7 @@ import {
   syllabusDisplayFileName,
 } from '../lib/syllabusResponse.js'
 import { resolveSubjectImagePath } from '../lib/subjectImageStorage.js'
+import { withSubjectSchedules, withSubjectSchedulesList } from '../lib/subjectScheduleAttach.js'
 import {
   announcementRowToResponse,
   ensureAnnouncementsMetadataColumns,
@@ -1735,7 +1736,7 @@ export function createTeacherApiRouter(express, auth) {
         `,
         [facultyId],
       )
-      res.json((rows || []).map(mapTeacherSubjectRow).filter(Boolean))
+      res.json(await withSubjectSchedulesList(pool, (rows || []).map(mapTeacherSubjectRow).filter(Boolean)))
     } catch (e) {
       sendSafeServerError(res, e, 'GET /api/teacher/subjects')
     }
@@ -1838,7 +1839,8 @@ export function createTeacherApiRouter(express, auth) {
         return
       }
       const section_name = await resolveTeacherSubjectSectionName(pool, facultyRow, row.grade_level)
-      res.json(mapTeacherSubjectRow(row, { section_name }))
+      const mapped = mapTeacherSubjectRow(row, { section_name })
+      res.json(await withSubjectSchedules(pool, mapped))
     } catch (e) {
       sendSafeServerError(res, e, 'GET /api/teacher/subjects/:subjectId')
     }

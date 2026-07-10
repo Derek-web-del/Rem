@@ -4,31 +4,16 @@ import SubjectDetails from './SubjectDetails.jsx'
 import SubjectProfile from './SubjectProfile.jsx'
 import { formatSemesterLabel, SEMESTER_LABELS } from './lib/quizQuestionTypes.js'
 import SubjectCoverImage from './components/SubjectCoverImage.jsx'
+import { formatSubjectScheduleLabel } from './lib/subjectScheduleDisplay.js'
 
 const SYLLABUS_TEMPLATE_URL = '/templates/glendale-subject-syllabus-template.pdf'
-
-const SCHEDULE_DAY_LABELS = {
-  1: 'Monday',
-  2: 'Tuesday',
-  3: 'Wednesday',
-  4: 'Thursday',
-  5: 'Friday',
-  6: 'Saturday',
-}
 
 function normalizeSubjectKey(name) {
   return String(name || '').trim().toLowerCase()
 }
 
 function formatSubjectSchedule(subject) {
-  const schedule = subject?.schedule || (Array.isArray(subject?.schedules) ? subject.schedules[0] : null)
-  if (!schedule) return '—'
-  const day = SCHEDULE_DAY_LABELS[String(schedule.day_of_week ?? '')] || '—'
-  const start = String(schedule.start_time ?? '').trim().slice(0, 5)
-  const end = String(schedule.end_time ?? '').trim().slice(0, 5)
-  const room = String(schedule.room ?? '').trim()
-  const time = start && end ? `${start}–${end}` : start || end || ''
-  return [day, time, room].filter(Boolean).join(' · ') || '—'
+  return formatSubjectScheduleLabel(subject) || '—'
 }
 
 function curriculumGuideLabel(subject) {
@@ -140,7 +125,7 @@ export default function SubjectsPage({
             syllabusFileType: '',
             syllabusDataUrl: '',
             curriculumGuideId: '',
-            scheduleDayOfWeek: '1',
+            scheduleDays: ['1', '2', '3', '4', '5'],
             scheduleStartTime: '08:00',
             scheduleEndTime: '09:00',
             scheduleRoom: '',
