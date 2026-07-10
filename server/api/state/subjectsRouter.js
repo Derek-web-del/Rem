@@ -1,14 +1,5 @@
-import {
-  requireAdminSession,
-  logStatePostgresError,
-  auditInstituteRecord,
-  subjectPgError,
-  subjectRowToResponse,
-  readSubjectBodyFields,
-  readSubjectSyllabus,
-  normalizeSubjectSemester,
-  buildArchivedSubjectCode,
-} from './shared.js'
+import { requireAdminSession, logStatePostgresError, auditInstituteRecord, subjectPgError, subjectRowToResponse, readSubjectBodyFields, readSubjectSyllabus, normalizeSubjectSemester, buildArchivedSubjectCode } from './shared.js'
+import { resolveCanonicalFacultyId } from '../../lib/teacherSubjectAccess.js'
 import { requireAnyRoleSession } from '../../lib/security.js'
 import { GENERIC_SERVER_ERROR, sendSafeServerError } from '../../lib/safeApiError.js'
 import { resolveSubjectImagePath } from '../../lib/subjectImageStorage.js'
@@ -116,7 +107,7 @@ export function registerSubjectsRoutes(router, ctx) {
         return
       }
 
-      const facultyIdParam = faculty_id || null
+      const facultyIdParam = await resolveCanonicalFacultyId(pool, faculty_id)
       const guideIdParam = curriculum_guide_id ? String(curriculum_guide_id).trim() : null
       const subject_photo = resolveSubjectImagePath(subject_name)
       const { rows } = await pool.query(
@@ -184,7 +175,7 @@ export function registerSubjectsRoutes(router, ctx) {
         return
       }
 
-      const facultyIdParam = faculty_id || null
+      const facultyIdParam = await resolveCanonicalFacultyId(pool, faculty_id)
       const guideIdParam = curriculum_guide_id ? String(curriculum_guide_id).trim() : null
       const subject_photo = resolveSubjectImagePath(subject_name)
       const syllabusToSave = hasSyllabusField ? syllabus_pdf : existing.syllabus_pdf

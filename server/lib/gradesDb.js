@@ -300,19 +300,24 @@ export function normalizeGradeFetchOptions({ subjectId = null, facultyId = null 
 }
 
 export async function facultyOwnsSubject(pool, facultyId, subjectId) {
-  const sid = Number(subjectId)
-  if (!Number.isFinite(sid) || sid <= 0) return false
-  const fid = String(facultyId ?? '').trim()
-  if (!fid) return false
+  const { teacherOwnsSubject } = await import('./teacherSubjectAccess.js')
+  let archive = ''
   try {
     const { rows } = await pool.query(
-      `SELECT 1 FROM subjects WHERE id = $1 AND faculty_id::text = $2::text LIMIT 1`,
-      [sid, fid],
+      `
+      SELECT 1
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'subjects'
+        AND column_name = 'archived_at'
+      LIMIT 1
+      `,
     )
-    return rows?.length > 0
+    if (rows?.length) archive = ' AND sub.archived_at IS NULL '
   } catch {
-    return false
+    void 0
   }
+  return teacherOwnsSubject(pool, facultyId, subjectId, archive)
 }
 
 export async function fetchStudentGrades(

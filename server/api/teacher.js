@@ -43,6 +43,11 @@ import {
 import { resolveSubjectImagePath } from '../lib/subjectImageStorage.js'
 import { withSubjectSchedules, withSubjectSchedulesList } from '../lib/subjectScheduleAttach.js'
 import {
+  facultyOwnsSubjectSql,
+  resolveTeacherSubjectForFaculty,
+  teacherOwnsSubject as checkTeacherOwnsSubject,
+} from '../lib/teacherSubjectAccess.js'
+import {
   announcementRowToResponse,
   ensureAnnouncementsMetadataColumns,
   FACULTY_ANNOUNCEMENT_TYPES,
@@ -1466,19 +1471,34 @@ async function updateTeacherSubjectFields(pool, subjectId, facultyId, fields) {
 }
 
 async function teacherOwnsSubject(pool, facultyId, subjectId) {
-  const sid = Number(subjectId)
-  if (!Number.isFinite(sid) || sid <= 0) return false
-  const fid = String(facultyId ?? '').trim()
-  if (!fid) return false
-  try {
-    const subjectArchive = await subjectActivePredicate(pool, 'subjects')
-    const { rows } = await pool.query(
-      `SELECT 1 FROM subjects sub WHERE sub.id = $1 AND sub.faculty_id::text = $2::text ${subjectArchive} LIMIT 1`,
-      [sid, fid],
-    )
-    return rows?.length > 0
-  } catch {
-    return false
+  const subjectArchive = await subjectActivePredicate(pool, 'sub')
+  return checkTeacherOwnsSubject(pool, facultyId, subjectId, subjectArchive)
+}
+
+async function fetchTeacherSubjectRow(pool, facultyRow, subjectId) {
+  const facultyId = String(facultyRow.id).trim()
+  const subjectArchive = await subjectActivePredicate(pool, 'sub')
+  const resolved = await resolveTeacherSubjectForFaculty(pool, facultyId, subjectId, {
+    subjectArchivePredicate: subjectArchive,
+  })
+  if (!resolved) return null
+
+  const { rows } = await pool.query(
+    `
+    SELECT ${TEACHER_SUBJECT_SELECT}
+    FROM subjects sub
+    ${TEACHER_SUBJECT_FACULTY_JOIN}
+    WHERE sub.id = $1
+    ${subjectArchive}
+    LIMIT 1
+    `,
+    [resolved.subjectId],
+  )
+  const row = rows?.[0]
+  if (!row) return null
+  return {
+    row,
+    resolvedFromSubjectId: resolved.resolvedFromSubjectId,
   }
 }
 
@@ -1725,12 +1745,13 @@ export function createTeacherApiRouter(express, auth) {
       }
       const facultyId = String(facultyRow.id).trim()
       const subjectArchive = await subjectActivePredicate(pool, 'sub')
+      const ownSql = facultyOwnsSubjectSql('sub', 1)
       const { rows } = await pool.query(
         `
         SELECT ${TEACHER_SUBJECT_SELECT}
         FROM subjects sub
         ${TEACHER_SUBJECT_FACULTY_JOIN}
-        WHERE sub.faculty_id::text = $1
+        WHERE (${ownSql})
         ${subjectArchive}
         ORDER BY sub.subject_name ASC
         `,
@@ -1818,31 +1839,18 @@ export function createTeacherApiRouter(express, auth) {
         res.status(400).json({ error: 'BAD_REQUEST', message: 'Invalid subject id.' })
         return
       }
-      const owns = await teacherOwnsSubject(pool, facultyRow.id, subjectId)
-      if (!owns) {
+      const resolved = await fetchTeacherSubjectRow(pool, facultyRow, subjectId)
+      if (!resolved?.row) {
         res.status(404).json({ error: 'NOT_FOUND', message: 'Subject not found.' })
         return
       }
-      const subjectArchive = await subjectActivePredicate(pool, 'sub')
-      const { rows } = await pool.query(
-        `
-        SELECT ${TEACHER_SUBJECT_SELECT}
-        FROM subjects sub
-        ${TEACHER_SUBJECT_FACULTY_JOIN}
-        WHERE sub.id = $1 AND sub.faculty_id::text = $2
-        ${subjectArchive}
-        LIMIT 1
-        `,
-        [subjectId, String(facultyRow.id).trim()],
-      )
-      const row = rows?.[0]
-      if (!row) {
-        res.status(404).json({ error: 'NOT_FOUND', message: 'Subject not found.' })
-        return
+      const section_name = await resolveTeacherSubjectSectionName(pool, facultyRow, resolved.row.grade_level)
+      const mapped = mapTeacherSubjectRow(resolved.row, { section_name })
+      const payload = await withSubjectSchedules(pool, mapped)
+      if (resolved.resolvedFromSubjectId != null) {
+        payload.resolved_from_subject_id = String(resolved.resolvedFromSubjectId)
       }
-      const section_name = await resolveTeacherSubjectSectionName(pool, facultyRow, row.grade_level)
-      const mapped = mapTeacherSubjectRow(row, { section_name })
-      res.json(await withSubjectSchedules(pool, mapped))
+      res.json(payload)
     } catch (e) {
       sendSafeServerError(res, e, 'GET /api/teacher/subjects/:subjectId')
     }

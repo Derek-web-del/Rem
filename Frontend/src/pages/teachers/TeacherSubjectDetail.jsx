@@ -38,12 +38,29 @@ export default function TeacherSubjectDetail() {
     setLoading(true)
     try {
       const row = await fetchTeacherSubject(subjectId)
+      const resolvedFrom = String(row?.resolved_from_subject_id || '').trim()
+      const activeId = String(row?.id || subjectId).trim()
+      if (resolvedFrom && resolvedFrom !== String(subjectId)) {
+        navigate(`/teacher/subjects/${encodeURIComponent(activeId)}`, { replace: true })
+        return
+      }
       setSubject(row)
     } catch (e) {
       const msg = String(e?.message || 'Subject not found.')
       if (/not found/i.test(msg)) {
         await invalidateTeacherSubjectsCache().catch(() => {})
-        toast.error('This subject is no longer available. It may have been removed or replaced.')
+        try {
+          const { fetchTeacherSubjects } = await import('../../lib/teacherPortalOffline.js')
+          const list = await fetchTeacherSubjects({ forceRefresh: true })
+          if (list.some((s) => String(s.id) === String(subjectId))) {
+            const row = await fetchTeacherSubject(subjectId)
+            setSubject(row)
+            return
+          }
+        } catch {
+          void 0
+        }
+        toast.error('This subject could not be loaded. Open it again from your Subjects list.')
         navigate('/teacher/subjects', { replace: true })
         return
       }
