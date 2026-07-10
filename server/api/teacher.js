@@ -1027,6 +1027,14 @@ function mapTeacherSubjectRow(row, extras = {}) {
     syllabus_url: syllabusRaw,
     syllabus_pdf: syllabusRaw,
     syllabus_file_name: syllabusDisplayFileName(syllabusRaw, code),
+    curriculumGuideId: String(row.curriculum_guide_id ?? '').trim(),
+    curriculum_guide_id: String(row.curriculum_guide_id ?? '').trim(),
+    curriculumGuideTitle: String(row.curriculum_guide_title ?? '').trim(),
+    curriculumGuideGrade: String(row.curriculum_guide_grade ?? '').trim(),
+    curriculumGuideLabel: String(row.curriculum_guide_label ?? '').trim(),
+    curriculumGuideFileUrl: String(row.curriculum_guide_file_url ?? '').trim(),
+    curriculum_guide_file_url: String(row.curriculum_guide_file_url ?? '').trim(),
+    curriculumGuideFileName: String(row.curriculum_guide_file_name ?? '').trim(),
     section_name: String(extras.section_name ?? '').trim() || '—',
   }
   return enrichSubjectDetailsFields(base, extras)
@@ -1509,9 +1517,15 @@ const TEACHER_SUBJECT_SELECT = `
   sub.grade_level,
   sub.semester,
   sub.faculty_id,
+  sub.curriculum_guide_id,
   sub.subject_photo AS cover_image_url,
   sub.syllabus_pdf AS syllabus_url,
   sub.syllabus_pdf,
+  cg.subject AS curriculum_guide_title,
+  cg.grade AS curriculum_guide_grade,
+  cg.title AS curriculum_guide_label,
+  COALESCE(NULLIF(trim(cg.file_url), ''), NULLIF(trim(cg.file_data_url), '')) AS curriculum_guide_file_url,
+  cg.file_name AS curriculum_guide_file_name,
   COALESCE(
     NULLIF(trim(concat_ws(' ',
       nullif(trim(f.first_name), ''),
@@ -1524,7 +1538,10 @@ const TEACHER_SUBJECT_SELECT = `
   sub.created_at
 `
 
-const TEACHER_SUBJECT_FACULTY_JOIN = `LEFT JOIN faculties f ON f.id::text = sub.faculty_id::text`
+const TEACHER_SUBJECT_FACULTY_JOIN = `
+  LEFT JOIN faculties f ON f.id::text = sub.faculty_id::text
+  LEFT JOIN curriculum_guides cg ON cg.id::text = sub.curriculum_guide_id::text
+`
 
 /** Public GET /api/teacher/* helpers for signed-in Better Auth faculty. */
 export function createTeacherApiRouter(express, auth) {

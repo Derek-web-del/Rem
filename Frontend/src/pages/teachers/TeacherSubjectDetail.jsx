@@ -8,6 +8,8 @@ import TeacherMainHeader from './TeacherMainHeader.jsx'
 import SubjectDetailTabs from './subject-detail/SubjectDetailTabs.jsx'
 import SubjectDetailTopBar from './subject-detail/SubjectDetailTopBar.jsx'
 import SubjectDetailsCard from './subject-detail/SubjectDetailsCard.jsx'
+import SubjectCurriculumGuideCard from './subject-detail/SubjectCurriculumGuideCard.jsx'
+import SubjectWorkflowStrip from './subject-detail/SubjectWorkflowStrip.jsx'
 import SubjectSyllabusCard from './subject-detail/SubjectSyllabusCard.jsx'
 import SubjectClassworkTab from './subject-detail/tabs/SubjectClassworkTab.jsx'
 import SubjectGradesTab from './subject-detail/tabs/SubjectGradesTab.jsx'
@@ -103,7 +105,9 @@ export default function TeacherSubjectDetail() {
               </div>
             </div>
             <div className="space-y-4">
+              <SubjectWorkflowStrip subject={subject} />
               <SubjectDetailsCard subject={subject} />
+              <SubjectCurriculumGuideCard subject={subject} />
               <SubjectSyllabusCard subject={subject} subjectId={subjectId} onUpdated={loadSubject} />
             </div>
           </div>
