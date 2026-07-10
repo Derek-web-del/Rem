@@ -1321,6 +1321,8 @@ export function subjectRowToResponse(row) {
     curriculumGuideId: row.curriculum_guide_id ?? '',
     curriculum_guide_id: row.curriculum_guide_id ?? '',
     curriculumGuideTitle: String(row.curriculum_guide_title ?? '').trim(),
+    curriculumGuideGrade: String(row.curriculum_guide_grade ?? '').trim(),
+    curriculum_guide_grade: String(row.curriculum_guide_grade ?? '').trim(),
     schedule: row.schedule ?? null,
     schedules: Array.isArray(row.schedules) ? row.schedules : row.schedule ? [row.schedule] : [],
     createdAt: row.created_at,

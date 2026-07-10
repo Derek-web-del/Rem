@@ -32,3 +32,18 @@ export function FacultyAccessBadge({ advisoryLabel = '', facultyCode = '' }) {
     </div>
   )
 }
+
+export function StudentAccessBadge({ gradeLabel = '' }) {
+  const grade = String(gradeLabel || '').trim()
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-sm">
+      <span className="inline-flex items-center rounded-full border border-violet-200 bg-violet-50 px-2.5 py-0.5 text-xs font-semibold uppercase tracking-wide text-violet-800">
+        Student Portal
+      </span>
+      <span className="text-neutral-600">
+        Access: subjects by grade and semester, quizzes, materials, grades
+        {grade ? ` · ${grade}` : ''}
+      </span>
+    </div>
+  )
+}

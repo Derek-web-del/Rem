@@ -424,6 +424,15 @@ export default function FacultyDetails({
         toast.error(errMsg, { title: 'Could not save faculty' })
         return
       }
+      const savedPhotoPath = String(res?.faculty?.photo_url ?? res?.faculty?.photoDataUrl ?? '').trim()
+      if (savedPhotoPath) {
+        if (photoPreviewUrlRef.current?.startsWith('blob:')) {
+          URL.revokeObjectURL(photoPreviewUrlRef.current)
+          photoPreviewUrlRef.current = ''
+        }
+        setPhotoFile(null)
+        setPhotoUrl(facultyPhotoDisplaySrc(savedPhotoPath))
+      }
       toast.success(
         mode === 'edit' ? 'Faculty record updated.' : 'Faculty record saved to PostgreSQL.',
         { title: mode === 'edit' ? 'Saved' : 'Faculty added', durationMs: 5000 },

@@ -180,7 +180,8 @@ export function registerSubjectsRoutes(router, ctx) {
               )), ''),
               NULLIF(trim(f.name), '')
             ) FROM faculties f WHERE f.id::text = subjects.faculty_id::text LIMIT 1) AS faculty_name,
-            (SELECT cg.subject FROM curriculum_guides cg WHERE cg.id::text = subjects.curriculum_guide_id::text LIMIT 1) AS curriculum_guide_title
+            (SELECT cg.subject FROM curriculum_guides cg WHERE cg.id::text = subjects.curriculum_guide_id::text LIMIT 1) AS curriculum_guide_title,
+            (SELECT cg.grade FROM curriculum_guides cg WHERE cg.id::text = subjects.curriculum_guide_id::text LIMIT 1) AS curriculum_guide_grade
         `,
         [subject_code, subject_name, grade_level, semester, facultyIdParam, guideIdParam, syllabus_pdf, subject_photo, id],
       )

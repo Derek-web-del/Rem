@@ -7,6 +7,12 @@ import {
 } from './lib/subjectImages.js'
 import { formatSemesterLabel, SEMESTER_LABELS } from './lib/quizQuestionTypes.js'
 
+const SYLLABUS_TEMPLATE_URL = '/templates/glendale-subject-syllabus-template.pdf'
+
+function normalizeSubjectKey(name) {
+  return String(name || '').trim().toLowerCase()
+}
+
 function readFileAsDataUrl(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
@@ -131,6 +137,20 @@ export default function SubjectDetails({
     () => facultyOptions.find((f) => f.id === form.assignedFacultyId) || null,
     [facultyOptions, form.assignedFacultyId],
   )
+
+  const matchingCurriculumGuides = useMemo(() => {
+    const grade = String(form.grade || '').trim()
+    const subject = normalizeSubjectKey(form.subjectName)
+    const list = Array.isArray(curriculumGuideOptions) ? curriculumGuideOptions : []
+    if (!grade && !subject) return list
+    return list.filter((g) => {
+      const gGrade = String(g.grade ?? g.grade_level ?? '').trim()
+      const gSubject = normalizeSubjectKey(g.subject ?? g.title)
+      if (grade && gGrade && gGrade !== grade) return false
+      if (subject && gSubject && gSubject !== subject) return false
+      return true
+    })
+  }, [curriculumGuideOptions, form.grade, form.subjectName])
 
   const computedSemCode = useMemo(() => {
     const gradeNum = String(form.grade || '').replace(/[^0-9]/g, '')
@@ -343,9 +363,9 @@ export default function SubjectDetails({
               helper="Links this subject to a published DepEd-aligned curriculum PDF from the institute library."
             >
               <option value="">
-                {curriculumGuideOptions.length ? 'Select curriculum guide (optional)' : 'No published guides yet'}
+                {matchingCurriculumGuides.length ? 'Select curriculum guide (optional)' : 'No matching guides — upload in Curriculum first'}
               </option>
-              {curriculumGuideOptions.map((g) => (
+              {matchingCurriculumGuides.map((g) => (
                 <option key={g.id} value={g.id}>
                   {g.grade} — {g.subject}
                 </option>
@@ -406,7 +426,21 @@ export default function SubjectDetails({
           </div>
 
           <div className="rounded-xl border border-neutral-200 bg-white p-4">
-            <div className="text-sm font-semibold text-neutral-900">Syllabus (PDF)</div>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold text-neutral-900">Syllabus (PDF)</div>
+                <p className="mt-1 text-xs text-neutral-600">
+                  Create a Glendale syllabus aligned to the linked DepEd curriculum guide.
+                </p>
+              </div>
+              <a
+                href={SYLLABUS_TEMPLATE_URL}
+                download="glendale-subject-syllabus-template.pdf"
+                className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-800 hover:bg-blue-100"
+              >
+                Download Syllabus Template
+              </a>
+            </div>
             <div
               className="mt-3 flex min-h-23 cursor-pointer items-center justify-center rounded-xl border-2 border-dashed border-neutral-200 bg-neutral-50 px-4 py-4 text-center"
               onClick={() => !submitting && pdfInputRef.current?.click()}

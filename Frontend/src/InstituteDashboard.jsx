@@ -25,6 +25,8 @@ import BackupPage from './pages/BackupPage.jsx'
 import ArchiveVault from './pages/ArchiveVault.jsx'
 import AuditStatisticsSection from './components/AuditStatisticsSection.jsx'
 import AdminLatestAnnouncementsExpanded from './components/admin/AdminLatestAnnouncementsExpanded.jsx'
+import AuthenticatedImage from './components/AuthenticatedImage.jsx'
+import { AdminAccessBadge } from './components/PortalAccessBadge.jsx'
 import Header from './components/Header.jsx'
 import PortalSidebarShell from './components/PortalSidebarShell.jsx'
 import { useSidebarCollapsed, SIDEBAR_COLLAPSED_KEYS } from './hooks/useSidebarCollapsed.js'
@@ -252,6 +254,7 @@ function mapPgSubjectRow(row, facultiesList) {
     syllabusDataUrl,
     curriculumGuideId: String(row.curriculumGuideId ?? row.curriculum_guide_id ?? '').trim(),
     curriculumGuideTitle: String(row.curriculumGuideTitle ?? row.curriculum_guide_title ?? '').trim(),
+    curriculumGuideGrade: String(row.curriculumGuideGrade ?? row.curriculum_guide_grade ?? '').trim(),
     schedule: row.schedule || (Array.isArray(row.schedules) ? row.schedules[0] : null) || null,
     schedules: Array.isArray(row.schedules) ? row.schedules : row.schedule ? [row.schedule] : [],
     subjectPhoto: String(row.subjectPhoto ?? row.subject_photo ?? row.cover_image_url ?? '').trim(),
@@ -699,19 +702,17 @@ function normalizeAdminDisplayName(raw) {
 }
 
 function DashboardFacultyThumb({ faculty }) {
-  const [imgFailed, setImgFailed] = useState(false)
   const src = facultyPhotoDisplaySrc(faculty?.photo_url || faculty?.photoDataUrl || '')
-  if (src && !imgFailed) {
-    return (
-      <img
-        src={src}
-        alt={faculty?.name || ''}
-        className="h-11 w-11 shrink-0 rounded-full object-cover ring-2 ring-white shadow-sm"
-        onError={() => setImgFailed(true)}
-      />
-    )
-  }
-  return <Avatar seed={String(faculty?.email || faculty?.name || 'f')} size={44} />
+  const fallback = <Avatar seed={String(faculty?.email || faculty?.name || 'f')} size={44} />
+  if (!src) return fallback
+  return (
+    <AuthenticatedImage
+      src={src}
+      alt={faculty?.name || ''}
+      className="h-11 w-11 shrink-0 rounded-full object-cover ring-2 ring-white shadow-sm"
+      fallback={fallback}
+    />
+  )
 }
 
 export default function InstituteDashboard({ onLogout, schoolName = 'Glendale School, Inc.' }) {
@@ -1538,9 +1539,31 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
             prev.map((f) => (f.id === id ? { ...f, authUserId: resolvedAuthUserId } : f)),
           )
         }
-        void refreshFacultiesFromPostgres()
+        if (photoChanged && savedPhoto) {
+          const imgResync = await ensureFacultyAuthUser({
+            email,
+            name: String(patch.name || current.name || '').trim() || 'Faculty',
+            facultyUsername: facultyCodeId,
+            password,
+            existingAuthUserId: resolvedAuthUserId,
+            previousFacultyUsername,
+            facultyQualification: qualification,
+            facultyContactNumber: contactForAuth,
+            photoDataUrl: savedPhoto,
+            setCredentialPassword: false,
+          })
+          if (imgResync?.error) {
+            toast.error(imgResync.error, { title: 'Faculty photo sync' })
+          }
+        }
+        const refreshed = await refreshFacultiesFromPostgres()
+        if (!refreshed.ok && !data?.faculty) {
+          return {
+            error: refreshed.error || 'Faculty updated but the list could not be refreshed. Reload the page.',
+          }
+        }
         dispatchAuditLogsRefresh({ type: 'faculty', id: facultyKey })
-        return { ok: true }
+        return { ok: true, faculty: data?.faculty }
       } catch (err) {
         const msg = String(err?.message || err || 'Network error updating faculty.')
         toast.error(msg, { title: 'Faculty not updated' })
@@ -3195,6 +3218,9 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
             />
           ) : activeNav === 'dashboard' ? (
             <>
+            <section className="mb-4 rounded-xl border border-blue-100 bg-blue-50/60 px-4 py-3 md:px-5">
+              <AdminAccessBadge displayName={adminDisplayName} />
+            </section>
             <section className="mb-6 rounded-xl border border-neutral-100 bg-white p-5 shadow-md md:p-6">
               <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:gap-6">
                 {adminAvatarDataUrl ? (

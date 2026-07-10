@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import BackButton from './components/BackButton.jsx'
+import AuthenticatedImage from './components/AuthenticatedImage.jsx'
 import FacultyDetails from './FacultyDetails.jsx'
 import FacultyProfile from './FacultyProfile.jsx'
 import { useNotify } from './components/notifications.jsx'
@@ -62,26 +63,24 @@ function formatFacultyGradeLevels(faculty) {
 }
 
 function FacultyAvatar({ faculty, className = 'h-9 w-9' }) {
-  const [imgFailed, setImgFailed] = useState(false)
   const src = facultyPhotoSrc(faculty)
   const label = initials(faculty?.name)
-  if (src && !imgFailed) {
-    return (
-      <img
-        src={src}
-        alt=""
-        className={`${className} shrink-0 rounded-full object-cover ring-1 ring-neutral-200`}
-        onError={() => setImgFailed(true)}
-      />
-    )
-  }
-  return (
+  const fallback = (
     <div
       className={`${className} flex shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-blue-100 to-blue-200 text-xs font-bold text-blue-900 ring-1 ring-blue-200`}
       aria-hidden
     >
       {label}
     </div>
+  )
+  if (!src) return fallback
+  return (
+    <AuthenticatedImage
+      src={src}
+      alt=""
+      className={`${className} shrink-0 rounded-full object-cover ring-1 ring-neutral-200`}
+      fallback={fallback}
+    />
   )
 }
 

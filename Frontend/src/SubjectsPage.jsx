@@ -5,6 +5,41 @@ import SubjectProfile from './SubjectProfile.jsx'
 import { formatSemesterLabel, SEMESTER_LABELS } from './lib/quizQuestionTypes.js'
 import SubjectCoverImage from './components/SubjectCoverImage.jsx'
 
+const SYLLABUS_TEMPLATE_URL = '/templates/glendale-subject-syllabus-template.pdf'
+
+const SCHEDULE_DAY_LABELS = {
+  1: 'Monday',
+  2: 'Tuesday',
+  3: 'Wednesday',
+  4: 'Thursday',
+  5: 'Friday',
+  6: 'Saturday',
+}
+
+function normalizeSubjectKey(name) {
+  return String(name || '').trim().toLowerCase()
+}
+
+function formatSubjectSchedule(subject) {
+  const schedule = subject?.schedule || (Array.isArray(subject?.schedules) ? subject.schedules[0] : null)
+  if (!schedule) return '—'
+  const day = SCHEDULE_DAY_LABELS[String(schedule.day_of_week ?? '')] || '—'
+  const start = String(schedule.start_time ?? '').trim().slice(0, 5)
+  const end = String(schedule.end_time ?? '').trim().slice(0, 5)
+  const room = String(schedule.room ?? '').trim()
+  const time = start && end ? `${start}–${end}` : start || end || ''
+  return [day, time, room].filter(Boolean).join(' · ') || '—'
+}
+
+function curriculumGuideLabel(subject) {
+  const title = String(subject?.curriculumGuideTitle ?? '').trim()
+  const grade = String(subject?.curriculumGuideGrade ?? '').trim()
+  if (title && grade) return `${grade} — ${title}`
+  if (title) return title
+  if (subject?.curriculumGuideId) return 'Linked guide'
+  return '—'
+}
+
 function SearchIcon({ className }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" aria-hidden>
@@ -223,13 +258,14 @@ export default function SubjectsPage({
                   <th className="px-4 py-3 text-left">SUBJECT CODE</th>
                   <th className="px-4 py-3 text-left">GRADE LEVEL</th>
                   <th className="px-4 py-3 text-left">SEMESTER</th>
+                  <th className="px-4 py-3 text-left">CURRICULUM GUIDE</th>
                   <th className="px-4 py-3 text-right">ACTION</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-100">
                 {filtered.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-4 py-10 text-center text-sm font-medium text-neutral-500">
+                    <td colSpan={7} className="px-4 py-10 text-center text-sm font-medium text-neutral-500">
                       No subjects found.
                     </td>
                   </tr>
@@ -247,6 +283,7 @@ export default function SubjectsPage({
                       <td className="px-4 py-3 font-medium text-neutral-700">{s.subjectCode}</td>
                       <td className="px-4 py-3 font-medium text-neutral-700">{s.grade}</td>
                       <td className="px-4 py-3 font-medium text-neutral-700">{formatSemesterLabel(s.semester) || '—'}</td>
+                      <td className="px-4 py-3 font-medium text-neutral-700">{curriculumGuideLabel(s)}</td>
                       <td className="px-4 py-3 text-right">
                         <div className="inline-flex items-center gap-2">
                           <button type="button" className="rounded bg-amber-400 px-3 py-1.5 text-xs font-semibold text-neutral-900 hover:brightness-110" onClick={() => openEdit(s)}>

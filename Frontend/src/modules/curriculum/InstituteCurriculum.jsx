@@ -1,6 +1,7 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import BackButton from '../../components/BackButton.jsx'
 import AuthenticatedImage from '../../components/AuthenticatedImage.jsx'
+import GlendaleWorkflowCallout, { curriculumGradeFilenameHint } from '../../components/GlendaleWorkflowCallout.jsx'
 import { useNotify } from '../../components/notifications.jsx'
 import { authClient } from '../../lib/auth-client.js'
 import { uploadsPathToApiUrl } from '../../lib/fileUrls.js'
@@ -291,6 +292,10 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
   const uploadSubjects = useMemo(() => subjectsForGrade(subjects, uploadForm.grade), [subjects, uploadForm.grade])
   const editSubjects = useMemo(() => subjectsForGrade(subjects, editForm.grade), [subjects, editForm.grade])
   const filterSubjects = useMemo(() => subjectsForGrade(subjects, filterGrade), [subjects, filterGrade])
+  const uploadGradeHint = useMemo(
+    () => curriculumGradeFilenameHint(uploadForm.file?.name, uploadForm.grade),
+    [uploadForm.file?.name, uploadForm.grade],
+  )
 
   const filteredCurriculums = useMemo(() => {
     return curriculums.filter((item) => {
@@ -607,6 +612,7 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
             <h2 className="text-2xl font-bold text-neutral-900">Upload Curriculum Guide</h2>
             <BackButton onClick={openCurriculumManagePage} />
           </div>
+          <GlendaleWorkflowCallout />
           <section className="rounded-xl border border-neutral-200 bg-white p-5 shadow-md md:p-6">
             <h3 className="text-lg font-semibold text-neutral-900">Upload New Curriculum</h3>
             <form onSubmit={submitUpload} className="mt-5 grid gap-4">
@@ -624,6 +630,10 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
                     </option>
                   ))}
                 </select>
+                <p className="mt-1 text-xs font-normal text-neutral-500">
+                  If the PDF covers Grades 2–10 or 4–10, select the JHS grade you use (7–10) and note the full span in
+                  Description.
+                </p>
               </label>
               <label className="text-sm font-medium text-neutral-700">
                 Subject
@@ -664,6 +674,13 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
                     }
                   />
                 </div>
+                <p className="mt-1 text-xs font-normal text-neutral-500">
+                  Upload the official DepEd MATATAG document for this subject. This is the institute reference — not an
+                  AI-generated template.
+                </p>
+                {uploadGradeHint ? (
+                  <p className="mt-1 text-xs font-medium text-amber-700">{uploadGradeHint}</p>
+                ) : null}
               </label>
               <label className="text-sm font-medium text-neutral-700">
                 Description
@@ -671,6 +688,7 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
                   className="mt-1 min-h-24 w-full rounded-lg border px-3 py-2"
                   value={uploadForm.description}
                   onChange={(e) => setUploadForm((prev) => ({ ...prev, description: e.target.value }))}
+                  placeholder="e.g. DepEd MATATAG English Grades 2–10; institute reference for Grade 10 English."
                 />
               </label>
               {formError ? <p className="text-sm text-red-600">{formError}</p> : null}
@@ -792,6 +810,8 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
           </button>
         </div>
 
+        <GlendaleWorkflowCallout compact />
+
         <section className="rounded-xl border border-neutral-200 bg-white p-5 shadow-md md:p-6">
           <h3 className="text-lg font-bold text-neutral-900">All Curriculum Guides</h3>
           <div className="mt-4 grid gap-3 md:grid-cols-4">
@@ -858,7 +878,9 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
                     <p className="mt-1 text-sm text-neutral-600">
                       {item.grade} | {item.subject}
                     </p>
-                    <p className="mt-1 text-sm text-neutral-700">{item.description}</p>
+                    {item.description ? (
+                      <p className="mt-1 line-clamp-2 text-sm text-neutral-700">{item.description}</p>
+                    ) : null}
                     <p className="mt-2 text-xs text-neutral-500">
                       Uploaded: {item.uploadedAt} | By: {item.uploadedBy}
                     </p>

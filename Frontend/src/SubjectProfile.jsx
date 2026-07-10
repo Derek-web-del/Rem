@@ -4,6 +4,37 @@ import { apiUrl } from './lib/lmsStateStorage.js'
 import { formatSemesterLabel } from './lib/quizQuestionTypes.js'
 import SubjectCoverImage from './components/SubjectCoverImage.jsx'
 
+const SYLLABUS_TEMPLATE_URL = '/templates/glendale-subject-syllabus-template.pdf'
+
+const SCHEDULE_DAY_LABELS = {
+  1: 'Monday',
+  2: 'Tuesday',
+  3: 'Wednesday',
+  4: 'Thursday',
+  5: 'Friday',
+  6: 'Saturday',
+}
+
+function formatSubjectSchedule(subject) {
+  const schedule = subject?.schedule || (Array.isArray(subject?.schedules) ? subject.schedules[0] : null)
+  if (!schedule) return '—'
+  const day = SCHEDULE_DAY_LABELS[String(schedule.day_of_week ?? '')] || '—'
+  const start = String(schedule.start_time ?? '').trim().slice(0, 5)
+  const end = String(schedule.end_time ?? '').trim().slice(0, 5)
+  const room = String(schedule.room ?? '').trim()
+  const time = start && end ? `${start}–${end}` : start || end || ''
+  return [day, time, room].filter(Boolean).join(' · ') || '—'
+}
+
+function curriculumGuideDisplay(subject) {
+  const title = String(subject?.curriculumGuideTitle ?? '').trim()
+  const grade = String(subject?.curriculumGuideGrade ?? '').trim()
+  if (title && grade) return `${grade} — ${title}`
+  if (title) return title
+  if (subject?.curriculumGuideId) return 'Linked institute guide'
+  return '—'
+}
+
 const labelStyle = {
   padding: '10px 14px',
   color: 'var(--color-text-secondary, #6b7280)',
@@ -53,6 +84,8 @@ export default function SubjectProfile({ subject, onBack, onEdit }) {
 
   const grade = subject?.grade || subject?.grade_level || '—'
   const semester = formatSemesterLabel(subject?.semester) || '—'
+  const scheduleLabel = formatSubjectSchedule(subject)
+  const curriculumGuide = curriculumGuideDisplay(subject)
   const syllabusRaw = String(subject.syllabusDataUrl || subject.syllabus_pdf || '').trim()
   const syllabusFileName = subject.syllabusFileName || 'syllabus.pdf'
   const syllabusUrl =
@@ -144,15 +177,36 @@ export default function SubjectProfile({ subject, onBack, onEdit }) {
                   <td style={labelStyle}>Subject Code</td>
                   <td style={valueStyle}>{cell(subject.subjectCode)}</td>
                 </tr>
+                <tr>
+                  <td style={labelStyle}>Institute Curriculum Guide</td>
+                  <td style={valueStyle} colSpan={3}>
+                    {cell(curriculumGuide)}
+                  </td>
+                </tr>
+                <tr>
+                  <td style={labelStyle}>Class Schedule</td>
+                  <td style={valueStyle} colSpan={3}>
+                    {cell(scheduleLabel)}
+                  </td>
+                </tr>
               </tbody>
             </table>
           </div>
         ) : null}
 
         <div className="mt-5 rounded-xl border border-neutral-200 bg-white p-4">
-          <div>
-            <div className="text-sm font-semibold text-neutral-900">Syllabus Preview</div>
-            <div className="text-xs text-neutral-500">{syllabusUrl ? syllabusFileName : 'No syllabus uploaded'}</div>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <div className="text-sm font-semibold text-neutral-900">Syllabus Preview</div>
+              <div className="text-xs text-neutral-500">{syllabusUrl ? syllabusFileName : 'No syllabus uploaded'}</div>
+            </div>
+            <a
+              href={SYLLABUS_TEMPLATE_URL}
+              download="glendale-subject-syllabus-template.pdf"
+              className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-800 hover:bg-blue-100"
+            >
+              Download Syllabus Template
+            </a>
           </div>
 
           {syllabusUrl ? (
