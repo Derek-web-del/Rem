@@ -23,5 +23,5 @@ test('DEFAULT_BACKUP_TABLE_KEYS includes auth and quiz tables', () => {
 test('DEFAULT_BACKUP_TABLE_KEYS includes expanded recovery tables', () => {
   assert.ok(DEFAULT_BACKUP_TABLE_KEYS.includes('lms_activity_logs'))
   assert.ok(DEFAULT_BACKUP_TABLE_KEYS.includes('curriculum_guides'))
-  assert.ok(DEFAULT_BACKUP_TABLE_KEYS.includes('quiz_password_access'))
+  assert.ok(DEFAULT_BACKUP_TABLE_KEYS.includes('subject_schedules'))
 })

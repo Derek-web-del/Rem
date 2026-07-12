@@ -154,6 +154,7 @@ export const LNBAK_TABLE_ORDER = [
   'students',
   'sections',
   'subjects',
+  'subject_schedules',
   'curriculum',
   'curriculum_guides',
   'announcements',
@@ -197,6 +198,7 @@ const RESTORE_PARENT_KEYS = {
   activity_submissions: 'activities',
   subject_modules: 'subjects',
   subject_topics: 'subjects',
+  subject_schedules: 'subjects',
   subject_module_subtopics: 'subject_modules',
   subject_grade_criteria: 'subjects',
   subject_grade_components: 'subjects',
@@ -221,6 +223,7 @@ const TABLE_FROM_SQL = {
   faculties: 'public.faculties',
   faculty_sections: 'public.faculty_sections',
   subjects: 'public.subjects',
+  subject_schedules: 'public.subject_schedules',
   subject_grade_criteria: 'public.subject_grade_criteria',
   subject_grade_components: 'public.subject_grade_components',
   subject_topics: 'public.subject_topics',
@@ -260,6 +263,7 @@ const TABLE_SELECT_SQL = {
   faculties: 'SELECT * FROM public.faculties ORDER BY updated_at DESC NULLS LAST, id',
   faculty_sections: 'SELECT * FROM public.faculty_sections ORDER BY faculty_id, section_id',
   subjects: 'SELECT * FROM public.subjects ORDER BY id',
+  subject_schedules: 'SELECT * FROM public.subject_schedules ORDER BY subject_id, day_of_week, start_time',
   subject_grade_criteria: 'SELECT * FROM public.subject_grade_criteria ORDER BY subject_id',
   subject_grade_components: 'SELECT * FROM public.subject_grade_components ORDER BY subject_id, component_order ASC, id ASC',
   subject_topics: 'SELECT * FROM public.subject_topics ORDER BY subject_id, topic_order ASC, id ASC',
@@ -1055,6 +1059,17 @@ export function prepareRestoreRowsForInsert(parsed, tableKey, rawRows) {
     if (skipped > 0) {
       console.warn(
         `[BACKUP] Skipped ${skipped} subject_topics row(s) with invalid subject_id`,
+      )
+    }
+    return rows
+  }
+
+  if (tableKey === 'subject_schedules') {
+    const subjectIds = getEffectiveParentIds(parsed, 'subjects')
+    const { rows, skipped } = sanitizeChildFkRows(rawRows, subjectIds, { parentColumn: 'subject_id' })
+    if (skipped > 0) {
+      console.warn(
+        `[BACKUP] Skipped ${skipped} subject_schedules row(s) with invalid subject_id`,
       )
     }
     return rows
@@ -2054,9 +2069,29 @@ function teeStream(source, destinations) {
   })
 }
 
-export function buildLnbakFilename(type = 'manual') {
+export function buildLnbakFilename(type = 'manual', backupId = null) {
   const dateStr = new Date().toISOString().slice(0, 10)
-  return `backup_${type}_${dateStr}.lnbak`
+  const idSuffix = String(backupId || randomUUID())
+    .replace(/-/g, '')
+    .slice(0, 12)
+  return `backup_${type}_${dateStr}_${idSuffix}.lnbak`
+}
+
+/** Remove all entries inside a directory (keeps the directory itself — safe for volume mounts). */
+export async function clearDirectoryContents(dirPath) {
+  let entries
+  try {
+    entries = await fsp.readdir(dirPath, { withFileTypes: true })
+  } catch (e) {
+    if (e?.code === 'ENOENT') {
+      await fsp.mkdir(dirPath, { recursive: true })
+      return
+    }
+    throw e
+  }
+  await Promise.all(
+    entries.map((ent) => fsp.rm(path.join(dirPath, ent.name), { recursive: true, force: true })),
+  )
 }
 
 export async function writeLnbakArchiveToPath({
@@ -2484,8 +2519,11 @@ export async function restoreDatabaseFromParsed(parsed) {
   }
 }
 
-async function extractTarGzFromPath(tarGzPath, destDir = UPLOADS_DIR) {
+async function extractTarGzFromPath(tarGzPath, destDir = UPLOADS_DIR, { replaceContents = true } = {}) {
   await fsp.mkdir(destDir, { recursive: true })
+  if (replaceContents) {
+    await clearDirectoryContents(destDir)
+  }
   await tar.x({ file: tarGzPath, cwd: destDir, gzip: true, strict: false })
   return true
 }
@@ -2494,23 +2532,23 @@ async function extractTarGzToUploads(tarGzBuffer, uploadsDir = UPLOADS_DIR) {
   const tempFile = path.join(tmpdir(), `lnbak-uploads-${randomUUID()}.tar.gz`)
   await fsp.writeFile(tempFile, tarGzBuffer)
   try {
-    await extractTarGzFromPath(tempFile, uploadsDir)
+    await extractTarGzFromPath(tempFile, uploadsDir, { replaceContents: true })
   } finally {
     await fsp.unlink(tempFile).catch(() => {})
   }
 }
 
-export async function extractSubjectAssetsArchive(assetsSource) {
+export async function extractSubjectAssetsArchive(assetsSource, { assetsDir = SUBJECT_ASSETS_DIR } = {}) {
   if (!assetsSource) return true
   try {
     if (typeof assetsSource === 'string' && assetsSource) {
-      await extractTarGzFromPath(assetsSource, SUBJECT_ASSETS_DIR)
+      await extractTarGzFromPath(assetsSource, assetsDir)
       await fsp.unlink(assetsSource).catch(() => {})
     } else if (Buffer.isBuffer(assetsSource)) {
       const tempFile = path.join(tmpdir(), `lnbak-assets-${randomUUID()}.tar.gz`)
       await fsp.writeFile(tempFile, assetsSource)
       try {
-        await extractTarGzFromPath(tempFile, SUBJECT_ASSETS_DIR)
+        await extractTarGzFromPath(tempFile, assetsDir)
       } finally {
         await fsp.unlink(tempFile).catch(() => {})
       }
@@ -2522,13 +2560,13 @@ export async function extractSubjectAssetsArchive(assetsSource) {
   }
 }
 
-export async function extractUploadsArchive(uploadsSource) {
+export async function extractUploadsArchive(uploadsSource, { uploadsDir = UPLOADS_DIR } = {}) {
   try {
     if (typeof uploadsSource === 'string' && uploadsSource) {
-      await extractTarGzFromPath(uploadsSource)
+      await extractTarGzFromPath(uploadsSource, uploadsDir)
       await fsp.unlink(uploadsSource).catch(() => {})
     } else if (Buffer.isBuffer(uploadsSource)) {
-      await extractTarGzToUploads(uploadsSource)
+      await extractTarGzToUploads(uploadsSource, uploadsDir)
     }
     return true
   } catch (e) {

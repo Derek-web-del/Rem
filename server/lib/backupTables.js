@@ -8,6 +8,7 @@ export const LNBAK_TABLE_KEYS = [
   'students',
   'sections',
   'subjects',
+  'subject_schedules',
   'curriculum',
   'curriculum_guides',
   'announcements',

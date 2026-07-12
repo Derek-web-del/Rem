@@ -17,6 +17,7 @@ import {
   logBackupAudit,
   mapBackupRow,
   maybeUploadBackupToDrive,
+  assertBackupFileReadable,
 } from '../lib/backupService.js'
 import { LNBAK_TABLE_KEYS } from '../lib/backupTables.js'
 import {
@@ -265,7 +266,7 @@ export function createBackupRouter(express, auth) {
 
       const dateStr = new Date().toISOString().slice(0, 10)
       const downloadName = `backup_manual_${dateStr}.lnbak`
-      const diskName = buildLnbakFilename(type)
+      const diskName = buildLnbakFilename(type, backupId)
       const diskPath = path.join(BACKUPS_DIR, diskName)
 
       const { sizeMb, filePath, files_backed_up, uploads_size_bytes } = await writeLnbakArchiveToPath({
@@ -274,6 +275,8 @@ export function createBackupRouter(express, auth) {
         diskPath,
         manifest,
       })
+
+      const exportedTables = Array.isArray(meta?.table_order) ? meta.table_order : LNBAK_TABLE_KEYS
 
       await pool.query(
         `INSERT INTO public.backups (id, name, type, status, size_mb, file_path, notes, tables_included, created_by, completed_at, files_backed_up, uploads_size_bytes)
@@ -285,7 +288,7 @@ export function createBackupRouter(express, auth) {
           sizeMb,
           filePath,
           req.body?.notes || null,
-          LNBAK_TABLE_KEYS,
+          exportedTables,
           actor.id,
           files_backed_up ?? null,
           uploads_size_bytes ?? null,
@@ -562,8 +565,8 @@ export function createBackupRouter(express, auth) {
         res.status(404).json({ success: false, error: 'Backup file not found.' })
         return
       }
-      const fileName = path.basename(row.file_path)
-      const filePath = path.resolve(row.file_path)
+      const filePath = await assertBackupFileReadable(row.file_path)
+      const fileName = path.basename(filePath)
       const backupsRoot = path.resolve(BACKUPS_DIR)
       if (!filePath.startsWith(backupsRoot + path.sep)) {
         res.status(403).json({ success: false, message: 'Access denied' })
@@ -597,7 +600,8 @@ export function createBackupRouter(express, auth) {
         return
       }
       actor = actorFromSession(session)
-      const opened = await readLnbakFromPath(row.file_path)
+      const backupFilePath = await assertBackupFileReadable(row.file_path)
+      const opened = await readLnbakFromPath(backupFilePath)
 
       const runRestore = async (onProgress) =>
         runRestorePipeline({

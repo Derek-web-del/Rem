@@ -1092,6 +1092,9 @@ export default function BackupPage() {
                       <td className="px-4 py-3">
                         <div className="font-semibold text-neutral-900">{row.name}</div>
                         <div className="text-xs text-neutral-500">{formatBackupDate(row.created_at)}</div>
+                        {filename ? (
+                          <div className="mt-0.5 font-mono text-[10px] text-neutral-400">{filename}</div>
+                        ) : null}
                         {row.notes ? <div className="mt-0.5 text-xs text-neutral-400">{row.notes}</div> : null}
                         {failed && row.error_message ? (
                           <div className="mt-1 text-xs text-red-600">{row.error_message}</div>

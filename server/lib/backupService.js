@@ -198,6 +198,25 @@ export async function restoreFromBackupFile(filePath, tableKeys = null) {
   return {}
 }
 
+export async function assertBackupFileReadable(filePath) {
+  const resolved = path.resolve(String(filePath || '').trim())
+  if (!resolved) {
+    const err = new Error('Backup file path is missing.')
+    err.code = 'BACKUP_FILE_MISSING'
+    throw err
+  }
+  try {
+    await fs.access(resolved, fs.constants.R_OK)
+  } catch {
+    const err = new Error(
+      'Backup file is missing on disk. The archive may have been deleted or the server storage was reset. Create a new backup or upload a downloaded .lnbak file.',
+    )
+    err.code = 'BACKUP_FILE_MISSING'
+    throw err
+  }
+  return resolved
+}
+
 export async function runBackupJob({
   name,
   type = 'manual',
@@ -211,7 +230,7 @@ export async function runBackupJob({
   ensureBackupsDirectory()
   const tableList = normalizeBackupTableKeys(tables.length ? tables : LNBAK_TABLE_KEYS)
   const displayName =
-    String(name || '').trim() || buildLnbakFilename(type).replace('.lnbak', '')
+    String(name || '').trim() || buildLnbakFilename(type, backupId).replace('.lnbak', '')
 
   await pool.query(
     `INSERT INTO public.backups (id, name, type, status, notes, tables_included, created_by)
@@ -221,7 +240,8 @@ export async function runBackupJob({
 
   try {
     const { meta, data, manifest } = await exportBackupData(pool, { createdBy })
-    const filename = buildLnbakFilename(type)
+    const exportedTables = Array.isArray(meta?.table_order) ? meta.table_order : tableList
+    const filename = buildLnbakFilename(type, backupId)
     const filePath = path.join(BACKUPS_DIR, filename)
     const { sizeMb, files_backed_up, uploads_size_bytes } = await writeLnbakArchiveToPath({
       meta,
@@ -232,9 +252,9 @@ export async function runBackupJob({
     await pool.query(
       `UPDATE public.backups
        SET status = 'completed', size_mb = $2, file_path = $3, completed_at = NOW(), error_message = NULL,
-           files_backed_up = $4, uploads_size_bytes = $5
+           files_backed_up = $4, uploads_size_bytes = $5, tables_included = $6
        WHERE id = $1`,
-      [backupId, sizeMb, filePath, files_backed_up ?? null, uploads_size_bytes ?? null],
+      [backupId, sizeMb, filePath, files_backed_up ?? null, uploads_size_bytes ?? null, exportedTables],
     )
 
     let gdrive = { uploaded: false, skipped: true, failed: false }
