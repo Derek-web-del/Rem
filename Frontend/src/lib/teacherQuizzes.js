@@ -9,6 +9,7 @@ export {
   combineDateAndTimeToIso,
   formatDeadlineDisplay,
   isPastDeadline,
+  isSubmissionScoreEditable,
 } from './teacherAssignments.js'
 
 import { QUESTION_TYPE_LABELS, typeBadgeClass } from './quizQuestionTypes.js'

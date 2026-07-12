@@ -200,7 +200,7 @@ export function mountTeacherActivitiesRoutes(router, {
       const totalScore = Number(activityRow.total_score) || 100
       const rows = await fetchSubmissionsForActivity(pool, id, gradeLevel)
       const submissions = rows
-        .map((r) => mapActivitySubmissionRow(r, totalScore))
+        .map((r) => mapActivitySubmissionRow(r, totalScore, activityRow.submission_deadline))
         .sort((a, b) => String(a.student_name || '').localeCompare(String(b.student_name || '')))
       res.json({
         ok: true,
@@ -649,7 +649,7 @@ export function mountTeacherActivitiesRoutes(router, {
       } catch {
         /* non-fatal */
       }
-      res.json({ ok: true, submission: mapActivitySubmissionRow(rows[0], totalScore) })
+      res.json({ ok: true, submission: mapActivitySubmissionRow(rows[0], totalScore, activityRow.submission_deadline) })
     } catch (e) {
       sendSafeServerError(res, e, 'PATCH /api/teacher/activities/:id/submissions/:submissionId/score')
     }

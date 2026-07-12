@@ -5,6 +5,7 @@ import {
   formatDeadlineDisplay,
   formatDurationMins,
   isPastDeadline,
+  isSubmissionScoreEditable,
   QUESTION_TYPE_LABELS,
   quizPartTypeLabels,
   typeBadgeClass,
@@ -93,7 +94,14 @@ export default function TeacherQuizView() {
   const [fromCache, setFromCache] = useState(false)
 
   const totalPoints = quiz?.total_points ?? roster?.summary?.max_points ?? 100
-  const scoreLocked = isPastDeadline(quiz?.deadline)
+  const deadlineIso = quiz?.deadline
+  const deadlinePassed = isPastDeadline(deadlineIso)
+  const rosterStudents = roster?.students || []
+  const hasLateExtensionStudents = rosterStudents.some((s) => s.has_late_extension)
+  const allScoresLocked =
+    deadlinePassed &&
+    rosterStudents.length > 0 &&
+    rosterStudents.every((s) => !isSubmissionScoreEditable(s, deadlineIso))
   const gradedSummary = useMemo(() => {
     const students = roster?.students || []
     const total = students.length
@@ -357,10 +365,16 @@ export default function TeacherQuizView() {
                 </div>
               </div>
 
-              {scoreLocked ? (
+              {allScoresLocked ? (
                 <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
                   <i className="ti ti-lock mr-1.5 inline-block align-middle" aria-hidden="true" />
                   {SCORE_LOCKED_MSG}
+                </div>
+              ) : hasLateExtensionStudents ? (
+                <div className="mt-4 rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
+                  <i className="ti ti-clock mr-1.5 inline-block align-middle" aria-hidden="true" />
+                  Some students have an admin-granted late submission window. You can edit their scores until
+                  each student&apos;s extension deadline.
                 </div>
               ) : null}
 
@@ -458,7 +472,16 @@ export default function TeacherQuizView() {
                               <td className="px-4 py-3">
                                 {!st.submission_id ? (
                                   <span className="text-xs text-neutral-500">No submission</span>
-                                ) : scoreLocked ? (
+                                ) : isSubmissionScoreEditable(st, deadlineIso) ? (
+                                  <button
+                                    type="button"
+                                    className="rounded-md px-3 py-1.5 text-xs font-semibold text-white hover:brightness-110"
+                                    style={BTN_EDIT}
+                                    onClick={() => openEditScore(st)}
+                                  >
+                                    Edit Score
+                                  </button>
+                                ) : (
                                   <span
                                     className="inline-flex items-center gap-1 text-sm text-neutral-600"
                                     title={SCORE_LOCKED_MSG}
@@ -468,15 +491,6 @@ export default function TeacherQuizView() {
                                       ? `${formatScoreWithPercent(st.score, st.total_points)} (locked)`
                                       : '— (locked)'}
                                   </span>
-                                ) : (
-                                  <button
-                                    type="button"
-                                    className="rounded-md px-3 py-1.5 text-xs font-semibold text-white hover:brightness-110"
-                                    style={BTN_EDIT}
-                                    onClick={() => openEditScore(st)}
-                                  >
-                                    Edit Score
-                                  </button>
                                 )}
                               </td>
                             </tr>

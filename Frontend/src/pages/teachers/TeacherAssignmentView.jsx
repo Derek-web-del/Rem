@@ -4,6 +4,7 @@ import {
   downloadSubmissionFile,
   formatDateYmd,
   isPastDeadline,
+  isSubmissionScoreEditable,
   resolveAssignmentFileUrl,
   submissionStatusBadge,
   updateSubmissionScore,
@@ -199,7 +200,11 @@ export default function TeacherAssignmentView() {
 
   const assignmentIndex = assignment?.id ? assignment.id : '1'
   const totalScore = assignment?.total_score ?? 100
-  const scoreLocked = isPastDeadline(assignment?.submission_deadline)
+  const deadlineIso = assignment?.submission_deadline
+  const deadlinePassed = isPastDeadline(deadlineIso)
+  const hasLateExtensionStudents = submissions.some((s) => s.has_late_extension)
+  const allScoresLocked =
+    deadlinePassed && submissions.length > 0 && submissions.every((s) => !isSubmissionScoreEditable(s, deadlineIso))
   const gradingSummary = useMemo(() => countGradedSubmissions(submissions), [submissions])
 
   function openEditScore(sub) {
@@ -320,10 +325,16 @@ export default function TeacherAssignmentView() {
                 </div>
               </div>
 
-              {scoreLocked ? (
+              {allScoresLocked ? (
                 <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
                   <i className="ti ti-lock mr-1.5 inline-block align-middle" aria-hidden="true" />
                   {SCORE_LOCKED_MSG}
+                </div>
+              ) : hasLateExtensionStudents ? (
+                <div className="mt-4 rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
+                  <i className="ti ti-clock mr-1.5 inline-block align-middle" aria-hidden="true" />
+                  Some students have an admin-granted late submission window. You can edit their scores until
+                  each student&apos;s extension deadline.
                 </div>
               ) : null}
 
@@ -389,7 +400,9 @@ export default function TeacherAssignmentView() {
                           </td>
                           <td className="px-4 py-4">
                             <div className="flex flex-wrap items-center gap-2">
-                              {scoreLocked ? (
+                              {isSubmissionScoreEditable(sub, deadlineIso) ? (
+                                <ActionBtn label="Edit Score" style={BTN_EDIT} onClick={() => openEditScore(sub)} />
+                              ) : (
                                 <span
                                   className="inline-flex items-center gap-1 text-sm text-neutral-600"
                                   title={SCORE_LOCKED_MSG}
@@ -399,8 +412,6 @@ export default function TeacherAssignmentView() {
                                     ? `${formatScoreWithPercent(sub.score, totalScore)} (locked)`
                                     : '— (locked)'}
                                 </span>
-                              ) : (
-                                <ActionBtn label="Edit Score" style={BTN_EDIT} onClick={() => openEditScore(sub)} />
                               )}
                               <ActionBtn
                                 label="View File"

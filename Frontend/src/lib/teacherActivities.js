@@ -9,6 +9,7 @@ export {
   formatSubjectOption,
   formatDateYmd,
   isPastDeadline,
+  isSubmissionScoreEditable,
   splitDeadlineToDateAndTime,
   combineDateAndTimeToIso,
   formatDeadlineDisplay,
@@ -52,6 +53,10 @@ export function mapActivitySubmissionRow(row) {
     status: String(row.status ?? 'not_submitted').trim().toLowerCase(),
     submitted_at: row.submitted_at ?? null,
     total_score: row.total_score != null ? Number(row.total_score) : 100,
+    late_submission_until: row.late_submission_until ?? null,
+    has_late_extension: Boolean(row.has_late_extension),
+    score_editable: row.score_editable !== false,
+    score_locked: Boolean(row.score_locked),
   }
 }
 

@@ -6,6 +6,7 @@ import {
   studentDisplayName,
   submissionStudentDisplayName,
 } from './studentPiiCrypto.js'
+import { buildTeacherSubmissionScoreMeta } from './studentWorkPortal.js'
 
 const ASSIGNMENT_SELECT = `
   a.id,
@@ -138,10 +139,11 @@ export function mapAssignmentRow(row) {
   }
 }
 
-export function mapSubmissionRow(row, totalScore = 100) {
+export function mapSubmissionRow(row, totalScore = 100, deadline = null) {
   if (!row) return null
   const score = row.score != null ? Number(row.score) : null
   const status = String(row.status ?? 'not_submitted').trim().toLowerCase()
+  const scoreMeta = deadline ? buildTeacherSubmissionScoreMeta(deadline, row) : {}
   return {
     id: row.id != null ? String(row.id) : '',
     assignment_id: row.assignment_id != null ? String(row.assignment_id) : '',
@@ -156,6 +158,7 @@ export function mapSubmissionRow(row, totalScore = 100) {
     submitted_at: row.submitted_at ?? null,
     feedback: String(row.feedback ?? '').trim(),
     total_score: totalScore,
+    ...scoreMeta,
   }
 }
 

@@ -2766,7 +2766,7 @@ export function createTeacherApiRouter(express, auth) {
       const totalScore = Number(assignmentRow.total_score) || 100
       const rows = await fetchSubmissionsForAssignment(pool, id, gradeLevel)
       const submissions = rows
-        .map((r) => mapSubmissionRow(r, totalScore))
+        .map((r) => mapSubmissionRow(r, totalScore, assignmentRow.submission_deadline))
         .sort((a, b) => String(a.student_name || '').localeCompare(String(b.student_name || '')))
       res.json({
         ok: true,
@@ -3218,7 +3218,7 @@ export function createTeacherApiRouter(express, auth) {
       } catch {
         /* non-fatal */
       }
-      res.json({ ok: true, submission: mapSubmissionRow(rows[0], totalScore) })
+      res.json({ ok: true, submission: mapSubmissionRow(rows[0], totalScore, assignmentRow.submission_deadline) })
     } catch (e) {
       sendSafeServerError(res, e, 'PATCH /api/teacher/assignments/:id/submissions/:submissionId/score')
     }

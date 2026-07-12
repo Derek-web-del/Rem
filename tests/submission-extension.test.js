@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import {
   isSubmissionOpenForStudent,
   isWorkLockedForStudent,
+  buildTeacherSubmissionScoreMeta,
 } from '../server/lib/studentWorkPortal.js'
 import { mapScoredWorkItem } from '../server/lib/gradesDb.js'
 import { isQuizOpenForStudent } from '../server/lib/quizSubmissionsDb.js'
@@ -19,13 +20,23 @@ describe('late submission helpers', () => {
     assert.equal(isSubmissionOpenForStudent(future, null), true)
   })
 
-  it('isWorkLockedForStudent unlocks during extension and after in-window submit', () => {
+  it('isWorkLockedForStudent unlocks only during active extension after deadline', () => {
     assert.equal(isWorkLockedForStudent(past, future), false)
     assert.equal(isWorkLockedForStudent(past, past), true)
-    assert.equal(
-      isWorkLockedForStudent(past, past, { submittedAt: past }),
-      false,
-    )
+    assert.equal(isWorkLockedForStudent(future, null), false)
+  })
+
+  it('buildTeacherSubmissionScoreMeta marks editable only during active extension', () => {
+    const active = buildTeacherSubmissionScoreMeta(past, { late_submission_until: future })
+    assert.equal(active.score_editable, true)
+    assert.equal(active.has_late_extension, true)
+
+    const expired = buildTeacherSubmissionScoreMeta(past, {
+      late_submission_until: past,
+      submitted_at: past,
+    })
+    assert.equal(expired.score_editable, false)
+    assert.equal(expired.score_locked, true)
   })
 
   it('isQuizOpenForStudent matches assignment helper semantics', () => {
@@ -58,6 +69,29 @@ describe('mapScoredWorkItem with late extension', () => {
     assert.ok(mapped)
     assert.equal(mapped.is_locked, false)
     assert.equal(mapped.has_late_extension, true)
+  })
+
+  it('is locked again after extension expires even if student submitted during window', () => {
+    const mapped = mapScoredWorkItem(
+      {
+        id: 1,
+        type: 'assignment',
+        title: 'Essay',
+        max_points: 100,
+        deadline: pastDeadline,
+      },
+      {
+        has_score: true,
+        score: 80,
+        submission_id: 10,
+        max_points: 100,
+        late_submission_until: pastDeadline,
+        submitted_at: pastDeadline,
+      },
+      { includeUnsubmittedLocked: true },
+    )
+    assert.ok(mapped)
+    assert.equal(mapped.is_locked, true)
   })
 })
 

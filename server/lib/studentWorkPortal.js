@@ -52,24 +52,24 @@ export function isSubmissionOpenForStudent(deadlineIso, lateUntilIso) {
   return isSubmissionOpen(deadlineIso)
 }
 
-export function isWorkLockedForStudent(deadlineIso, lateUntilIso, { submittedAt } = {}) {
+export function isWorkLockedForStudent(deadlineIso, lateUntilIso) {
   if (!isDeadlinePassed(deadlineIso)) return false
   if (lateUntilIso) {
     const late = new Date(lateUntilIso)
     if (!Number.isNaN(late.getTime()) && late.getTime() >= Date.now()) return false
   }
-  if (submittedAt && lateUntilIso) {
-    const submitted = new Date(submittedAt)
-    const late = new Date(lateUntilIso)
-    if (
-      !Number.isNaN(submitted.getTime()) &&
-      !Number.isNaN(late.getTime()) &&
-      submitted.getTime() <= late.getTime()
-    ) {
-      return false
-    }
-  }
   return true
+}
+
+export function buildTeacherSubmissionScoreMeta(deadlineIso, submissionRow) {
+  const lateUntil = normalizeIso(submissionRow?.late_submission_until)
+  const locked = isWorkLockedForStudent(deadlineIso, lateUntil)
+  return {
+    late_submission_until: lateUntil,
+    has_late_extension: Boolean(lateUntil && new Date(lateUntil).getTime() >= Date.now()),
+    score_editable: !locked,
+    score_locked: locked,
+  }
 }
 
 function normalizeIso(value) {

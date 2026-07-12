@@ -8,7 +8,7 @@ import {
 import { normalizeGradeLevel, resolveStudentGradeLevel } from './studentSession.js'
 import { studentDisplayName } from './studentPiiCrypto.js'
 import { ensureLateSubmissionColumns } from './lateSubmissionSchema.js'
-import { isSubmissionOpenForStudent } from './studentWorkPortal.js'
+import { buildTeacherSubmissionScoreMeta, isSubmissionOpenForStudent } from './studentWorkPortal.js'
 
 export async function ensureQuizSubmissionsSchema(pool) {
   await ensureQuizzesSchema(pool)
@@ -963,7 +963,8 @@ export async function fetchQuizRosterScores(pool, quizId, facultyId, { sectionId
         sub.total_points AS submission_total_points,
         sub.submitted_at,
         sub.time_spent_seconds,
-        sub.violations
+        sub.violations,
+        sub.late_submission_until
       FROM students st
       LEFT JOIN sections s ON s.id = st.section_id
       LEFT JOIN quiz_submissions sub ON sub.quiz_id = $1 AND sub.student_id = st.id
@@ -996,6 +997,9 @@ export async function fetchQuizRosterScores(pool, quizId, facultyId, { sectionId
     }
 
     const violations = parseViolationsColumn(row.violations)
+    const scoreMeta = buildTeacherSubmissionScoreMeta(quiz.deadline, {
+      late_submission_until: row.late_submission_until,
+    })
 
     return {
       student_id: row.student_id != null ? String(row.student_id) : '',
@@ -1019,6 +1023,7 @@ export async function fetchQuizRosterScores(pool, quizId, facultyId, { sectionId
       time_spent_seconds: row.time_spent_seconds != null ? Number(row.time_spent_seconds) : 0,
       violations,
       violation_count: violations.length,
+      ...scoreMeta,
     }
   })
 

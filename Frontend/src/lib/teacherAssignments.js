@@ -24,6 +24,19 @@ export function isPastDeadline(deadlineIso) {
   return d.getTime() < Date.now()
 }
 
+export function isSubmissionScoreEditable(submission, deadlineIso) {
+  if (submission && typeof submission.score_editable === 'boolean') {
+    return submission.score_editable
+  }
+  if (!deadlineIso || !isPastDeadline(deadlineIso)) return true
+  const lateUntil = submission?.late_submission_until
+  if (lateUntil) {
+    const d = new Date(lateUntil)
+    if (!Number.isNaN(d.getTime()) && d.getTime() >= Date.now()) return true
+  }
+  return false
+}
+
 export function formatDateYmd(iso) {
   if (!iso) return '—'
   const d = new Date(iso)
@@ -130,6 +143,10 @@ export function mapSubmissionRow(row) {
     status: String(row.status ?? 'not_submitted').trim().toLowerCase(),
     submitted_at: row.submitted_at ?? null,
     total_score: row.total_score != null ? Number(row.total_score) : 100,
+    late_submission_until: row.late_submission_until ?? null,
+    has_late_extension: Boolean(row.has_late_extension),
+    score_editable: row.score_editable !== false,
+    score_locked: Boolean(row.score_locked),
   }
 }
 

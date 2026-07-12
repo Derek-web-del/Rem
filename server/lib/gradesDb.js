@@ -136,7 +136,7 @@ function mapRow(row, type) {
     deadline,
     late_submission_until: lateUntil,
     has_late_extension: Boolean(lateUntil && new Date(lateUntil).getTime() >= Date.now()),
-    is_locked: isWorkLockedForStudent(deadline, lateUntil, { submittedAt }),
+    is_locked: isWorkLockedForStudent(deadline, lateUntil),
   }
 }
 
@@ -445,7 +445,7 @@ export function mapScoredWorkItem(item, cell, { includeUnsubmittedLocked = false
   const maxScore = toNum(cell?.max_points ?? item.max_points)
   const deadline = normalizeDeadlineIso(item.deadline)
   const lateUntil = normalizeDeadlineIso(cell?.late_submission_until)
-  const locked = isWorkLockedForStudent(deadline, lateUntil, { submittedAt: cell?.submitted_at ?? null })
+  const locked = isWorkLockedForStudent(deadline, lateUntil)
   const submittedAt =
     cell?.submitted_at instanceof Date
       ? cell.submitted_at.toISOString()

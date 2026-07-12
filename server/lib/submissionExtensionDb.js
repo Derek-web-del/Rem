@@ -313,9 +313,7 @@ export async function fetchSubmissionLockContext(pool, entityType, submissionId,
 
   if (!row) return { locked: isDeadlinePassed(deadline), submission: null }
 
-  const locked = isWorkLockedForStudent(deadline, row.late_submission_until, {
-    submittedAt: row.submitted_at ?? null,
-  })
+  const locked = isWorkLockedForStudent(deadline, row.late_submission_until)
   return { locked, submission: row }
 }
 
@@ -326,12 +324,11 @@ export async function isTeacherSubmissionScoreLocked(pool, entityType, submissio
 
   await ensureEntitySchema(pool, type)
   const cfg = ENTITY_CONFIG[type]
-  const { rows } = await pool.query(`SELECT late_submission_until, submitted_at FROM ${cfg.submissionTable} WHERE id = $1 LIMIT 1`, [
-    subId,
-  ])
+  const { rows } = await pool.query(
+    `SELECT late_submission_until FROM ${cfg.submissionTable} WHERE id = $1 LIMIT 1`,
+    [subId],
+  )
   const row = rows?.[0]
   if (!row) return isDeadlinePassed(deadline)
-  return isWorkLockedForStudent(deadline, row.late_submission_until, {
-    submittedAt: row.submitted_at ?? null,
-  })
+  return isWorkLockedForStudent(deadline, row.late_submission_until)
 }
