@@ -6,6 +6,7 @@
 # live on disk. After moving from Droplet → App, restore uploads via Admin →
 # Data Backup (.lnbak) or copy from Droplet (scripts/export-droplet-uploads.sh).
 # Long-term: use DigitalOcean Spaces (S3-compatible) for persistent files.
+# Set DO_SPACES_ENABLED=1, DO_SPACES_BUCKET, DO_SPACES_KEY, DO_SPACES_SECRET, DO_SPACES_ENDPOINT on App Platform.
 name: lenlearn
 region: sgp
 services:

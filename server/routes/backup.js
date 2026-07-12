@@ -17,7 +17,9 @@ import {
   logBackupAudit,
   mapBackupRow,
   enqueueBackupDriveUpload,
-  assertBackupFileReadable,
+  enqueueSpacesBackupUpload,
+  resolveBackupArchivePath,
+  findBackupByFilename,
 } from '../lib/backupService.js'
 import { LNBAK_TABLE_KEYS } from '../lib/backupTables.js'
 import {
@@ -37,6 +39,8 @@ import {
   getUploadsDir,
 } from '../lib/lnbakEngine.js'
 import { summarizeModuleCoverage } from '../lib/backupCoverage.js'
+import { probeSpacesReachability } from '../lib/doSpacesBackup.js'
+import { isSpacesConfigured } from '../lib/doSpacesClient.js'
 import { getPgPool } from '../pgPool.js'
 
 ensureBackupsDirectory()
@@ -183,6 +187,7 @@ export function createBackupRouter(express, auth) {
       } catch {
         backupsWritable = false
       }
+      const spacesProbe = await probeSpacesReachability()
       res.json({
         ok: true,
         restore_engine: RESTORE_ENGINE_VERSION,
@@ -209,6 +214,7 @@ export function createBackupRouter(express, auth) {
           hint: backupsWritable
             ? 'Backup directory is writable.'
             : 'Mount a DigitalOcean Volume and set UPLOAD_DIR=/data/uploads (backups auto-use /data/backups) or set BACKUP_DIR explicitly.',
+          spaces: spacesProbe,
         },
       })
     } catch (e) {
@@ -307,6 +313,13 @@ export function createBackupRouter(express, auth) {
         actor,
       })
 
+      const spaces = await enqueueSpacesBackupUpload({
+        backupId,
+        filePath,
+        filename: diskName,
+        actor,
+      })
+
       res.setHeader('Content-Disposition', `attachment; filename="${downloadName}"`)
       res.setHeader('Content-Type', 'application/octet-stream')
       res.setHeader('X-Backup-Id', backupId)
@@ -320,12 +333,21 @@ export function createBackupRouter(express, auth) {
       } else {
         res.setHeader('X-Backup-GDrive-Status', 'skipped')
       }
+      if (spaces.uploaded) {
+        res.setHeader('X-Backup-Spaces-Status', 'success')
+      } else if (spaces.queued || spaces.uploading) {
+        res.setHeader('X-Backup-Spaces-Status', 'queued')
+      } else if (spaces.failed) {
+        res.setHeader('X-Backup-Spaces-Status', 'failed')
+      } else {
+        res.setHeader('X-Backup-Spaces-Status', 'skipped')
+      }
 
       await logBackupAudit(actor, 'BACKUP_CREATED', {
         backupId,
         backupName: downloadName,
         description: `Manual backup "${downloadName}" created and downloaded`,
-        details: { tablesCount: LNBAK_TABLE_KEYS.length, sizeMb, files_backed_up, gdrive },
+        details: { tablesCount: LNBAK_TABLE_KEYS.length, sizeMb, files_backed_up, gdrive, spaces },
       })
 
       await new Promise((resolve, reject) => {
@@ -465,6 +487,15 @@ export function createBackupRouter(express, auth) {
       try {
         await fsp.access(filePath, fs.constants.R_OK)
       } catch {
+        const row = await findBackupByFilename(filename)
+        if (row?.file_path || row?.spaces_object_key) {
+          const resolved = await resolveBackupArchivePath(
+            row.file_path || path.join(BACKUPS_DIR, filename),
+            row.spaces_object_key,
+          )
+          res.download(resolved, filename)
+          return
+        }
         res.status(404).json({ success: false, message: 'Backup file not found.' })
         return
       }
@@ -576,6 +607,94 @@ export function createBackupRouter(express, auth) {
     }
   })
 
+  router.post('/:id/upload-to-spaces', async (req, res) => {
+    try {
+      const session = await requireAdmin(req, res)
+      if (!session) return
+      const actor = actorFromSession(session)
+      const row = await getBackupById(req.params.id)
+      if (!row?.file_path) {
+        res.status(404).json({ success: false, error: 'Backup not found.' })
+        return
+      }
+      if (row.status !== 'completed') {
+        res.status(400).json({ success: false, error: 'Only completed backups can be uploaded to Spaces.' })
+        return
+      }
+      if (!isSpacesConfigured()) {
+        res.status(503).json({
+          success: false,
+          error: 'SPACES_NOT_CONFIGURED',
+          message: 'DigitalOcean Spaces is not configured on this server.',
+        })
+        return
+      }
+
+      let localPath = row.file_path
+      try {
+        await fsp.access(localPath, fs.constants.R_OK)
+      } catch {
+        if (row.spaces_object_key) {
+          res.status(404).json({
+            success: false,
+            error: 'BACKUP_FILE_MISSING',
+            message: 'Backup file missing locally. Already uploaded to Spaces or source file was removed.',
+          })
+          return
+        }
+        res.status(404).json({ success: false, error: 'Backup file not found on disk.' })
+        return
+      }
+
+      const spaces = await enqueueSpacesBackupUpload({
+        backupId: row.id,
+        filePath: localPath,
+        filename: path.basename(localPath),
+        actor,
+      })
+
+      if (spaces.skipped && !spaces.uploading && !spaces.uploaded) {
+        res.status(503).json({
+          success: false,
+          error: 'SPACES_NOT_CONFIGURED',
+          message: 'DigitalOcean Spaces is not configured.',
+        })
+        return
+      }
+
+      if (spaces.failed) {
+        res.status(502).json({
+          success: false,
+          error: 'SPACES_UPLOAD_FAILED',
+          message: spaces.error || 'Spaces upload failed.',
+        })
+        return
+      }
+
+      if (spaces.uploaded) {
+        const updated = await getBackupById(row.id)
+        res.json({
+          ok: true,
+          uploaded: true,
+          spaces_object_key: spaces.objectKey || updated?.spaces_object_key,
+          backup: mapBackupRow(updated),
+        })
+        return
+      }
+
+      const updated = await getBackupById(row.id)
+      res.status(202).json({
+        ok: true,
+        queued: true,
+        message: 'Spaces upload started in the background. Refresh in a minute to see the status.',
+        spaces_upload_status: updated?.spaces_upload_status || 'uploading',
+        backup: mapBackupRow(updated),
+      })
+    } catch (e) {
+      sendSafeServerError(res, e, 'POST /api/backup/:id/upload-to-spaces')
+    }
+  })
+
   router.get('/:id/download', async (req, res) => {
     try {
       if (!(await requireAdmin(req, res))) return
@@ -584,13 +703,8 @@ export function createBackupRouter(express, auth) {
         res.status(404).json({ success: false, error: 'Backup file not found.' })
         return
       }
-      const filePath = await assertBackupFileReadable(row.file_path)
+      const filePath = await resolveBackupArchivePath(row.file_path, row.spaces_object_key)
       const fileName = path.basename(filePath)
-      const backupsRoot = path.resolve(BACKUPS_DIR)
-      if (!filePath.startsWith(backupsRoot + path.sep)) {
-        res.status(403).json({ success: false, message: 'Access denied' })
-        return
-      }
       res.download(filePath, fileName)
     } catch (e) {
       sendSafeServerError(res, e, 'GET /api/backup/:id/download')
@@ -619,7 +733,7 @@ export function createBackupRouter(express, auth) {
         return
       }
       actor = actorFromSession(session)
-      const backupFilePath = await assertBackupFileReadable(row.file_path)
+      const backupFilePath = await resolveBackupArchivePath(row.file_path, row.spaces_object_key)
       const opened = await readLnbakFromPath(backupFilePath)
 
       const runRestore = async (onProgress) =>

@@ -54,6 +54,10 @@ const SCHEMA_STATEMENTS = [
   `ALTER TABLE public.google_oauth_tokens ADD COLUMN IF NOT EXISTS granted_scopes TEXT`,
   `ALTER TABLE public.backups ADD COLUMN IF NOT EXISTS files_backed_up INT`,
   `ALTER TABLE public.backups ADD COLUMN IF NOT EXISTS uploads_size_bytes BIGINT`,
+  `ALTER TABLE public.backups ADD COLUMN IF NOT EXISTS spaces_object_key TEXT`,
+  `ALTER TABLE public.backups ADD COLUMN IF NOT EXISTS spaces_upload_status VARCHAR(32)`,
+  `ALTER TABLE public.backups ADD COLUMN IF NOT EXISTS spaces_upload_error TEXT`,
+  `ALTER TABLE public.backups ADD COLUMN IF NOT EXISTS spaces_uploaded_at TIMESTAMPTZ`,
 ]
 
 const SEED_SCHEDULES_SQL = `

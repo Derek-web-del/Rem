@@ -17,6 +17,12 @@ import {
   exportBackupData,
   writeLnbakArchiveToPath,
 } from './lnbakEngine.js'
+import { buildBackupObjectKey, isSpacesConfigured } from './doSpacesClient.js'
+import {
+  uploadBackupToSpaces,
+  downloadBackupFromSpaces,
+  deleteBackupFromSpaces,
+} from './doSpacesBackup.js'
 
 export { BACKUPS_DIR }
 
@@ -79,11 +85,16 @@ export function mapBackupRow(row) {
     gdrive_uploaded_at: row.gdrive_uploaded_at || null,
     gdrive_upload_status: row.gdrive_upload_status ? String(row.gdrive_upload_status) : null,
     gdrive_upload_error: row.gdrive_upload_error ? String(row.gdrive_upload_error) : null,
+    spaces_object_key: row.spaces_object_key ? String(row.spaces_object_key) : null,
+    spaces_uploaded_at: row.spaces_uploaded_at || null,
+    spaces_upload_status: row.spaces_upload_status ? String(row.spaces_upload_status) : null,
+    spaces_upload_error: row.spaces_upload_error ? String(row.spaces_upload_error) : null,
   }
 }
 
 /** Prevent duplicate background uploads for the same backup id. */
 const gdriveUploadsInFlight = new Set()
+const spacesUploadsInFlight = new Set()
 
 export async function setGdriveUploadStatus(backupId, status, error = null) {
   const pool = getPgPool()
@@ -92,6 +103,18 @@ export async function setGdriveUploadStatus(backupId, status, error = null) {
     `UPDATE public.backups
      SET gdrive_upload_status = $2,
          gdrive_upload_error = $3
+     WHERE id = $1`,
+    [backupId, status || null, error ? String(error).slice(0, 2000) : null],
+  )
+}
+
+export async function setSpacesUploadStatus(backupId, status, error = null) {
+  const pool = getPgPool()
+  if (!pool || !backupId) return
+  await pool.query(
+    `UPDATE public.backups
+     SET spaces_upload_status = $2,
+         spaces_upload_error = $3
      WHERE id = $1`,
     [backupId, status || null, error ? String(error).slice(0, 2000) : null],
   )
@@ -132,7 +155,8 @@ export async function listBackups() {
     `SELECT id, name, type, status, size_mb, notes, tables_included, file_path, created_by, created_at, completed_at, error_message,
             files_backed_up, uploads_size_bytes,
             gdrive_file_id, gdrive_link, gdrive_uploaded_at,
-            gdrive_upload_status, gdrive_upload_error
+            gdrive_upload_status, gdrive_upload_error,
+            spaces_object_key, spaces_uploaded_at, spaces_upload_status, spaces_upload_error
      FROM public.backups ORDER BY created_at DESC`,
   )
   return rows.map(mapBackupRow)
@@ -244,7 +268,7 @@ export async function restoreFromBackupFile(filePath, tableKeys = null) {
   return {}
 }
 
-export async function assertBackupFileReadable(filePath) {
+export async function resolveBackupArchivePath(filePath, spacesObjectKey = null) {
   const resolved = path.resolve(String(filePath || '').trim())
   if (!resolved) {
     const err = new Error('Backup file path is missing.')
@@ -253,14 +277,39 @@ export async function assertBackupFileReadable(filePath) {
   }
   try {
     await fs.access(resolved, fs.constants.R_OK)
+    return resolved
   } catch {
-    const err = new Error(
-      'Backup file is missing on disk. The archive may have been deleted or the server storage was reset. Create a new backup or upload a downloaded .lnbak file.',
-    )
-    err.code = 'BACKUP_FILE_MISSING'
-    throw err
+    /* local missing — try Spaces */
   }
-  return resolved
+
+  const objectKey = String(spacesObjectKey || '').trim()
+  if (isSpacesConfigured() && objectKey) {
+    ensureBackupsDirectory()
+    const cachePath = path.join(BACKUPS_DIR, path.basename(resolved))
+    try {
+      await downloadBackupFromSpaces(objectKey, cachePath)
+      console.log(`[backup] Restored .lnbak from Spaces: ${objectKey} → ${cachePath}`)
+      return cachePath
+    } catch (e) {
+      const err = new Error(
+        `Backup file missing locally and Spaces download failed: ${String(e?.message || e)}`,
+      )
+      err.code = 'BACKUP_FILE_MISSING'
+      throw err
+    }
+  }
+
+  const err = new Error(
+    isSpacesConfigured()
+      ? 'Backup file is missing on disk and no Spaces copy is recorded. Create a new backup or upload a .lnbak file.'
+      : 'Backup file is missing on disk. The archive may have been deleted or the server storage was reset. Create a new backup or upload a downloaded .lnbak file.',
+  )
+  err.code = 'BACKUP_FILE_MISSING'
+  throw err
+}
+
+export async function assertBackupFileReadable(filePath, spacesObjectKey = null) {
+  return resolveBackupArchivePath(filePath, spacesObjectKey)
 }
 
 export async function runBackupJob({
@@ -327,6 +376,13 @@ export async function runBackupJob({
       })
     }
 
+    const spaces = await enqueueSpacesBackupUpload({
+      backupId,
+      filePath,
+      filename: path.basename(filePath),
+      actor: createdBy ? { id: createdBy, name: 'Administrator', email: '' } : { id: 'system', name: 'System', email: '' },
+    })
+
     return {
       id: backupId,
       name: displayName,
@@ -337,6 +393,7 @@ export async function runBackupJob({
       files_backed_up,
       uploads_size_bytes,
       gdrive,
+      spaces,
     }
   } catch (e) {
     await pool.query(
@@ -357,6 +414,9 @@ export async function deleteBackupRecord(backupId) {
     } catch {
       /* ignore missing file */
     }
+  }
+  if (row.spaces_object_key && isSpacesConfigured()) {
+    await deleteBackupFromSpaces(String(row.spaces_object_key))
   }
   await pool.query(`DELETE FROM public.backups WHERE id = $1`, [backupId])
   return row
@@ -545,4 +605,121 @@ export async function maybeUploadBackupToDrive({ backupId, filePath, filename, a
         : msg,
     }
   }
+}
+
+/**
+ * Queue a DigitalOcean Spaces upload in the background (avoids HTTP 504 on large .lnbak files).
+ * @returns {Promise<{ uploaded?: boolean, queued?: boolean, uploading?: boolean, skipped: boolean, failed: boolean, objectKey?: string, error?: string }>}
+ */
+export async function enqueueSpacesBackupUpload({ backupId, filePath, filename, actor }) {
+  if (!backupId || !filePath) {
+    return { uploaded: false, queued: false, skipped: true, failed: false }
+  }
+  if (!isSpacesConfigured()) {
+    return { uploaded: false, queued: false, skipped: true, failed: false }
+  }
+
+  const existing = await getBackupById(backupId)
+  if (existing?.spaces_object_key && existing?.spaces_upload_status === 'completed') {
+    return {
+      uploaded: true,
+      queued: false,
+      skipped: true,
+      failed: false,
+      objectKey: String(existing.spaces_object_key),
+    }
+  }
+  if (existing?.spaces_upload_status === 'uploading' || spacesUploadsInFlight.has(String(backupId))) {
+    return { uploaded: false, queued: false, uploading: true, skipped: true, failed: false }
+  }
+
+  const id = String(backupId)
+  const objectKey = buildBackupObjectKey(filename || path.basename(filePath))
+  spacesUploadsInFlight.add(id)
+  await setSpacesUploadStatus(backupId, 'uploading', null)
+  console.log(`[backup] Queued Spaces upload for backup ${id} (${objectKey})`)
+
+  setImmediate(() => {
+    void runSpacesBackupUploadJob({ backupId: id, filePath, filename, objectKey, actor }).finally(() => {
+      spacesUploadsInFlight.delete(id)
+    })
+  })
+
+  return { uploaded: false, queued: true, uploading: true, skipped: false, failed: false, objectKey }
+}
+
+/** Background worker — may run for several minutes on large archives. */
+export async function runSpacesBackupUploadJob({ backupId, filePath, filename, objectKey, actor }) {
+  const result = await maybeUploadBackupToSpaces({ backupId, filePath, filename, objectKey, actor })
+  if (result.uploaded) {
+    await setSpacesUploadStatus(backupId, 'completed', null)
+    console.log(`[backup] Spaces upload completed for backup ${backupId}`)
+    return result
+  }
+  if (result.skipped) {
+    await setSpacesUploadStatus(backupId, 'skipped', null)
+    return result
+  }
+  await setSpacesUploadStatus(backupId, 'failed', result.error || 'Spaces upload failed')
+  console.warn(`[backup] Spaces upload failed for backup ${backupId}:`, result.error || 'unknown')
+  return result
+}
+
+/**
+ * Upload backup to DigitalOcean Spaces (blocking — use enqueue for HTTP handlers).
+ */
+export async function maybeUploadBackupToSpaces({ backupId, filePath, filename, objectKey, actor }) {
+  if (!backupId || !filePath) {
+    return { uploaded: false, skipped: true, failed: false }
+  }
+  if (!isSpacesConfigured()) {
+    return { uploaded: false, skipped: true, failed: false }
+  }
+
+  try {
+    const key = objectKey || buildBackupObjectKey(filename || path.basename(filePath))
+    const result = await uploadBackupToSpaces(filePath, key)
+    if (!result?.objectKey) {
+      return { uploaded: false, skipped: false, failed: true, error: 'Upload returned no object key' }
+    }
+
+    const pool = getPgPool()
+    await pool.query(
+      `UPDATE public.backups
+       SET spaces_object_key = $2, spaces_uploaded_at = NOW(),
+           spaces_upload_status = 'completed', spaces_upload_error = NULL
+       WHERE id = $1`,
+      [backupId, result.objectKey],
+    )
+
+    await logBackupAudit(actor, 'BACKUP_UPLOADED_TO_SPACES', {
+      backupId,
+      description: 'Backup uploaded to DigitalOcean Spaces',
+      details: { objectKey: result.objectKey, etag: result.etag || null },
+    })
+
+    return { uploaded: true, skipped: false, failed: false, objectKey: result.objectKey }
+  } catch (e) {
+    console.warn('[backup] Spaces upload failed:', e?.message || e)
+    return {
+      uploaded: false,
+      skipped: false,
+      failed: true,
+      error: String(e?.message || e),
+    }
+  }
+}
+
+export async function findBackupByFilename(filename) {
+  const pool = getPgPool()
+  await ensureBackupSchema(pool)
+  const base = path.basename(String(filename || '').trim())
+  if (!base) return null
+  const { rows } = await pool.query(
+    `SELECT * FROM public.backups
+     WHERE file_path LIKE $1 OR spaces_object_key LIKE $2
+     ORDER BY created_at DESC LIMIT 1`,
+    [`%${base}`, `%${base}`],
+  )
+  return rows[0] || null
 }

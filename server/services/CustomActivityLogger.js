@@ -831,7 +831,9 @@ export class CustomActivityLogger {
                 ? 'Google Drive Disconnected'
                 : type === 'BACKUP_UPLOADED_TO_GDRIVE'
                   ? 'Backup Uploaded to Drive'
-                  : type === 'BACKUP_SCHEDULE_UPDATED'
+                  : type === 'BACKUP_UPLOADED_TO_SPACES'
+                    ? 'Backup Uploaded to Spaces'
+                    : type === 'BACKUP_SCHEDULE_UPDATED'
                     ? 'Backup Schedule Updated'
                     : 'Backup')
     return this._log({

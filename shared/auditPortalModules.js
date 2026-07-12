@@ -257,7 +257,8 @@ export function resolveInstituteActivityModule(activityType) {
   if (
     activity.startsWith('BACKUP_') ||
     activity.startsWith('GOOGLE_DRIVE_') ||
-    activity === 'BACKUP_UPLOADED_TO_GDRIVE'
+    activity === 'BACKUP_UPLOADED_TO_GDRIVE' ||
+    activity === 'BACKUP_UPLOADED_TO_SPACES'
   ) {
     return ADMIN_PORTAL_MODULES.DATA_BACKUP
   }

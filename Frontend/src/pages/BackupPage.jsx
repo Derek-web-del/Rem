@@ -453,13 +453,17 @@ export default function BackupPage() {
     (b) => b.gdrive_upload_status === 'uploading' || b.gdrive_upload_status === 'pending',
   )
 
+  const spacesUploadsPending = backups.some(
+    (b) => b.spaces_upload_status === 'uploading' || b.spaces_upload_status === 'pending',
+  )
+
   useEffect(() => {
-    if (!driveUploadsPending) return undefined
+    if (!driveUploadsPending && !spacesUploadsPending) return undefined
     const timer = setInterval(() => {
       void loadAll()
     }, 4000)
     return () => clearInterval(timer)
-  }, [driveUploadsPending, loadAll])
+  }, [driveUploadsPending, spacesUploadsPending, loadAll])
 
   useEffect(() => {
     const gdrive = searchParams.get('google_drive')
@@ -518,6 +522,7 @@ export default function BackupPage() {
         throw new Error(err.message || err.error || 'Backup failed')
       }
       const gdriveHeader = res.headers.get('X-Backup-GDrive-Status') || ''
+      const spacesHeader = res.headers.get('X-Backup-Spaces-Status') || ''
       const blob = await res.blob()
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
@@ -545,15 +550,30 @@ export default function BackupPage() {
       const failed = gdriveHeader === 'failed' || latest?.gdrive_upload_status === 'failed'
       const connected = driveStatus.connected
 
-      if (connected && uploaded) {
+      const spacesUploaded =
+        spacesHeader === 'success' ||
+        Boolean(latest?.spaces_object_key && latest?.spaces_upload_status === 'completed')
+      const spacesQueued = spacesHeader === 'queued' || latest?.spaces_upload_status === 'uploading'
+      const spacesFailed = spacesHeader === 'failed' || latest?.spaces_upload_status === 'failed'
+
+      const parts = ['Backup saved locally.']
+      if (connected && uploaded) parts.push('Google Drive: uploaded.')
+      else if (connected && queued) parts.push('Google Drive: uploading in background.')
+      else if (connected && failed) parts.push('Google Drive: upload failed.')
+      if (spacesUploaded) parts.push('DigitalOcean Spaces: uploaded.')
+      else if (spacesQueued) parts.push('DigitalOcean Spaces: uploading in background.')
+      else if (spacesFailed) parts.push('DigitalOcean Spaces: upload failed.')
+
+      if (connected && uploaded && spacesUploaded) {
+        toast.created('Backup created and saved to Google Drive and DigitalOcean Spaces.', { title: 'Backup' })
+      } else if (spacesFailed || (connected && failed)) {
+        toast.error(parts.join(' '), { title: 'Backup', durationMs: 9000 })
+      } else if (spacesQueued || (connected && queued)) {
+        toast.created(parts.join(' '), { title: 'Backup', durationMs: 9000 })
+      } else if (spacesUploaded) {
+        toast.created('Backup created and saved to DigitalOcean Spaces.', { title: 'Backup' })
+      } else if (connected && uploaded) {
         toast.created('Backup created and saved to Google Drive.', { title: 'Backup' })
-      } else if (connected && queued) {
-        toast.created(
-          'Backup saved locally. Google Drive upload started in the background — refresh in a minute.',
-          { title: 'Backup', durationMs: 9000 },
-        )
-      } else if (connected && failed) {
-        toast.error('Backup saved locally. Google Drive upload failed.', { title: 'Backup' })
       } else {
         toast.created('Backup saved locally.', { title: 'Backup' })
       }
@@ -705,6 +725,36 @@ export default function BackupPage() {
       } else {
         toast.error(msg, { title: 'Upload failed' })
       }
+    } finally {
+      setActionId('')
+    }
+  }
+
+  async function handleUploadToSpaces(row) {
+    const key = `spaces:${row.id}`
+    setActionId(key)
+    try {
+      const res = await fetch(apiUrl(`/api/backup/${encodeURIComponent(row.id)}/upload-to-spaces`), {
+        method: 'POST',
+        credentials: 'include',
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok && res.status !== 202) {
+        throw new Error(String(data?.message || data?.error || `Request failed (${res.status}).`))
+      }
+      await loadAll()
+      if (res.status === 202 || data?.queued) {
+        toast.created(
+          data?.message ||
+            'Spaces upload started in the background. Refresh in a minute to see the status.',
+          { title: 'DigitalOcean Spaces', durationMs: 9000 },
+        )
+        return
+      }
+      dispatchAuditLogsRefresh({ reason: 'backup_uploaded_to_spaces' })
+      toast.updated('Backup uploaded to DigitalOcean Spaces.', { title: 'DigitalOcean Spaces' })
+    } catch (err) {
+      toast.error(String(err?.message || err), { title: 'Spaces upload failed' })
     } finally {
       setActionId('')
     }
@@ -1091,19 +1141,20 @@ export default function BackupPage() {
                 <th className="px-4 py-3">Files</th>
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3">Google Drive</th>
+                <th className="px-4 py-3">DO Spaces</th>
                 <th className="px-4 py-3 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-neutral-100">
               {loading ? (
                 <tr>
-                  <td colSpan={8} className="px-4 py-8 text-center text-neutral-500">
+                  <td colSpan={9} className="px-4 py-8 text-center text-neutral-500">
                     Loading backups…
                   </td>
                 </tr>
               ) : backups.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-4 py-8 text-center text-neutral-500">
+                  <td colSpan={9} className="px-4 py-8 text-center text-neutral-500">
                     No backups yet. Create your first backup above.
                   </td>
                 </tr>
@@ -1194,6 +1245,54 @@ export default function BackupPage() {
                           </div>
                         ) : (
                           <span className="text-xs text-neutral-400">Drive not connected</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-neutral-700">
+                        {row.spaces_object_key && row.spaces_upload_status === 'completed' ? (
+                          <div className="flex flex-col gap-1">
+                            <span className="text-xs font-semibold text-emerald-700">Uploaded</span>
+                            <span className="font-mono text-[10px] text-neutral-500 line-clamp-2" title={row.spaces_object_key}>
+                              {row.spaces_object_key}
+                            </span>
+                          </div>
+                        ) : row.spaces_upload_status === 'uploading' ? (
+                          <div className="flex flex-col gap-1">
+                            <span className="text-xs font-semibold text-amber-700">Uploading…</span>
+                            <span className="text-[10px] text-neutral-500">Large files may take a few minutes</span>
+                          </div>
+                        ) : row.spaces_upload_status === 'failed' ? (
+                          <div className="flex flex-col gap-1">
+                            <span className="text-xs text-red-700">Upload failed</span>
+                            {row.spaces_upload_error ? (
+                              <span className="text-[10px] text-neutral-500 line-clamp-2" title={row.spaces_upload_error}>
+                                {row.spaces_upload_error}
+                              </span>
+                            ) : null}
+                            {completed ? (
+                              <button
+                                type="button"
+                                disabled={busy}
+                                onClick={() => handleUploadToSpaces(row)}
+                                className="w-fit rounded border border-neutral-200 px-2 py-0.5 text-[11px] font-semibold text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
+                              >
+                                Retry Upload
+                              </button>
+                            ) : null}
+                          </div>
+                        ) : completed ? (
+                          <div className="flex flex-col gap-1">
+                            <span className="text-xs text-neutral-500">Not uploaded</span>
+                            <button
+                              type="button"
+                              disabled={busy}
+                              onClick={() => handleUploadToSpaces(row)}
+                              className="w-fit rounded border border-neutral-200 px-2 py-0.5 text-[11px] font-semibold text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
+                            >
+                              Upload to Spaces
+                            </button>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-neutral-400">—</span>
                         )}
                       </td>
                       <td className="px-4 py-3">
