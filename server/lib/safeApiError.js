@@ -6,6 +6,14 @@ export function describeRestoreFailureReason(err) {
   const e = /** @type {Record<string, unknown>} */ (err || {})
   const constraint = typeof e.constraint === 'string' ? e.constraint : ''
   const pgCode = typeof e.pg_code === 'string' ? e.pg_code : typeof e.code === 'string' ? e.code : ''
+  if (pgCode === '25P02' || /current transaction is aborted/i.test(String(e.detail || e.message || ''))) {
+    const debug = e.restore_debug && typeof e.restore_debug === 'object' ? e.restore_debug : null
+    const replicaErr = debug && typeof debug.replicaRoleError === 'string' ? debug.replicaRoleError : ''
+    if (/session_replication_role|replication role|permission denied/i.test(replicaErr)) {
+      return 'PostgreSQL denied session_replication_role (common on managed databases). Restore continues without it — redeploy the latest server fix and retry.'
+    }
+    return 'A prior SQL step failed inside the restore transaction (often session_replication_role permission or a locked table). Check server logs for the first [BACKUP] error, then retry with no active users.'
+  }
   if (pgCode === '23503' || /foreign key/i.test(String(e.detail || e.message || ''))) {
     if (constraint.includes('topic_id')) {
       return 'foreign key constraint violation (lesson topic_id references a missing topic)'

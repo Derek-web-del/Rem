@@ -434,6 +434,44 @@ function quoteIdent(name) {
   return `"${String(name).replace(/"/g, '""')}"`
 }
 
+/** Run SQL in a SAVEPOINT so a failure does not abort the outer transaction. */
+async function runWithSavepoint(client, savepointName, fn) {
+  const sp = String(savepointName || 'sp').replace(/[^a-zA-Z0-9_]/g, '_').slice(0, 60) || 'sp'
+  await client.query(`SAVEPOINT ${sp}`)
+  try {
+    const result = await fn()
+    await client.query(`RELEASE SAVEPOINT ${sp}`)
+    return { ok: true, result }
+  } catch (err) {
+    await client.query(`ROLLBACK TO SAVEPOINT ${sp}`).catch(() => {})
+    await client.query(`RELEASE SAVEPOINT ${sp}`).catch(() => {})
+    return { ok: false, error: err }
+  }
+}
+
+/** SET LOCAL session_replication_role without leaving the transaction aborted on permission errors. */
+async function setSessionReplicationRoleSafe(client, role) {
+  const sql =
+    role === 'replica'
+      ? `SET LOCAL session_replication_role = replica`
+      : `SET LOCAL session_replication_role = DEFAULT`
+  const { ok, error } = await runWithSavepoint(client, 'restore_repl_role', async () => {
+    await client.query(sql)
+  })
+  return { ok, error }
+}
+
+/** @param {{ name: string, table_name: string, def: string }[]} saved */
+async function dropForeignKeyConstraintSafe(client, row) {
+  const tableSql = tableSqlFromRelName(row.table_name)
+  const { ok, error } = await runWithSavepoint(client, `fk_drop_${row.name}`, async () => {
+    await client.query(
+      `ALTER TABLE ${tableSql} DROP CONSTRAINT IF EXISTS ${quoteIdent(row.name)}`,
+    )
+  })
+  return { ok, error }
+}
+
 /** Hardcoded topic FKs — merged into capture so drop always targets these on DO. */
 const KNOWN_TOPIC_FK_CONSTRAINTS = [
   {
@@ -475,10 +513,13 @@ function mergeKnownTopicForeignKeys(captured) {
 /** Force-drop topic FK constraints (safe even if already dropped). */
 async function forceDropKnownTopicForeignKeys(client) {
   for (const known of KNOWN_TOPIC_FK_CONSTRAINTS) {
-    const tableSql = tableSqlFromRelName(known.table_name)
-    await client.query(
-      `ALTER TABLE ${tableSql} DROP CONSTRAINT IF EXISTS ${quoteIdent(known.name)}`,
-    )
+    const { ok, error } = await dropForeignKeyConstraintSafe(client, known)
+    if (!ok) {
+      console.warn(
+        `[BACKUP] Failed to drop topic FK ${known.name}:`,
+        error?.message || error,
+      )
+    }
   }
 }
 
@@ -523,6 +564,7 @@ export async function dropAllPublicForeignKeys(client, saved) {
     return
   }
   let dropped = 0
+  let failed = 0
   for (const row of saved) {
     const { rows: tableExists } = await client.query(
       `SELECT 1 FROM pg_class c
@@ -532,16 +574,28 @@ export async function dropAllPublicForeignKeys(client, saved) {
       [row.table_name],
     )
     if (!tableExists.length) continue
-    const tableSql = tableSqlFromRelName(row.table_name)
-    await client.query(
-      `ALTER TABLE ${tableSql} DROP CONSTRAINT IF EXISTS ${quoteIdent(row.name)}`,
-    )
-    dropped += 1
+    const { ok, error } = await dropForeignKeyConstraintSafe(client, row)
+    if (ok) {
+      dropped += 1
+    } else {
+      failed += 1
+      console.warn(
+        `[BACKUP] Failed to drop FK ${row.name} on ${row.table_name}:`,
+        error?.message || error,
+      )
+    }
   }
   const names = saved.map((r) => r.name)
   console.log(
-    `[BACKUP] Dropped ${dropped} public FK constraint(s): ${names.slice(0, 8).join(', ')}${names.length > 8 ? ', ...' : ''}`,
+    `[BACKUP] Dropped ${dropped} public FK constraint(s)${failed ? `, ${failed} failed` : ''}: ${names.slice(0, 8).join(', ')}${names.length > 8 ? ', ...' : ''}`,
   )
+  if (failed > 0 && dropped === 0) {
+    const err = new Error(
+      `Could not drop any foreign key constraints (${failed} failed). Another session may be locking tables — stop the app and retry, or run restore when no users are connected.`,
+    )
+    err.code = 'FK_DROP_FAILED'
+    throw err
+  }
   if (names.includes('subject_modules_topic_id_fkey')) {
     console.log('[BACKUP] subject_modules_topic_id_fkey dropped before insert')
   }
@@ -2412,17 +2466,19 @@ export async function restoreDatabaseFromParsed(parsed) {
     await client.query(`SET LOCAL statement_timeout = '600000'`)
     await client.query(`SET LOCAL lock_timeout = '120000'`)
     let replicaRoleActive = false
-    try {
-      await client.query(`SET LOCAL session_replication_role = replica`)
+    let replicaRoleError = null
+    const replicaResult = await setSessionReplicationRoleSafe(client, 'replica')
+    if (replicaResult.ok) {
       replicaRoleActive = true
       console.log('[BACKUP] session_replication_role=replica (FK checks disabled for truncate/insert)')
-    } catch (replicaErr) {
+    } else {
+      replicaRoleError = replicaResult.error
       console.warn(
         '[BACKUP] session_replication_role=replica unavailable — relying on FK drop + topic_id omit:',
-        replicaErr?.message || replicaErr,
+        replicaResult.error?.message || replicaResult.error,
       )
     }
-    setRestoreDebug({ replicaRoleActive })
+    setRestoreDebug({ replicaRoleActive, replicaRoleError: replicaRoleError?.message || null })
     await dropAllPublicForeignKeys(client, savedFks)
     await forceDropKnownTopicForeignKeys(client)
     const fkAfterDrop = await subjectModulesTopicFkExists(client)
@@ -2478,8 +2534,15 @@ export async function restoreDatabaseFromParsed(parsed) {
     }
 
     restorePhase = 'deferred_topic_link'
-    await client.query(`SET LOCAL session_replication_role = DEFAULT`)
-    console.log('[BACKUP] session_replication_role=DEFAULT (re-enabling FK checks for topic links)')
+    const defaultRoleResult = await setSessionReplicationRoleSafe(client, 'default')
+    if (defaultRoleResult.ok) {
+      console.log('[BACKUP] session_replication_role=DEFAULT (re-enabling FK checks for topic links)')
+    } else {
+      console.warn(
+        '[BACKUP] session_replication_role=DEFAULT unavailable — continuing with FK drop path:',
+        defaultRoleResult.error?.message || defaultRoleResult.error,
+      )
+    }
     await forceDropKnownTopicForeignKeys(client)
     await applyDeferredTopicIdsFromPlan(client, topicLinkPlan, pool)
     restorePhase = 'scrub'
