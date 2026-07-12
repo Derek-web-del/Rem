@@ -21,7 +21,7 @@ import { studentDisplayName } from '../lib/studentSession.js'
 import {
   assertStudentWorkAccess,
   fetchStudentWorkSubmission,
-  isSubmissionOpen,
+  isSubmissionOpenForStudent,
   mapStudentWorkListRow,
 } from '../lib/studentWorkPortal.js'
 import {
@@ -207,7 +207,14 @@ function registerWorkRoutes(router, { requireStudentSession, resolveStudentConte
         res.status(404).json({ success: false, error: 'NOT_FOUND', message: 'Assignment not found.' })
         return
       }
-      if (!isSubmissionOpen(row.submission_deadline)) {
+      const priorForGate = await fetchStudentWorkSubmission(
+        ctx.pool,
+        'assignment_submissions',
+        'assignment_id',
+        assignmentId,
+        ctx.studentRow.id,
+      )
+      if (!isSubmissionOpenForStudent(row.submission_deadline, priorForGate?.late_submission_until)) {
         res.status(400).json({ success: false, error: 'CLOSED', message: 'Submission period has ended.' })
         return
       }
@@ -417,7 +424,14 @@ function registerWorkRoutes(router, { requireStudentSession, resolveStudentConte
         res.status(404).json({ success: false, error: 'NOT_FOUND', message: 'Activity not found.' })
         return
       }
-      if (!isSubmissionOpen(row.submission_deadline)) {
+      const priorForGate = await fetchStudentWorkSubmission(
+        ctx.pool,
+        'activity_submissions',
+        'activity_id',
+        activityId,
+        ctx.studentRow.id,
+      )
+      if (!isSubmissionOpenForStudent(row.submission_deadline, priorForGate?.late_submission_until)) {
         res.status(400).json({ success: false, error: 'CLOSED', message: 'Submission period has ended.' })
         return
       }

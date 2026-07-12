@@ -91,6 +91,7 @@ import {
   materialAuditSnapshot,
 } from '../lib/teacherAuditSnapshots.js'
 import { isDeadlinePassed } from '../lib/studentWorkPortal.js'
+import { isTeacherSubmissionScoreLocked } from '../lib/submissionExtensionDb.js'
 import { deleteSubmissionFileByUrl } from '../lib/submissionStorage.js'
 import { validateGradeComponentForWork } from '../lib/subjectGradeCriteriaDb.js'
 
@@ -3150,7 +3151,7 @@ export function createTeacherApiRouter(express, auth) {
         res.status(404).json({ error: 'NOT_FOUND', message: 'Assignment not found.' })
         return
       }
-      if (isDeadlinePassed(assignmentRow.submission_deadline)) {
+      if (await isTeacherSubmissionScoreLocked(pool, 'assignment', submissionId, assignmentRow.submission_deadline)) {
         res.status(403).json({
           error: 'SCORE_LOCKED',
           message: 'Deadline has passed. Score is locked. Contact admin to request a grade correction.',

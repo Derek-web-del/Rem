@@ -3,7 +3,7 @@ import { ensureAssignmentsSchema } from './assignmentsDb.js'
 import { ensureActivitiesSchema } from './activitiesDb.js'
 import { extractFacultySectionIdsFromRow } from './facultyProfileAudit.js'
 import { studentDisplayName } from './studentPiiCrypto.js'
-import { isDeadlinePassed } from './studentWorkPortal.js'
+import { isDeadlinePassed, isWorkLockedForStudent } from './studentWorkPortal.js'
 import { fetchSubjectGradeComponents } from './subjectGradeCriteriaDb.js'
 import { fetchStudentSubjects } from './studentPortalDb.js'
 import { normalizeGradeLevel, resolveStudentGradeLevel } from './studentSession.js'
@@ -121,6 +121,7 @@ function mapRow(row, type) {
       ? row.submitted_at.toISOString()
       : row.submitted_at ?? row.updated_at ?? null
   const deadline = normalizeDeadlineIso(row.deadline)
+  const lateUntil = normalizeDeadlineIso(row.late_submission_until)
   return {
     title: String(row.title || '').trim() || 'Untitled',
     subject: String(row.subject || row.subject_name || '').trim() || '—',
@@ -133,7 +134,9 @@ function mapRow(row, type) {
     entity_type: type,
     grade_component_id: row.grade_component_id != null ? Number(row.grade_component_id) : null,
     deadline,
-    is_locked: isDeadlinePassed(deadline),
+    late_submission_until: lateUntil,
+    has_late_extension: Boolean(lateUntil && new Date(lateUntil).getTime() >= Date.now()),
+    is_locked: isWorkLockedForStudent(deadline, lateUntil, { submittedAt }),
   }
 }
 
@@ -345,7 +348,7 @@ export async function fetchStudentGrades(
     SELECT q.title, q.subject,
            qs.id AS submission_id, qs.quiz_id AS entity_id,
            q.deadline,
-           qs.score, qs.total_points AS max_score, qs.submitted_at
+           qs.score, qs.total_points AS max_score, qs.submitted_at, qs.late_submission_until
     FROM quiz_submissions qs
     INNER JOIN quizzes q ON q.id = qs.quiz_id
     WHERE qs.student_id = $1
@@ -364,7 +367,7 @@ export async function fetchStudentGrades(
            COALESCE(NULLIF(trim(a.subject_name), ''), sub.subject_name, '—') AS subject,
            s.id AS submission_id, s.assignment_id AS entity_id,
            a.submission_deadline AS deadline,
-           s.score, a.total_score AS max_score, s.submitted_at,
+           s.score, a.total_score AS max_score, s.submitted_at, s.late_submission_until,
            a.grade_component_id
     FROM assignment_submissions s
     INNER JOIN assignments a ON a.id = s.assignment_id
@@ -381,7 +384,7 @@ export async function fetchStudentGrades(
            COALESCE(NULLIF(trim(a.subject_name), ''), sub.subject_name, '—') AS subject,
            s.id AS submission_id, s.activity_id AS entity_id,
            a.submission_deadline AS deadline,
-           s.score, a.total_score AS max_score, s.submitted_at,
+           s.score, a.total_score AS max_score, s.submitted_at, s.late_submission_until,
            a.grade_component_id
     FROM activity_submissions s
     INNER JOIN activities a ON a.id = s.activity_id
@@ -441,7 +444,8 @@ function mapCriteriaComponent(comp) {
 export function mapScoredWorkItem(item, cell, { includeUnsubmittedLocked = false } = {}) {
   const maxScore = toNum(cell?.max_points ?? item.max_points)
   const deadline = normalizeDeadlineIso(item.deadline)
-  const locked = isDeadlinePassed(deadline)
+  const lateUntil = normalizeDeadlineIso(cell?.late_submission_until)
+  const locked = isWorkLockedForStudent(deadline, lateUntil, { submittedAt: cell?.submitted_at ?? null })
   const submittedAt =
     cell?.submitted_at instanceof Date
       ? cell.submitted_at.toISOString()
@@ -464,6 +468,8 @@ export function mapScoredWorkItem(item, cell, { includeUnsubmittedLocked = false
       entity_type: item.type,
       grade_component_id: item.grade_component_id != null ? Number(item.grade_component_id) : null,
       deadline,
+      late_submission_until: lateUntil,
+      has_late_extension: Boolean(lateUntil && new Date(lateUntil).getTime() >= Date.now()),
       is_locked: locked,
       has_score: true,
       is_no_submission: false,
@@ -484,7 +490,31 @@ export function mapScoredWorkItem(item, cell, { includeUnsubmittedLocked = false
       entity_type: item.type,
       grade_component_id: item.grade_component_id != null ? Number(item.grade_component_id) : null,
       deadline,
+      late_submission_until: lateUntil,
+      has_late_extension: Boolean(lateUntil && new Date(lateUntil).getTime() >= Date.now()),
       is_locked: true,
+      has_score: false,
+      is_no_submission: cell?.submission_id == null,
+    }
+  }
+
+  if (includeUnsubmittedLocked && isDeadlinePassed(deadline) && !locked) {
+    const safeMax = maxScore != null && maxScore > 0 ? maxScore : item.type === 'quiz' ? 0 : 100
+    return {
+      title: String(item.title || '').trim() || 'Untitled',
+      subject: '',
+      score: 0,
+      max_score: safeMax,
+      percent: safeMax > 0 ? 0 : 0,
+      submitted_at: submittedAt,
+      submission_id: cell?.submission_id != null ? Number(cell.submission_id) : null,
+      entity_id: Number(item.id),
+      entity_type: item.type,
+      grade_component_id: item.grade_component_id != null ? Number(item.grade_component_id) : null,
+      deadline,
+      late_submission_until: lateUntil,
+      has_late_extension: Boolean(lateUntil && new Date(lateUntil).getTime() >= Date.now()),
+      is_locked: false,
       has_score: false,
       is_no_submission: cell?.submission_id == null,
     }

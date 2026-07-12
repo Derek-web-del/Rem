@@ -44,6 +44,41 @@ export function isDeadlinePassed(deadlineIso) {
   return !isSubmissionOpen(deadlineIso)
 }
 
+export function isSubmissionOpenForStudent(deadlineIso, lateUntilIso) {
+  if (lateUntilIso) {
+    const late = new Date(lateUntilIso)
+    if (!Number.isNaN(late.getTime()) && late.getTime() >= Date.now()) return true
+  }
+  return isSubmissionOpen(deadlineIso)
+}
+
+export function isWorkLockedForStudent(deadlineIso, lateUntilIso, { submittedAt } = {}) {
+  if (!isDeadlinePassed(deadlineIso)) return false
+  if (lateUntilIso) {
+    const late = new Date(lateUntilIso)
+    if (!Number.isNaN(late.getTime()) && late.getTime() >= Date.now()) return false
+  }
+  if (submittedAt && lateUntilIso) {
+    const submitted = new Date(submittedAt)
+    const late = new Date(lateUntilIso)
+    if (
+      !Number.isNaN(submitted.getTime()) &&
+      !Number.isNaN(late.getTime()) &&
+      submitted.getTime() <= late.getTime()
+    ) {
+      return false
+    }
+  }
+  return true
+}
+
+function normalizeIso(value) {
+  if (!value) return null
+  if (value instanceof Date) return value.toISOString()
+  const d = new Date(value)
+  return Number.isNaN(d.getTime()) ? null : d.toISOString()
+}
+
 export function mapStudentWorkListRow(row, submission, kind = 'assignment') {
   const total = row.total_score != null ? Number(row.total_score) : 100
   const sub = submission || {}
@@ -52,7 +87,9 @@ export function mapStudentWorkListRow(row, submission, kind = 'assignment') {
   const submittedAt = sub.submitted_at ?? null
   const hasFile = Boolean(String(sub.file_path ?? '').trim())
   const deadline = row.submission_deadline ?? null
-  const open = isSubmissionOpen(deadline)
+  const lateUntil = normalizeIso(sub.late_submission_until)
+  const open = isSubmissionOpenForStudent(deadline, lateUntil)
+  const globalOpen = isSubmissionOpen(deadline)
 
   const { statusLabel, statusTone } = resolveWorkStatusLabelAndTone(sub, total)
 
@@ -82,7 +119,10 @@ export function mapStudentWorkListRow(row, submission, kind = 'assignment') {
     status: statusLabel,
     status_tone: statusTone,
     submission_open: open,
-    submission_badge: open ? 'Open' : 'Closed',
+    can_submit: open,
+    late_submission_until: lateUntil,
+    has_late_extension: Boolean(lateUntil && new Date(lateUntil).getTime() >= Date.now()),
+    submission_badge: open ? (globalOpen ? 'Open' : 'Late') : 'Closed',
     submission_badge_tone: open ? 'green' : 'red',
     has_submission_file: hasFile,
     kind,

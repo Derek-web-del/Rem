@@ -12,6 +12,7 @@ import {
 import { getWebSources } from '../lib/webSourceFetcher.js'
 import { parseFile } from '../lib/documentParser.js'
 import { detectAiContent } from '../lib/aiContentDetector.js'
+import { deriveAiScoresFromSimilarity } from '../../shared/aiProbabilityBands.js'
 import {
   getOriginalityUploadFile,
   originalityUploadMiddleware,
@@ -199,7 +200,17 @@ export function createPlagiarismReportsV1Router(express, auth) {
       const runAiDetection = parseRunAiDetection(req.body?.run_ai_detection)
       let aiDetectionResult = null
       if (runAiDetection) {
-        aiDetectionResult = detectAiContent(submittedText)
+        const rawAi = detectAiContent(submittedText)
+        const derived = deriveAiScoresFromSimilarity(analysis.similarity_score)
+        aiDetectionResult = derived
+          ? {
+              ...rawAi,
+              probability: derived.probability,
+              lexical_score: derived.lexical_score,
+              semantic_score: derived.semantic_score,
+              verdict: derived.verdict,
+            }
+          : rawAi
       }
 
       const processingTimeMs = Date.now() - startTime

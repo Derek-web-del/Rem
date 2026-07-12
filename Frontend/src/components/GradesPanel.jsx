@@ -6,6 +6,7 @@ import {
   gradeStatusFromPercent,
 } from '../lib/gradeStatus.js'
 import GradeOverrideModal from './GradeOverrideModal.jsx'
+import LateSubmissionModal from './LateSubmissionModal.jsx'
 
 function SummaryTile({ label, value }) {
   return (
@@ -31,7 +32,7 @@ function ScoreBar({ percent, noScoresYet = false }) {
   )
 }
 
-function GradeItemRow({ item, readOnly, isAdmin, studentId, studentName, onOverrideClick }) {
+function GradeItemRow({ item, readOnly, isAdmin, studentId, studentName, onOverrideClick, onLateSubmissionClick }) {
   return (
     <div className="flex flex-col gap-2 border-b border-neutral-100 py-3 last:border-0 sm:flex-row sm:items-center sm:justify-between">
       <div className="min-w-0 flex-1">
@@ -45,6 +46,11 @@ function GradeItemRow({ item, readOnly, isAdmin, studentId, studentName, onOverr
             <span className="inline-flex items-center gap-1 text-xs text-neutral-500" title="Score locked after deadline">
               <i className="ti ti-lock" aria-hidden="true" />
               Locked
+            </span>
+          ) : null}
+          {item.has_late_extension && item.late_submission_until ? (
+            <span className="inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-800">
+              Late until {formatSubmittedAt(item.late_submission_until)}
             </span>
           ) : null}
           {item.is_no_submission ? (
@@ -64,13 +70,22 @@ function GradeItemRow({ item, readOnly, isAdmin, studentId, studentName, onOverr
           ) : null}
         </div>
         {isAdmin && item.is_locked && item.entity_id ? (
-          <button
-            type="button"
-            onClick={() => onOverrideClick?.(item)}
-            className="shrink-0 rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700"
-          >
-            Overwrite Score
-          </button>
+          <div className="flex shrink-0 flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => onLateSubmissionClick?.(item)}
+              className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700"
+            >
+              Allow Late Submission
+            </button>
+            <button
+              type="button"
+              onClick={() => onOverrideClick?.(item)}
+              className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700"
+            >
+              Overwrite Score
+            </button>
+          </div>
         ) : null}
       </div>
     </div>
@@ -86,6 +101,7 @@ function CollapsibleSection({
   studentId,
   studentName,
   onOverrideClick,
+  onLateSubmissionClick,
 }) {
   const [open, setOpen] = useState(defaultOpen)
   const count = Array.isArray(items) ? items.length : 0
@@ -117,6 +133,7 @@ function CollapsibleSection({
                 studentId={studentId}
                 studentName={studentName}
                 onOverrideClick={onOverrideClick}
+                onLateSubmissionClick={onLateSubmissionClick}
               />
             ))
           )}
@@ -153,6 +170,7 @@ export default function GradesPanel({
   onGradesRefresh,
 }) {
   const [overrideItem, setOverrideItem] = useState(null)
+  const [lateSubmissionItem, setLateSubmissionItem] = useState(null)
   const [overrideSuccess, setOverrideSuccess] = useState('')
 
   if (loading) return <GradesPanelSkeleton />
@@ -201,6 +219,7 @@ export default function GradesPanel({
         studentId={studentId}
         studentName={studentName}
         onOverrideClick={setOverrideItem}
+        onLateSubmissionClick={setLateSubmissionItem}
       />
       <CollapsibleSection
         title="Assignments"
@@ -210,6 +229,7 @@ export default function GradesPanel({
         studentId={studentId}
         studentName={studentName}
         onOverrideClick={setOverrideItem}
+        onLateSubmissionClick={setLateSubmissionItem}
       />
       <CollapsibleSection
         title="Activities"
@@ -219,6 +239,7 @@ export default function GradesPanel({
         studentId={studentId}
         studentName={studentName}
         onOverrideClick={setOverrideItem}
+        onLateSubmissionClick={setLateSubmissionItem}
       />
 
       {overrideItem ? (
@@ -230,6 +251,20 @@ export default function GradesPanel({
           onSuccess={() => {
             setOverrideSuccess('Score overwritten and logged.')
             setOverrideItem(null)
+            onGradesRefresh?.()
+          }}
+        />
+      ) : null}
+
+      {lateSubmissionItem ? (
+        <LateSubmissionModal
+          item={lateSubmissionItem}
+          studentId={studentId}
+          studentName={studentName}
+          onClose={() => setLateSubmissionItem(null)}
+          onSuccess={() => {
+            setOverrideSuccess('Late submission allowed and logged.')
+            setLateSubmissionItem(null)
             onGradesRefresh?.()
           }}
         />

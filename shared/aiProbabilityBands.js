@@ -18,6 +18,31 @@ export function formatAiProbabilityRange(min, max) {
   return `${min}–${max}%`
 }
 
+/** Similarity → display AI probability at half scale (e.g. 46% → 23%, 90% → 45%). */
+export function scaleAiProbabilityFromSimilarity(similarityScore) {
+  const sim = Number(similarityScore)
+  if (!Number.isFinite(sim) || sim < 0) return null
+  return Math.round(Math.min(100, Math.max(0, sim * 0.5)) * 10) / 10
+}
+
+/**
+ * Derive stored AI scores from plagiarism similarity (tracks similarity, displays lower).
+ * Lexical/semantic components are proportional so 40% lexical + 60% semantic ≈ overall.
+ */
+export function deriveAiScoresFromSimilarity(similarityScore) {
+  const probability = scaleAiProbabilityFromSimilarity(similarityScore)
+  if (probability == null) return null
+  const sim = Math.min(100, Math.max(0, Number(similarityScore) || 0))
+  const lexical_score = Math.round(Math.min(100, sim * 0.45) * 10) / 10
+  const semantic_score = Math.round(Math.min(100, sim * 0.55) * 10) / 10
+  return {
+    probability,
+    lexical_score,
+    semantic_score,
+    verdict: getAiVerdictFromScore(probability),
+  }
+}
+
 export const AI_INTERPRETATION_GUIDE = [
   {
     range: formatAiProbabilityRange(0, AI_HUMAN_MAX),

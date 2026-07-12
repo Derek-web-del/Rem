@@ -1,4 +1,5 @@
 import { deleteActivityFileByUrl } from './activityStorage.js'
+import { ensureLateSubmissionColumns } from './lateSubmissionSchema.js'
 import { filterGradeLevelsForDropdown, isAllowedHighSchoolGradeLevel } from './gradeLevels.js'
 import {
   decryptStudentRows,
@@ -106,6 +107,7 @@ export async function ensureActivitiesSchema(pool) {
     `CREATE INDEX IF NOT EXISTS idx_activity_submissions_student_id ON public.activity_submissions (student_id)`,
   )
   await pool.query(`ALTER TABLE activity_submissions ADD COLUMN IF NOT EXISTS feedback TEXT`)
+  await ensureLateSubmissionColumns(pool, 'activity_submissions')
 }
 
 export function mapActivityRow(row) {
@@ -164,6 +166,7 @@ export async function expireUnsubmittedForActivity(pool, activityId) {
     WHERE s.activity_id = $1
       AND s.status = 'not_submitted'
       AND s.submitted_at IS NULL
+      AND (s.late_submission_until IS NULL OR s.late_submission_until < NOW())
       AND EXISTS (
         SELECT 1 FROM activities a
         WHERE a.id = s.activity_id AND a.submission_deadline < NOW()

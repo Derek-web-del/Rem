@@ -257,6 +257,11 @@ export default function StudentWorkView({ config }) {
                     <p className="mt-3 text-sm font-medium text-neutral-500">Submission period has ended.</p>
                   ) : (
                     <>
+                      {item?.has_late_extension && item?.late_submission_until ? (
+                        <p className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-800">
+                          Late submission allowed until {formatWorkDateTime(item.late_submission_until)}
+                        </p>
+                      ) : null}
                       <div className="mt-4 flex flex-wrap items-center gap-3">
                         <input
                           ref={fileInputRef}

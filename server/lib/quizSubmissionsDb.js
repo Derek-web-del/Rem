@@ -7,6 +7,8 @@ import {
 } from './quizzesDb.js'
 import { normalizeGradeLevel, resolveStudentGradeLevel } from './studentSession.js'
 import { studentDisplayName } from './studentPiiCrypto.js'
+import { ensureLateSubmissionColumns } from './lateSubmissionSchema.js'
+import { isSubmissionOpenForStudent } from './studentWorkPortal.js'
 
 export async function ensureQuizSubmissionsSchema(pool) {
   await ensureQuizzesSchema(pool)
@@ -50,6 +52,11 @@ export async function ensureQuizSubmissionsSchema(pool) {
     ALTER TABLE quiz_submissions
       ADD COLUMN IF NOT EXISTS violations JSONB NOT NULL DEFAULT '[]'
   `)
+  await ensureLateSubmissionColumns(pool, 'quiz_submissions')
+}
+
+export function isQuizOpenForStudent(deadlineIso, lateUntilIso) {
+  return isSubmissionOpenForStudent(deadlineIso, lateUntilIso)
 }
 
 export function isQuizDeadlineOpen(deadlineIso) {
@@ -57,6 +64,17 @@ export function isQuizDeadlineOpen(deadlineIso) {
   const d = new Date(deadlineIso)
   if (Number.isNaN(d.getTime())) return true
   return d.getTime() >= Date.now()
+}
+
+function normalizeLateUntil(value) {
+  if (!value) return null
+  if (value instanceof Date) return value.toISOString()
+  const d = new Date(value)
+  return Number.isNaN(d.getTime()) ? null : d.toISOString()
+}
+
+function quizSubmissionWindowOpen(quiz, submission) {
+  return isSubmissionOpenForStudent(quiz?.deadline, submission?.late_submission_until)
 }
 
 function mapSubmissionRow(row) {
@@ -149,7 +167,7 @@ export function getQuizAttemptPolicy(quiz, submission) {
 
 function attachAttemptFields(quiz, submission) {
   const policy = getQuizAttemptPolicy(quiz, submission)
-  const open = isQuizDeadlineOpen(quiz?.deadline)
+  const open = quizSubmissionWindowOpen(quiz, submission)
   if (!open) {
     policy.can_start = false
     policy.can_retake = false
@@ -160,7 +178,9 @@ function attachAttemptFields(quiz, submission) {
 export function mapStudentQuizListRow(quiz, submission) {
   const sub = submission || {}
   const statusInfo = submissionStatusLabel(sub.status)
-  const open = isQuizDeadlineOpen(quiz.deadline)
+  const open = quizSubmissionWindowOpen(quiz, sub)
+  const globalOpen = isQuizDeadlineOpen(quiz.deadline)
+  const lateUntil = normalizeLateUntil(sub.late_submission_until)
   const total = quiz.total_points != null ? Number(quiz.total_points) : 0
   const score = sub.score != null ? Number(sub.score) : null
   const withAttempts = attachAttemptFields(quiz, sub)
@@ -171,7 +191,10 @@ export function mapStudentQuizListRow(quiz, submission) {
     status: statusInfo.label,
     status_tone: statusInfo.tone,
     submission_open: open,
-    deadline_badge: open ? 'Open' : 'Closed',
+    can_submit: open,
+    late_submission_until: lateUntil,
+    has_late_extension: Boolean(lateUntil && new Date(lateUntil).getTime() >= Date.now()),
+    deadline_badge: open ? (globalOpen ? 'Open' : 'Late') : 'Closed',
     deadline_badge_tone: open ? 'green' : 'red',
     score_display:
       sub.status === 'completed' && score != null
@@ -295,11 +318,18 @@ export async function fetchStudentQuizDetail(pool, quizId, studentRow) {
   if (!quiz) return null
   const submission = await fetchSubmissionForStudent(pool, quizId, studentRow.id)
   const attemptPolicy = getQuizAttemptPolicy(quiz, submission)
+  const open = quizSubmissionWindowOpen(quiz, submission)
   return {
     quiz: {
       ...quiz,
       question_count: countQuestions(quiz),
-      submission_open: isQuizDeadlineOpen(quiz.deadline),
+      submission_open: open,
+      can_submit: open,
+      late_submission_until: normalizeLateUntil(submission?.late_submission_until),
+      has_late_extension: Boolean(
+        submission?.late_submission_until &&
+          new Date(submission.late_submission_until).getTime() >= Date.now(),
+      ),
       ...attemptPolicy,
     },
     submission,
@@ -311,7 +341,7 @@ export async function fetchStudentQuizTake(pool, quizId, studentRow) {
   const quiz = await assertStudentQuizAccess(pool, studentRow, quizId)
   if (!quiz) return null
   const submission = await fetchSubmissionForStudent(pool, quizId, studentRow.id)
-  if (!isQuizDeadlineOpen(quiz.deadline)) {
+  if (!quizSubmissionWindowOpen(quiz, submission)) {
     return { error: 'CLOSED', submission }
   }
   const attemptPolicy = getQuizAttemptPolicy(quiz, submission)
@@ -349,7 +379,7 @@ export async function fetchStudentQuizTake(pool, quizId, studentRow) {
     submission,
     answers,
     remaining_seconds: remainingSeconds,
-    submission_open: isQuizDeadlineOpen(quiz.deadline),
+    submission_open: quizSubmissionWindowOpen(quiz, submission),
     attempt_policy: attemptPolicy,
   }
 }
@@ -367,9 +397,9 @@ export async function startQuizSubmission(pool, quizId, studentId) {
   await ensureQuizSubmissionsSchema(pool)
   const quiz = await fetchStudentQuizById(pool, quizId)
   if (!quiz) return { error: 'NOT_FOUND' }
-  if (!isQuizDeadlineOpen(quiz.deadline)) return { error: 'CLOSED' }
-
   const existing = await fetchSubmissionForStudent(pool, quizId, studentId)
+  if (!quizSubmissionWindowOpen(quiz, existing)) return { error: 'CLOSED' }
+
   const maxAttempts = normalizeMaxAttempts(quiz.max_attempts)
   const policy = getQuizAttemptPolicy(quiz, existing)
 
@@ -471,12 +501,12 @@ function unwrapStartResult(result) {
 export async function saveQuizProgress(pool, quizId, studentId, { answers = [], time_spent_seconds = 0 } = {}) {
   const quiz = await fetchStudentQuizById(pool, quizId)
   if (!quiz) return { error: 'NOT_FOUND' }
-  if (!isQuizDeadlineOpen(quiz.deadline)) return { error: 'CLOSED' }
+  let submission = await fetchSubmissionForStudent(pool, quizId, studentId)
+  if (!quizSubmissionWindowOpen(quiz, submission)) return { error: 'CLOSED' }
 
   const client = await pool.connect()
   try {
     await client.query('BEGIN')
-    let submission = await fetchSubmissionForStudent(pool, quizId, studentId)
     if (!submission) {
       const started = unwrapStartResult(await startQuizSubmission(pool, quizId, studentId))
       if (started.error) {
@@ -618,12 +648,12 @@ function flattenQuestions(quiz) {
 export async function submitQuizSubmission(pool, quizId, studentId, { answers = [], time_spent_seconds = 0 } = {}) {
   const quiz = await fetchStudentQuizById(pool, quizId)
   if (!quiz) return { error: 'NOT_FOUND' }
-  if (!isQuizDeadlineOpen(quiz.deadline)) return { error: 'CLOSED' }
+  let submission = await fetchSubmissionForStudent(pool, quizId, studentId)
+  if (!quizSubmissionWindowOpen(quiz, submission)) return { error: 'CLOSED' }
 
   const client = await pool.connect()
   try {
     await client.query('BEGIN')
-    let submission = await fetchSubmissionForStudent(pool, quizId, studentId)
     if (!submission) {
       const started = unwrapStartResult(await startQuizSubmission(pool, quizId, studentId))
       if (started.error) {

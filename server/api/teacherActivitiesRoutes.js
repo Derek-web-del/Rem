@@ -33,6 +33,7 @@ import { activityAuditSnapshot, buildTargetLabel } from '../lib/teacherAuditSnap
 import { customActivityLogger } from '../services/CustomActivityLogger.js'
 import { deleteSubmissionFileByUrl } from '../lib/submissionStorage.js'
 import { isDeadlinePassed } from '../lib/studentWorkPortal.js'
+import { isTeacherSubmissionScoreLocked } from '../lib/submissionExtensionDb.js'
 import { validateGradeComponentForWork } from '../lib/subjectGradeCriteriaDb.js'
 
 export function mountTeacherActivitiesRoutes(router, {
@@ -581,7 +582,7 @@ export function mountTeacherActivitiesRoutes(router, {
         res.status(404).json({ error: 'NOT_FOUND', message: 'Activity not found.' })
         return
       }
-      if (isDeadlinePassed(activityRow.submission_deadline)) {
+      if (await isTeacherSubmissionScoreLocked(pool, 'activity', submissionId, activityRow.submission_deadline)) {
         res.status(403).json({
           error: 'SCORE_LOCKED',
           message: 'Deadline has passed. Score is locked. Contact admin to request a grade correction.',

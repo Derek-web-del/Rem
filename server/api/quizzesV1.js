@@ -24,6 +24,7 @@ import { enforceFacultyTermsAccepted } from '../lib/facultyTerms.js'
 import { customActivityLogger } from '../services/CustomActivityLogger.js'
 import { ensureQuizSubmissionsSchema, fetchQuizRosterScores } from '../lib/quizSubmissionsDb.js'
 import { isDeadlinePassed } from '../lib/studentWorkPortal.js'
+import { isTeacherSubmissionScoreLocked } from '../lib/submissionExtensionDb.js'
 import {
   diffQuizQuestions,
   diffRecords,
@@ -467,7 +468,7 @@ export function createQuizzesV1Router(express, auth) {
         res.status(404).json({ success: false, error: 'NOT_FOUND', message: 'Quiz not found.' })
         return
       }
-      if (isDeadlinePassed(quiz.deadline)) {
+      if (await isTeacherSubmissionScoreLocked(pool, 'quiz', submissionId, quiz.deadline)) {
         res.status(403).json({
           success: false,
           error: 'SCORE_LOCKED',

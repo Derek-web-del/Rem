@@ -21,6 +21,7 @@ import { createTermsV1Router } from './api/termsV1.js'
 import { createGradesV1Router } from './api/gradesV1.js'
 import { createTeacherGradebookV1Router } from './api/teacherGradebookV1.js'
 import { createGradeOverrideV1Router } from './api/gradeOverrideV1.js'
+import { createSubmissionExtensionV1Router } from './api/submissionExtensionV1.js'
 import { createAdminCurriculumGuidesRouter } from './api/adminCurriculumGuides.js'
 import { createFileDownloadRouter, createLegacyUploadsRouter } from './api/fileDownload.js'
 import { getUploadStorageStats } from './lib/uploadStorageStats.js'
@@ -481,6 +482,7 @@ app.all('/api/auth/*', toNodeHandler(auth))
   app.use('/api/v1/grades', createGradesV1Router(express, auth))
   app.use('/api', createTeacherGradebookV1Router(express, auth))
   app.use('/api/v1/admin', createGradeOverrideV1Router(express, auth))
+  app.use('/api/v1/admin', createSubmissionExtensionV1Router(express, auth))
   const { createAdminPasswordResetV1Router } = await import('./api/adminPasswordResetV1.js')
   app.use('/api/v1/admin', createAdminPasswordResetV1Router(express, auth))
   app.use('/api', createAdminCurriculumGuidesRouter(express, auth))

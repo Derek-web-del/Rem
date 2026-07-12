@@ -1,4 +1,4 @@
-import { displayGrade, formatGradeAvg } from '../lib/gradeStatus.js'
+import { displayGrade, formatGradeAvg, formatSubmittedAt } from '../lib/gradeStatus.js'
 import { buildComponentWorkGroups, entityTypeLabel } from '../lib/gradeComponentWorkGroups.js'
 
 function componentMapsTo(comp) {
@@ -9,7 +9,7 @@ function componentMapsTo(comp) {
   return labels.length ? labels.join(', ') : '—'
 }
 
-function WorkItemRow({ item, isAdmin, onOverrideClick }) {
+function WorkItemRow({ item, isAdmin, onOverrideClick, onLateSubmissionClick }) {
   const scoreLabel =
     item.score != null && item.max_score != null ? `${item.score}/${item.max_score}` : '—'
   const typeLabel = entityTypeLabel(item.entity_type)
@@ -35,26 +35,44 @@ function WorkItemRow({ item, isAdmin, onOverrideClick }) {
             Locked
           </span>
         ) : null}
+        {item.has_late_extension && item.late_submission_until ? (
+          <span className="ml-2 inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-800">
+            Late until {formatSubmittedAt(item.late_submission_until)}
+          </span>
+        ) : null}
         {item.is_no_submission ? (
           <span className="ml-2 inline-flex rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800">
             No submission
           </span>
         ) : null}
       </p>
-      {isAdmin && item.is_locked && item.entity_id ? (
-        <button
-          type="button"
-          onClick={() => onOverrideClick?.(item)}
-          className="shrink-0 self-start rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700 sm:self-center"
-        >
-          Overwrite Score
-        </button>
+      {isAdmin && item.entity_id ? (
+        <div className="flex shrink-0 flex-wrap gap-2 self-start sm:self-center">
+          {item.is_locked ? (
+            <>
+              <button
+                type="button"
+                onClick={() => onLateSubmissionClick?.(item)}
+                className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700"
+              >
+                Allow Late Submission
+              </button>
+              <button
+                type="button"
+                onClick={() => onOverrideClick?.(item)}
+                className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700"
+              >
+                Overwrite Score
+              </button>
+            </>
+          ) : null}
+        </div>
       ) : null}
     </div>
   )
 }
 
-function ComponentWorkSection({ comp, items, isAdmin, onOverrideClick }) {
+function ComponentWorkSection({ comp, items, isAdmin, onOverrideClick, onLateSubmissionClick }) {
   const weight =
     comp.percentage != null && Number.isFinite(Number(comp.percentage))
       ? ` (${Number(comp.percentage)}%)`
@@ -77,6 +95,7 @@ function ComponentWorkSection({ comp, items, isAdmin, onOverrideClick }) {
             item={item}
             isAdmin={isAdmin}
             onOverrideClick={onOverrideClick}
+            onLateSubmissionClick={onLateSubmissionClick}
           />
         ))}
       </div>
@@ -89,6 +108,7 @@ export default function SubjectGradesBreakdown({
   showWorkItems = true,
   isAdmin = false,
   onOverrideClick,
+  onLateSubmissionClick,
 }) {
   if (!subject) return null
 
@@ -183,6 +203,7 @@ export default function SubjectGradesBreakdown({
               items={items}
               isAdmin={isAdmin}
               onOverrideClick={onOverrideClick}
+              onLateSubmissionClick={onLateSubmissionClick}
             />
           ))}
         </div>

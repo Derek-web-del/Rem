@@ -1,4 +1,5 @@
 import { deleteAssignmentFileByUrl } from './assignmentStorage.js'
+import { ensureLateSubmissionColumns } from './lateSubmissionSchema.js'
 import { filterGradeLevelsForDropdown, isAllowedHighSchoolGradeLevel } from './gradeLevels.js'
 import {
   decryptStudentRows,
@@ -107,6 +108,7 @@ export async function ensureAssignmentsSchema(pool) {
     `CREATE INDEX IF NOT EXISTS idx_assignment_submissions_student_id ON public.assignment_submissions (student_id)`,
   )
   await pool.query(`ALTER TABLE assignment_submissions ADD COLUMN IF NOT EXISTS feedback TEXT`)
+  await ensureLateSubmissionColumns(pool, 'assignment_submissions')
 }
 
 export function mapAssignmentRow(row) {
@@ -165,6 +167,7 @@ export async function expireUnsubmittedForAssignment(pool, assignmentId) {
     WHERE s.assignment_id = $1
       AND s.status = 'not_submitted'
       AND s.submitted_at IS NULL
+      AND (s.late_submission_until IS NULL OR s.late_submission_until < NOW())
       AND EXISTS (
         SELECT 1 FROM assignments a
         WHERE a.id = s.assignment_id AND a.submission_deadline < NOW()

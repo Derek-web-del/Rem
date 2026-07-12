@@ -96,7 +96,8 @@ export async function fetchStudentScoresForItems(pool, studentId, items) {
   if (assignmentIds.length) {
     const { rows } = await pool.query(
       `
-      SELECT s.assignment_id AS entity_id, s.id AS submission_id, s.score, s.submitted_at, s.updated_at
+      SELECT s.assignment_id AS entity_id, s.id AS submission_id, s.score, s.submitted_at, s.updated_at,
+             s.late_submission_until
       FROM assignment_submissions s
       WHERE s.assignment_id = ANY($1::bigint[]) AND s.student_id = $2
       `,
@@ -110,6 +111,7 @@ export async function fetchStudentScoresForItems(pool, studentId, items) {
         submission_id: r.submission_id != null ? Number(r.submission_id) : null,
         max_points: item?.max_points ?? 100,
         submitted_at: r.submitted_at ?? r.updated_at ?? null,
+        late_submission_until: r.late_submission_until ?? null,
         has_score: r.score != null,
       }
     }
@@ -118,7 +120,8 @@ export async function fetchStudentScoresForItems(pool, studentId, items) {
   if (activityIds.length) {
     const { rows } = await pool.query(
       `
-      SELECT s.activity_id AS entity_id, s.id AS submission_id, s.score, s.submitted_at, s.updated_at
+      SELECT s.activity_id AS entity_id, s.id AS submission_id, s.score, s.submitted_at, s.updated_at,
+             s.late_submission_until
       FROM activity_submissions s
       WHERE s.activity_id = ANY($1::bigint[]) AND s.student_id = $2
       `,
@@ -132,6 +135,7 @@ export async function fetchStudentScoresForItems(pool, studentId, items) {
         submission_id: r.submission_id != null ? Number(r.submission_id) : null,
         max_points: item?.max_points ?? 100,
         submitted_at: r.submitted_at ?? r.updated_at ?? null,
+        late_submission_until: r.late_submission_until ?? null,
         has_score: r.score != null,
       }
     }
@@ -141,7 +145,7 @@ export async function fetchStudentScoresForItems(pool, studentId, items) {
     const { rows } = await pool.query(
       `
       SELECT s.quiz_id AS entity_id, s.id AS submission_id, s.score, s.total_points,
-             s.submitted_at, s.updated_at
+             s.submitted_at, s.updated_at, s.late_submission_until
       FROM quiz_submissions s
       WHERE s.quiz_id = ANY($1::bigint[]) AND s.student_id = $2
       `,
@@ -156,6 +160,7 @@ export async function fetchStudentScoresForItems(pool, studentId, items) {
         submission_id: r.submission_id != null ? Number(r.submission_id) : null,
         max_points: maxPts,
         submitted_at: r.submitted_at ?? r.updated_at ?? null,
+        late_submission_until: r.late_submission_until ?? null,
         has_score: r.score != null,
       }
     }

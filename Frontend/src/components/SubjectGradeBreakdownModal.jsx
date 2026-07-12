@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import SubjectGradesBreakdown from './SubjectGradesBreakdown.jsx'
 import GradeOverrideModal from './GradeOverrideModal.jsx'
+import LateSubmissionModal from './LateSubmissionModal.jsx'
 
 export default function SubjectGradeBreakdownModal({
   subject,
@@ -11,6 +12,7 @@ export default function SubjectGradeBreakdownModal({
   onGradesRefresh,
 }) {
   const [overrideItem, setOverrideItem] = useState(null)
+  const [lateSubmissionItem, setLateSubmissionItem] = useState(null)
   const [overrideSuccess, setOverrideSuccess] = useState('')
 
   if (!subject) return null
@@ -66,6 +68,7 @@ export default function SubjectGradeBreakdownModal({
               showWorkItems={showWorkItems}
               isAdmin={isAdmin}
               onOverrideClick={setOverrideItem}
+              onLateSubmissionClick={setLateSubmissionItem}
             />
           </div>
 
@@ -90,6 +93,20 @@ export default function SubjectGradeBreakdownModal({
           onSuccess={() => {
             setOverrideSuccess('Score overwritten and logged.')
             setOverrideItem(null)
+            onGradesRefresh?.()
+          }}
+        />
+      ) : null}
+
+      {isAdmin && lateSubmissionItem ? (
+        <LateSubmissionModal
+          item={lateSubmissionItem}
+          studentId={studentId}
+          studentName={studentName}
+          onClose={() => setLateSubmissionItem(null)}
+          onSuccess={() => {
+            setOverrideSuccess('Late submission allowed and logged.')
+            setLateSubmissionItem(null)
             onGradesRefresh?.()
           }}
         />
