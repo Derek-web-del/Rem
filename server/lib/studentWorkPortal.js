@@ -123,7 +123,7 @@ export function mapStudentWorkListRow(row, submission, kind = 'assignment') {
     late_submission_until: lateUntil,
     has_late_extension: Boolean(lateUntil && new Date(lateUntil).getTime() >= Date.now()),
     submission_badge: open ? (globalOpen ? 'Open' : 'Late') : 'Closed',
-    submission_badge_tone: open ? 'green' : 'red',
+    submission_badge_tone: open ? (globalOpen ? 'green' : 'yellow') : 'red',
     has_submission_file: hasFile,
     kind,
   }

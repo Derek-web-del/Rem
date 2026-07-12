@@ -511,6 +511,7 @@ export class CustomActivityLogger {
         actorName: actorName ? String(actorName) : 'Administrator',
         actorEmail: actorEmail ? String(actorEmail) : null,
         actorRole: actorRole ? String(actorRole) : 'admin',
+        actorUserId: uid,
         module,
         target_label: details?.record_name || details?.recordName || description || null,
         ...details,

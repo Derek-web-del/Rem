@@ -50,7 +50,7 @@ export async function fetchStudentSubjects(pool, studentRow) {
 }
 
 function submissionRowFromJoin(row) {
-  if (!row?.submission_id && !row?.submission_status) return null
+  if (!row?.submission_id && !row?.submission_status && !row?.late_submission_until) return null
   return {
     id: row.submission_id,
     status: row.submission_status,
@@ -59,6 +59,7 @@ function submissionRowFromJoin(row) {
     file_path: row.submission_file_path,
     file_name: row.submission_file_name,
     feedback: row.feedback,
+    late_submission_until: row.late_submission_until ?? null,
   }
 }
 
@@ -78,7 +79,8 @@ export async function fetchStudentAssignments(pool, studentRow) {
              a.submission_deadline, a.created_at, a.total_score, a.file_path, a.file_name,
              sub.subject_code,
              s.id AS submission_id, s.status AS submission_status, s.score, s.submitted_at,
-             s.file_path AS submission_file_path, s.file_name AS submission_file_name, s.feedback
+             s.file_path AS submission_file_path, s.file_name AS submission_file_name, s.feedback,
+             s.late_submission_until
       FROM assignments a
       LEFT JOIN subjects sub ON sub.id = a.subject_id
       LEFT JOIN assignment_submissions s ON s.assignment_id = a.id AND s.student_id = $1
@@ -115,7 +117,8 @@ export async function fetchStudentActivities(pool, studentRow) {
              a.submission_deadline, a.created_at, a.total_score, a.file_path, a.file_name,
              sub.subject_code,
              s.id AS submission_id, s.status AS submission_status, s.score, s.submitted_at,
-             s.file_path AS submission_file_path, s.file_name AS submission_file_name, s.feedback
+             s.file_path AS submission_file_path, s.file_name AS submission_file_name, s.feedback,
+             s.late_submission_until
       FROM activities a
       LEFT JOIN subjects sub ON sub.id = a.subject_id
       LEFT JOIN activity_submissions s ON s.activity_id = a.id AND s.student_id = $1

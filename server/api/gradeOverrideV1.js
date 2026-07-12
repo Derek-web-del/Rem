@@ -5,6 +5,8 @@ import { insertAuditLogRecord } from '../lib/auditLogsLedger.js'
 import { decryptStudentPiiFields, studentDisplayName } from '../lib/studentPiiCrypto.js'
 import { computePercent } from '../lib/gradesDb.js'
 import { applySubmissionScoreOverride, OVERRIDE_NOT_LOCKED_MSG } from '../lib/submissionScoreUpdate.js'
+import { resolveAdminAuditActor } from '../lib/adminAuditActor.js'
+import { ADMIN_PORTAL_MODULES } from '../../shared/auditPortalModules.js'
 
 const ENTITY_TYPES = new Set(['assignment', 'activity', 'quiz'])
 
@@ -110,8 +112,8 @@ export function createGradeOverrideV1Router(express, auth) {
         return
       }
 
-      const actor = adminSession.user ?? adminSession?.data?.user ?? {}
-      const actorId = String(actor.id || '').trim()
+      const actor = await resolveAdminAuditActor(adminSession)
+      const actorId = actor.actorId
       const studentName = await fetchStudentName(pool, studentId)
       const resolvedSubmissionId = result.submission?.id ?? submissionId ?? null
       const oldPct =
@@ -126,10 +128,12 @@ export function createGradeOverrideV1Router(express, auth) {
 
       const auditPayload = {
         userId: actorId,
+        userName: actor.actorName,
         role: 'admin',
         action: 'grade_override',
         description,
         displayType: 'Grade override',
+        module: ADMIN_PORTAL_MODULES.STUDENTS,
         entity_type: entityType,
         submission_id: resolvedSubmissionId,
         entity_id: result.entity_id ?? entityId ?? null,
@@ -139,14 +143,28 @@ export function createGradeOverrideV1Router(express, auth) {
         reason,
         overridden_by: actorId,
         overridden_at: overriddenAt,
+        actorName: actor.actorName,
+        actorEmail: actor.actorEmail || null,
+        actorUserId: actorId,
+        performed_by_name: actor.actorName,
       }
 
       try {
-        await insertAuditLogRecord('GRADE_OVERRIDE', auditPayload)
+        await insertAuditLogRecord('GRADE_OVERRIDE', auditPayload, {
+          module: ADMIN_PORTAL_MODULES.STUDENTS,
+          action: 'grade_override',
+          performed_by: actorId,
+          performed_by_name: actor.actorName,
+          target_id: String(studentId),
+          target_label: `${studentName} — ${result.title || entityType}`,
+        })
         await auditInstituteRecord(adminSession, 'GRADE_OVERRIDE', {
           recordType: entityType,
           recordId: String(resolvedSubmissionId ?? result.entity_id ?? entityId ?? ''),
           description,
+          reason,
+          student_id: studentId,
+          student_name: studentName,
         })
       } catch {
         /* non-fatal */

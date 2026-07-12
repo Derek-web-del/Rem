@@ -90,6 +90,10 @@ function mapSubmissionRow(row) {
     started_at: row.started_at instanceof Date ? row.started_at.toISOString() : row.started_at ?? null,
     submitted_at: row.submitted_at instanceof Date ? row.submitted_at.toISOString() : row.submitted_at ?? null,
     attempt_number: row.attempt_number != null ? Number(row.attempt_number) : 1,
+    late_submission_until:
+      row.late_submission_until instanceof Date
+        ? row.late_submission_until.toISOString()
+        : row.late_submission_until ?? null,
   }
 }
 
@@ -195,7 +199,7 @@ export function mapStudentQuizListRow(quiz, submission) {
     late_submission_until: lateUntil,
     has_late_extension: Boolean(lateUntil && new Date(lateUntil).getTime() >= Date.now()),
     deadline_badge: open ? (globalOpen ? 'Open' : 'Late') : 'Closed',
-    deadline_badge_tone: open ? 'green' : 'red',
+    deadline_badge_tone: open ? (globalOpen ? 'green' : 'yellow') : 'red',
     score_display:
       sub.status === 'completed' && score != null
         ? `${score.toFixed(2)}/${total.toFixed(2)}`
@@ -244,7 +248,8 @@ export async function listStudentQuizzesWithSubmissions(pool, studentRow) {
         s.time_spent_seconds,
         s.started_at,
         s.submitted_at,
-        s.attempt_number
+        s.attempt_number,
+        s.late_submission_until
       FROM quizzes q
       LEFT JOIN quiz_submissions s ON s.quiz_id = q.id AND s.student_id = $1
       WHERE COALESCE(q.is_hidden, FALSE) = FALSE
@@ -268,6 +273,7 @@ export async function listStudentQuizzesWithSubmissions(pool, studentRow) {
           started_at: row.started_at,
           submitted_at: row.submitted_at,
           attempt_number: row.attempt_number,
+          late_submission_until: row.late_submission_until ?? null,
         })
       : null
     const quiz = {

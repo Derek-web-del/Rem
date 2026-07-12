@@ -38,13 +38,7 @@ export default function SubjectGradeBreakdownModal({
         >
           <div className="border-b border-neutral-200 px-5 py-4">
             <div className="flex items-start justify-between gap-3">
-              <div>
-                {isAdmin ? (
-                  <p className="text-xs text-neutral-500">
-                    Locked work appears as 0/max when a student did not submit. Overwrite with a valid reason; changes sync to teacher and student views and are audit logged.
-                  </p>
-                ) : null}
-              </div>
+              <div />
               <button
                 type="button"
                 className="rounded-md p-1 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800"

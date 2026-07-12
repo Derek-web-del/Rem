@@ -263,6 +263,13 @@ export function resolveInstituteActivityModule(activityType) {
   }
   if (activity === 'GRADE_OVERRIDE') return ADMIN_PORTAL_MODULES.STUDENTS
   if (
+    activity === 'LATE_SUBMISSION_GRANTED' ||
+    activity === 'LATE_SUBMISSION_REVOKED' ||
+    activity === 'LATE_SUBMISSION_UPLOAD'
+  ) {
+    return ADMIN_PORTAL_MODULES.STUDENTS
+  }
+  if (
     activity === 'SCORE_OVERWRITE_REQUESTED' ||
     activity === 'SCORE_OVERWRITE_APPROVED' ||
     activity === 'SCORE_OVERWRITE_REJECTED'

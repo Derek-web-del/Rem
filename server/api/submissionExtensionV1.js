@@ -8,6 +8,8 @@ import {
   grantSubmissionExtension,
   revokeSubmissionExtension,
 } from '../lib/submissionExtensionDb.js'
+import { resolveAdminAuditActor } from '../lib/adminAuditActor.js'
+import { ADMIN_PORTAL_MODULES } from '../../shared/auditPortalModules.js'
 import {
   getStudentSubmissionUploadFile,
   studentSubmissionUploadMiddleware,
@@ -71,8 +73,8 @@ export function createSubmissionExtensionV1Router(express, auth) {
         return
       }
 
-      const actor = adminSession.user ?? adminSession?.data?.user ?? {}
-      const actorId = String(actor.id || '').trim()
+      const actor = await resolveAdminAuditActor(adminSession)
+      const actorId = actor.actorId
 
       const result = await grantSubmissionExtension(pool, {
         entityType,
@@ -104,21 +106,41 @@ export function createSubmissionExtensionV1Router(express, auth) {
       const description = `Admin granted late submission for ${studentName} on ${entityType} "${result.title}" until ${formatUntil(result.late_submission_until)}. Reason: ${reason}`
 
       try {
-        await insertAuditLogRecord('LATE_SUBMISSION_GRANTED', {
-          userId: actorId,
-          role: 'admin',
-          action: 'late_submission_granted',
-          description,
-          entity_type: entityType,
-          entity_id: entityId,
-          student_id: studentId,
-          late_submission_until: result.late_submission_until,
-          reason,
-        })
+        await insertAuditLogRecord(
+          'LATE_SUBMISSION_GRANTED',
+          {
+            userId: actorId,
+            userName: actor.actorName,
+            role: 'admin',
+            action: 'late_submission_granted',
+            description,
+            module: ADMIN_PORTAL_MODULES.STUDENTS,
+            entity_type: entityType,
+            entity_id: entityId,
+            student_id: studentId,
+            late_submission_until: result.late_submission_until,
+            reason,
+            actorName: actor.actorName,
+            actorEmail: actor.actorEmail || null,
+            actorUserId: actorId,
+            performed_by_name: actor.actorName,
+          },
+          {
+            module: ADMIN_PORTAL_MODULES.STUDENTS,
+            action: 'late_submission_granted',
+            performed_by: actorId,
+            performed_by_name: actor.actorName,
+            target_id: String(entityId),
+            target_label: `${studentName} — ${result.title || entityType}`,
+          },
+        )
         await auditInstituteRecord(adminSession, 'LATE_SUBMISSION_GRANTED', {
           recordType: entityType,
           recordId: String(entityId),
           description,
+          reason,
+          student_id: studentId,
+          student_name: studentName,
         })
       } catch {
         /* non-fatal */
@@ -167,20 +189,36 @@ export function createSubmissionExtensionV1Router(express, auth) {
         return
       }
 
-      const actor = adminSession.user ?? adminSession?.data?.user ?? {}
-      const actorId = String(actor.id || '').trim()
+      const actor = await resolveAdminAuditActor(adminSession)
+      const actorId = actor.actorId
       const studentName = await fetchStudentName(pool, studentId)
 
       try {
-        await insertAuditLogRecord('LATE_SUBMISSION_REVOKED', {
-          userId: actorId,
-          role: 'admin',
-          action: 'late_submission_revoked',
-          description: `Admin revoked late submission for ${studentName} on ${entityType} #${entityId}.`,
-          entity_type: entityType,
-          entity_id: entityId,
-          student_id: studentId,
-        })
+        await insertAuditLogRecord(
+          'LATE_SUBMISSION_REVOKED',
+          {
+            userId: actorId,
+            userName: actor.actorName,
+            role: 'admin',
+            action: 'late_submission_revoked',
+            description: `Admin revoked late submission for ${studentName} on ${entityType} #${entityId}.`,
+            module: ADMIN_PORTAL_MODULES.STUDENTS,
+            entity_type: entityType,
+            entity_id: entityId,
+            student_id: studentId,
+            actorName: actor.actorName,
+            actorUserId: actorId,
+            performed_by_name: actor.actorName,
+          },
+          {
+            module: ADMIN_PORTAL_MODULES.STUDENTS,
+            action: 'late_submission_revoked',
+            performed_by: actorId,
+            performed_by_name: actor.actorName,
+            target_id: String(entityId),
+            target_label: studentName,
+          },
+        )
       } catch {
         /* non-fatal */
       }
@@ -231,8 +269,8 @@ export function createSubmissionExtensionV1Router(express, auth) {
         return
       }
 
-      const actor = adminSession.user ?? adminSession?.data?.user ?? {}
-      const actorId = String(actor.id || '').trim()
+      const actor = await resolveAdminAuditActor(adminSession)
+      const actorId = actor.actorId
 
       const result = await adminUploadSubmissionOnBehalf(pool, {
         entityType,
@@ -260,21 +298,40 @@ export function createSubmissionExtensionV1Router(express, auth) {
       const description = `Admin uploaded ${entityType} submission on behalf of ${studentName} for "${result.title}". Reason: ${reason}`
 
       try {
-        await insertAuditLogRecord('LATE_SUBMISSION_UPLOAD', {
-          userId: actorId,
-          role: 'admin',
-          action: 'late_submission_upload',
-          description,
-          entity_type: entityType,
-          entity_id: entityId,
-          student_id: studentId,
-          submission_id: result.submission?.id ?? null,
-          reason,
-        })
+        await insertAuditLogRecord(
+          'LATE_SUBMISSION_UPLOAD',
+          {
+            userId: actorId,
+            userName: actor.actorName,
+            role: 'admin',
+            action: 'late_submission_upload',
+            description,
+            module: ADMIN_PORTAL_MODULES.STUDENTS,
+            entity_type: entityType,
+            entity_id: entityId,
+            student_id: studentId,
+            submission_id: result.submission?.id ?? null,
+            reason,
+            actorName: actor.actorName,
+            actorUserId: actorId,
+            performed_by_name: actor.actorName,
+          },
+          {
+            module: ADMIN_PORTAL_MODULES.STUDENTS,
+            action: 'late_submission_upload',
+            performed_by: actorId,
+            performed_by_name: actor.actorName,
+            target_id: String(entityId),
+            target_label: `${studentName} — ${result.title || entityType}`,
+          },
+        )
         await auditInstituteRecord(adminSession, 'LATE_SUBMISSION_UPLOAD', {
           recordType: entityType,
           recordId: String(entityId),
           description,
+          reason,
+          student_id: studentId,
+          student_name: studentName,
         })
       } catch {
         /* non-fatal */

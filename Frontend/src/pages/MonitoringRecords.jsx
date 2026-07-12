@@ -587,6 +587,19 @@ function finalizeAuditUserDisplay(displayName, displayEmail) {
   return { displayName: name || email || '—', displayEmail: email }
 }
 
+function isInstituteAdminActionEvent(e) {
+  const activity = String(e?.activityType || e?.detailsObj?.activityType || e?.raw?.activityType || '')
+    .trim()
+    .toUpperCase()
+  return (
+    activity === 'GRADE_OVERRIDE' ||
+    activity === 'LATE_SUBMISSION_GRANTED' ||
+    activity === 'LATE_SUBMISSION_REVOKED' ||
+    activity === 'LATE_SUBMISSION_UPLOAD' ||
+    activity.startsWith('LATE_SUBMISSION')
+  )
+}
+
 /** Unified User column: line 1 = full name, line 2 = email. */
 function resolveAuditUserDisplay(e, ctx = {}) {
   const raw = e?.raw || {}
@@ -602,6 +615,26 @@ function resolveAuditUserDisplay(e, ctx = {}) {
     accountCtx = null,
     dProfile = {},
   } = ctx
+
+  if (isInstituteAdminActionEvent(e)) {
+    return finalizeAuditUserDisplay(
+      pickStr(
+        e?.actorName,
+        ed?.actorName,
+        ed?.performed_by?.name,
+        ed?.performed_by_name,
+        ed?.userName,
+        raw?.performed_by_name,
+      ),
+      pickStr(
+        e?.actorEmail,
+        ed?.actorEmail,
+        ed?.performed_by?.email,
+        ed?.userEmail,
+        raw?.userEmail,
+      ),
+    )
+  }
 
   if (isSecurityAlert) {
     return finalizeAuditUserDisplay(pickStr(ed?.actorName, e?.actorName, 'System'), '')
@@ -811,6 +844,9 @@ function unifiedActivityLabel(e) {
     return 'Password reset completed'
   }
   if (t === 'GRADE_OVERRIDE') return 'Grade override'
+  if (t === 'LATE_SUBMISSION_GRANTED') return 'Late submission granted'
+  if (t === 'LATE_SUBMISSION_REVOKED') return 'Late submission revoked'
+  if (t === 'LATE_SUBMISSION_UPLOAD') return 'Late submission upload'
   if (t === 'SCORE_OVERWRITE_REQUESTED') return 'Score overwrite requested'
   if (t === 'SCORE_OVERWRITE_APPROVED') return 'Score overwrite approved'
   if (t === 'SCORE_OVERWRITE_REJECTED') return 'Score overwrite rejected'

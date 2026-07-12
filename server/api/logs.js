@@ -28,12 +28,12 @@ export const AUTH_EVENT_TYPE_ALIASES = {
 
 const LMS_JOIN_SQL = `
   LEFT JOIN "user" actor_user
-    ON actor_user.id = NULLIF(TRIM(logs.details->>'actorUserId'), '')
-  LEFT JOIN "user" target_user
-    ON target_user.id = COALESCE(
-      NULLIF(TRIM(logs.details->>'targetUserId'), ''),
+    ON actor_user.id = COALESCE(
+      NULLIF(TRIM(logs.details->>'actorUserId'), ''),
       logs."userId"
     )
+  LEFT JOIN "user" target_user
+    ON target_user.id = NULLIF(TRIM(logs.details->>'targetUserId'), '')
 `
 
 export function pickAuditEventTime(e) {
