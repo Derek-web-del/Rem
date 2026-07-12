@@ -41,6 +41,8 @@ const SCHEMA_STATEMENTS = [
   `ALTER TABLE public.backups ADD COLUMN IF NOT EXISTS gdrive_file_id VARCHAR(255)`,
   `ALTER TABLE public.backups ADD COLUMN IF NOT EXISTS gdrive_link TEXT`,
   `ALTER TABLE public.backups ADD COLUMN IF NOT EXISTS gdrive_uploaded_at TIMESTAMPTZ`,
+  `ALTER TABLE public.backups ADD COLUMN IF NOT EXISTS gdrive_upload_status VARCHAR(32)`,
+  `ALTER TABLE public.backups ADD COLUMN IF NOT EXISTS gdrive_upload_error TEXT`,
   `CREATE TABLE IF NOT EXISTS public.google_oauth_pending (
     state VARCHAR(128) PRIMARY KEY,
     user_id VARCHAR(255) NOT NULL,

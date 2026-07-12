@@ -16,7 +16,7 @@ import {
   updateScheduleSettings,
   logBackupAudit,
   mapBackupRow,
-  maybeUploadBackupToDrive,
+  enqueueBackupDriveUpload,
   assertBackupFileReadable,
 } from '../lib/backupService.js'
 import { LNBAK_TABLE_KEYS } from '../lib/backupTables.js'
@@ -300,7 +300,7 @@ export function createBackupRouter(express, auth) {
         ],
       )
 
-      const gdrive = await maybeUploadBackupToDrive({
+      const gdrive = await enqueueBackupDriveUpload({
         backupId,
         filePath,
         filename: downloadName,
@@ -313,6 +313,8 @@ export function createBackupRouter(express, auth) {
       if (gdrive.uploaded) {
         res.setHeader('X-Backup-GDrive-Status', 'success')
         if (gdrive.link) res.setHeader('X-Backup-GDrive-Link', gdrive.link)
+      } else if (gdrive.queued || gdrive.uploading) {
+        res.setHeader('X-Backup-GDrive-Status', 'queued')
       } else if (gdrive.failed) {
         res.setHeader('X-Backup-GDrive-Status', 'failed')
       } else {
@@ -524,14 +526,14 @@ export function createBackupRouter(express, auth) {
         return
       }
 
-      const gdrive = await maybeUploadBackupToDrive({
+      const gdrive = await enqueueBackupDriveUpload({
         backupId: row.id,
         filePath: row.file_path,
         filename: path.basename(row.file_path),
         actor,
       })
 
-      if (gdrive.skipped) {
+      if (gdrive.skipped && !gdrive.uploading) {
         res.status(400).json({
           success: false,
           error: 'GOOGLE_DRIVE_NOT_CONNECTED',
@@ -550,11 +552,23 @@ export function createBackupRouter(express, auth) {
         return
       }
 
+      if (gdrive.uploaded && gdrive.link) {
+        const updated = await getBackupById(row.id)
+        res.json({
+          ok: true,
+          gdrive_file_id: gdrive.fileId,
+          gdrive_link: gdrive.link,
+          backup: mapBackupRow(updated),
+        })
+        return
+      }
+
       const updated = await getBackupById(row.id)
-      res.json({
+      res.status(202).json({
         ok: true,
-        gdrive_file_id: gdrive.fileId,
-        gdrive_link: gdrive.link,
+        queued: true,
+        message: 'Google Drive upload started in the background. Refresh in a minute to see the Drive link.',
+        gdrive_upload_status: updated?.gdrive_upload_status || 'uploading',
         backup: mapBackupRow(updated),
       })
     } catch (e) {

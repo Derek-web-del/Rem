@@ -449,6 +449,18 @@ export default function BackupPage() {
     loadDriveStatus()
   }, [loadAll, loadDriveStatus])
 
+  const driveUploadsPending = backups.some(
+    (b) => b.gdrive_upload_status === 'uploading' || b.gdrive_upload_status === 'pending',
+  )
+
+  useEffect(() => {
+    if (!driveUploadsPending) return undefined
+    const timer = setInterval(() => {
+      void loadAll()
+    }, 4000)
+    return () => clearInterval(timer)
+  }, [driveUploadsPending, loadAll])
+
   useEffect(() => {
     const gdrive = searchParams.get('google_drive')
     if (!gdrive) return
@@ -529,11 +541,17 @@ export default function BackupPage() {
 
       const uploaded =
         gdriveHeader === 'success' || Boolean(latest?.gdrive_file_id || latest?.gdrive_link)
-      const failed = gdriveHeader === 'failed'
+      const queued = gdriveHeader === 'queued' || latest?.gdrive_upload_status === 'uploading'
+      const failed = gdriveHeader === 'failed' || latest?.gdrive_upload_status === 'failed'
       const connected = driveStatus.connected
 
       if (connected && uploaded) {
         toast.created('Backup created and saved to Google Drive.', { title: 'Backup' })
+      } else if (connected && queued) {
+        toast.created(
+          'Backup saved locally. Google Drive upload started in the background — refresh in a minute.',
+          { title: 'Backup', durationMs: 9000 },
+        )
       } else if (connected && failed) {
         toast.error('Backup saved locally. Google Drive upload failed.', { title: 'Backup' })
       } else {
@@ -653,7 +671,7 @@ export default function BackupPage() {
         credentials: 'include',
       })
       const data = await res.json().catch(() => ({}))
-      if (!res.ok) {
+      if (!res.ok && res.status !== 202) {
         const msg = String(data?.message || data?.error || `Request failed (${res.status}).`)
         if (data?.error === 'GOOGLE_DRIVE_NEEDS_RECONNECT' || data?.needsReconnect) {
           toast.error(
@@ -666,6 +684,14 @@ export default function BackupPage() {
         throw new Error(msg)
       }
       await loadAll()
+      if (res.status === 202 || data?.queued) {
+        toast.created(
+          data?.message ||
+            'Google Drive upload started in the background. The Drive link will appear when finished.',
+          { title: 'Google Drive', durationMs: 9000 },
+        )
+        return
+      }
       dispatchAuditLogsRefresh({ reason: 'backup_uploaded_to_gdrive' })
       toast.updated('Backup uploaded to Google Drive.', { title: 'Google Drive' })
     } catch (err) {
@@ -1121,6 +1147,30 @@ export default function BackupPage() {
                           >
                             View in Drive
                           </a>
+                        ) : row.gdrive_upload_status === 'uploading' ? (
+                          <div className="flex flex-col gap-1">
+                            <span className="text-xs font-semibold text-amber-700">Uploading…</span>
+                            <span className="text-[10px] text-neutral-500">Large files may take a few minutes</span>
+                          </div>
+                        ) : row.gdrive_upload_status === 'failed' ? (
+                          <div className="flex flex-col gap-1">
+                            <span className="text-xs text-red-700">Upload failed</span>
+                            {row.gdrive_upload_error ? (
+                              <span className="text-[10px] text-neutral-500 line-clamp-2" title={row.gdrive_upload_error}>
+                                {row.gdrive_upload_error}
+                              </span>
+                            ) : null}
+                            {completed ? (
+                              <button
+                                type="button"
+                                disabled={busy}
+                                onClick={() => handleUploadToDrive(row)}
+                                className="w-fit rounded border border-neutral-200 px-2 py-0.5 text-[11px] font-semibold text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
+                              >
+                                Retry Upload
+                              </button>
+                            ) : null}
+                          </div>
                         ) : driveStatus.connected ||
                           driveStatus.needsReconnect ||
                           driveDiagnostics?.needsReconnect ? (

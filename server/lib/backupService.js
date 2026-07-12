@@ -77,7 +77,52 @@ export function mapBackupRow(row) {
     gdrive_file_id: row.gdrive_file_id ? String(row.gdrive_file_id) : null,
     gdrive_link: row.gdrive_link ? String(row.gdrive_link) : null,
     gdrive_uploaded_at: row.gdrive_uploaded_at || null,
+    gdrive_upload_status: row.gdrive_upload_status ? String(row.gdrive_upload_status) : null,
+    gdrive_upload_error: row.gdrive_upload_error ? String(row.gdrive_upload_error) : null,
   }
+}
+
+/** Prevent duplicate background uploads for the same backup id. */
+const gdriveUploadsInFlight = new Set()
+
+export async function setGdriveUploadStatus(backupId, status, error = null) {
+  const pool = getPgPool()
+  if (!pool || !backupId) return
+  await pool.query(
+    `UPDATE public.backups
+     SET gdrive_upload_status = $2,
+         gdrive_upload_error = $3
+     WHERE id = $1`,
+    [backupId, status || null, error ? String(error).slice(0, 2000) : null],
+  )
+}
+
+/** Fast pre-check before queueing a background Drive upload. */
+export async function evaluateDriveUploadEligibility(actor) {
+  const userId = String(actor?.id || '').trim()
+  if (!userId) {
+    return { eligible: false, skipped: true, failed: false, userId: null }
+  }
+  const { getTokenStatusForUser, isGoogleDriveConfigured } = await import('./googleDriveUpload.js')
+  if (!isGoogleDriveConfigured()) {
+    return { eligible: false, skipped: true, failed: false, userId }
+  }
+  const tokenStatus = await getTokenStatusForUser(userId)
+  if (!tokenStatus.connected) {
+    return { eligible: false, skipped: true, failed: false, userId }
+  }
+  if (tokenStatus.needsReconnect) {
+    return {
+      eligible: false,
+      skipped: false,
+      failed: true,
+      needsReconnect: true,
+      userId,
+      error:
+        'Google Drive permissions are outdated. Disconnect and reconnect Google Drive, then retry upload.',
+    }
+  }
+  return { eligible: true, skipped: false, failed: false, userId }
 }
 
 export async function listBackups() {
@@ -86,7 +131,8 @@ export async function listBackups() {
   const { rows } = await pool.query(
     `SELECT id, name, type, status, size_mb, notes, tables_included, file_path, created_by, created_at, completed_at, error_message,
             files_backed_up, uploads_size_bytes,
-            gdrive_file_id, gdrive_link, gdrive_uploaded_at
+            gdrive_file_id, gdrive_link, gdrive_uploaded_at,
+            gdrive_upload_status, gdrive_upload_error
      FROM public.backups ORDER BY created_at DESC`,
   )
   return rows.map(mapBackupRow)
@@ -273,7 +319,7 @@ export async function runBackupJob({
       }
     }
     if (driveActor?.id) {
-      gdrive = await maybeUploadBackupToDrive({
+      gdrive = await enqueueBackupDriveUpload({
         backupId,
         filePath,
         filename: path.basename(filePath),
@@ -363,8 +409,78 @@ export async function logBackupAudit(actor, activityType, payload) {
 }
 
 /**
- * Upload backup to Google Drive when the user has connected tokens.
- * @returns {Promise<{ uploaded: boolean, skipped: boolean, failed: boolean, fileId?: string, link?: string, error?: string }>}
+ * Queue a Google Drive upload in the background (avoids HTTP 504 on large .lnbak files).
+ * @returns {Promise<{ uploaded?: boolean, queued?: boolean, uploading?: boolean, skipped: boolean, failed: boolean, fileId?: string, link?: string, error?: string, needsReconnect?: boolean }>}
+ */
+export async function enqueueBackupDriveUpload({ backupId, filePath, filename, actor }) {
+  if (!backupId || !filePath) {
+    return { uploaded: false, queued: false, skipped: true, failed: false }
+  }
+
+  const existing = await getBackupById(backupId)
+  if (existing?.gdrive_file_id) {
+    return {
+      uploaded: true,
+      queued: false,
+      skipped: true,
+      failed: false,
+      fileId: String(existing.gdrive_file_id),
+      link: existing.gdrive_link ? String(existing.gdrive_link) : undefined,
+    }
+  }
+  if (existing?.gdrive_upload_status === 'uploading' || gdriveUploadsInFlight.has(String(backupId))) {
+    return { uploaded: false, queued: false, uploading: true, skipped: true, failed: false }
+  }
+
+  const eligibility = await evaluateDriveUploadEligibility(actor)
+  if (eligibility.skipped) {
+    return { uploaded: false, queued: false, skipped: true, failed: false }
+  }
+  if (eligibility.failed) {
+    await setGdriveUploadStatus(backupId, 'failed', eligibility.error)
+    return {
+      uploaded: false,
+      queued: false,
+      skipped: false,
+      failed: true,
+      needsReconnect: Boolean(eligibility.needsReconnect),
+      error: eligibility.error,
+    }
+  }
+
+  const id = String(backupId)
+  gdriveUploadsInFlight.add(id)
+  await setGdriveUploadStatus(backupId, 'uploading', null)
+  console.log(`[backup] Queued Google Drive upload for backup ${id} (${path.basename(filePath)})`)
+
+  setImmediate(() => {
+    void runBackupDriveUploadJob({ backupId: id, filePath, filename, actor }).finally(() => {
+      gdriveUploadsInFlight.delete(id)
+    })
+  })
+
+  return { uploaded: false, queued: true, uploading: true, skipped: false, failed: false }
+}
+
+/** Background worker — may run for several minutes on large archives. */
+export async function runBackupDriveUploadJob({ backupId, filePath, filename, actor }) {
+  const result = await maybeUploadBackupToDrive({ backupId, filePath, filename, actor })
+  if (result.uploaded) {
+    await setGdriveUploadStatus(backupId, 'completed', null)
+    console.log(`[backup] Google Drive upload completed for backup ${backupId}`)
+    return result
+  }
+  if (result.skipped) {
+    await setGdriveUploadStatus(backupId, 'skipped', null)
+    return result
+  }
+  await setGdriveUploadStatus(backupId, 'failed', result.error || 'Google Drive upload failed')
+  console.warn(`[backup] Google Drive upload failed for backup ${backupId}:`, result.error || 'unknown')
+  return result
+}
+
+/**
+ * Upload backup to Google Drive when the user has connected tokens (blocking — use enqueue for HTTP handlers).
  */
 export async function maybeUploadBackupToDrive({ backupId, filePath, filename, actor }) {
   const userId = String(actor?.id || '').trim()
@@ -373,27 +489,21 @@ export async function maybeUploadBackupToDrive({ backupId, filePath, filename, a
   }
 
   try {
-    const { getTokenStatusForUser, uploadBackupToDrive, isGoogleDriveConfigured } = await import(
-      './googleDriveUpload.js'
-    )
-    if (!isGoogleDriveConfigured()) {
+    const eligibility = await evaluateDriveUploadEligibility(actor)
+    if (eligibility.skipped) {
       return { uploaded: false, skipped: true, failed: false }
     }
-    const tokenStatus = await getTokenStatusForUser(userId)
-    if (!tokenStatus.connected) {
-      return { uploaded: false, skipped: true, failed: false }
-    }
-    if (tokenStatus.needsReconnect) {
+    if (eligibility.failed) {
       return {
         uploaded: false,
         skipped: false,
         failed: true,
-        needsReconnect: true,
-        error:
-          'Google Drive permissions are outdated. Disconnect and reconnect Google Drive, then retry upload.',
+        needsReconnect: Boolean(eligibility.needsReconnect),
+        error: eligibility.error,
       }
     }
 
+    const { uploadBackupToDrive } = await import('./googleDriveUpload.js')
     const result = await uploadBackupToDrive({
       userId,
       filePath,
@@ -406,7 +516,8 @@ export async function maybeUploadBackupToDrive({ backupId, filePath, filename, a
     const pool = getPgPool()
     await pool.query(
       `UPDATE public.backups
-       SET gdrive_file_id = $2, gdrive_link = $3, gdrive_uploaded_at = NOW()
+       SET gdrive_file_id = $2, gdrive_link = $3, gdrive_uploaded_at = NOW(),
+           gdrive_upload_status = 'completed', gdrive_upload_error = NULL
        WHERE id = $1`,
       [backupId, result.fileId, result.link],
     )
