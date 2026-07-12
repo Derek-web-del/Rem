@@ -32,7 +32,8 @@ export default function GradeOverrideModal({ item, studentId, studentName, onClo
     try {
       await adminGradeOverride({
         entity_type: item.entity_type,
-        submission_id: item.submission_id,
+        submission_id: item.submission_id ?? null,
+        entity_id: item.entity_id ?? null,
         student_id: Number(studentId),
         new_score: score,
         reason: trimmed,
@@ -61,9 +62,11 @@ export default function GradeOverrideModal({ item, studentId, studentName, onClo
             <span className="font-semibold">Current score:</span>{' '}
             {currentScore != null && Number.isFinite(currentScore)
               ? `${currentScore}/${maxScore} (${currentPercent != null ? `${currentPercent}%` : '—'})`
-              : currentPercent != null
-                ? `${currentPercent}%`
-                : '—'}
+              : item?.is_no_submission
+                ? `0/${maxScore} (0%) — no submission`
+                : currentPercent != null
+                  ? `${currentPercent}%`
+                  : '—'}
           </p>
         </div>
 

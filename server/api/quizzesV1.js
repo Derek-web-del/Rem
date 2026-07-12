@@ -237,7 +237,7 @@ function validatePayload(payload) {
   return null
 }
 
-async function resolveQuizSubjectLink(pool, facultyId, normalized) {
+async function resolveQuizSubjectLink(pool, facultyId, normalized, existing = null) {
   const bodySubjectId = Number(normalized.subject_id)
   let subjectId =
     Number.isFinite(bodySubjectId) && bodySubjectId > 0 ? bodySubjectId : null
@@ -250,17 +250,33 @@ async function resolveQuizSubjectLink(pool, facultyId, normalized) {
     )
     subjectId = linked?.subjectId ?? null
   }
-  const gradeComponentId =
+  if (
+    !subjectId &&
+    existing?.subject_id != null &&
+    Number.isFinite(Number(existing.subject_id)) &&
+    Number(existing.subject_id) > 0
+  ) {
+    subjectId = Number(existing.subject_id)
+  }
+  let gradeComponentId =
     normalized.grade_component_id != null &&
     Number.isFinite(Number(normalized.grade_component_id)) &&
     Number(normalized.grade_component_id) > 0
       ? Number(normalized.grade_component_id)
       : null
+  if (
+    !gradeComponentId &&
+    existing?.grade_component_id != null &&
+    Number.isFinite(Number(existing.grade_component_id)) &&
+    Number(existing.grade_component_id) > 0
+  ) {
+    gradeComponentId = Number(existing.grade_component_id)
+  }
   return { subjectId, gradeComponentId }
 }
 
-async function attachQuizSubjectFields(pool, facultyId, normalized) {
-  const { subjectId, gradeComponentId } = await resolveQuizSubjectLink(pool, facultyId, normalized)
+async function attachQuizSubjectFields(pool, facultyId, normalized, { existing = null } = {}) {
+  const { subjectId, gradeComponentId } = await resolveQuizSubjectLink(pool, facultyId, normalized, existing)
   if (subjectId && !gradeComponentId) {
     return { error: 'Grade component is required for subject-linked quizzes.' }
   }
@@ -647,12 +663,6 @@ export function createQuizzesV1Router(express, auth) {
         res.status(400).json({ success: false, error: 'BAD_REQUEST', message: err })
         return
       }
-      const linked = await attachQuizSubjectFields(pool, facultyRow.id, normalized)
-      if (linked.error) {
-        res.status(400).json({ success: false, error: 'BAD_REQUEST', message: linked.error })
-        return
-      }
-      const payload = await attachQuizPassword(linked.payload, 'update')
       const oldQuiz = await fetchQuizById(pool, id, facultyRow.id)
       if (!oldQuiz) {
         res.status(404).json({ success: false, error: 'NOT_FOUND', message: 'Quiz not found.' })
@@ -666,6 +676,12 @@ export function createQuizzesV1Router(express, auth) {
         })
         return
       }
+      const linked = await attachQuizSubjectFields(pool, facultyRow.id, normalized, { existing: oldQuiz })
+      if (linked.error) {
+        res.status(400).json({ success: false, error: 'BAD_REQUEST', message: linked.error })
+        return
+      }
+      const payload = await attachQuizPassword(linked.payload, 'update')
       const quiz = await updateQuiz(pool, id, facultyRow.id, payload)
       if (!quiz) {
         res.status(404).json({ success: false, error: 'NOT_FOUND', message: 'Quiz not found.' })

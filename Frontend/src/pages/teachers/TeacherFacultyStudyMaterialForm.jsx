@@ -610,7 +610,7 @@ export default function TeacherFacultyStudyMaterialForm({ mode = 'add' }) {
 
                   <p className="text-sm text-neutral-600">
 
-                    Drag &amp; drop or <span className="font-semibold text-sky-600">click to select</span>
+                    Drag &amp; drop PDF or <span className="font-semibold text-sky-600">click to select</span>
 
                   </p>
 

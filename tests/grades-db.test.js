@@ -286,6 +286,7 @@ describe('fetchStudentGradesBySubject faculty scoping', () => {
     const result = await fetchStudentGradesBySubject(pool, 10, studentRow, { facultyId: 'teacher-b' })
     assert.deepEqual(result.subjects, [])
     assert.equal(result.has_any_scores, false)
+    assert.equal(result.has_any_gradable_items, false)
   })
 
   it('does not include other teachers subjects when facultyId is set', async () => {

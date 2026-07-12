@@ -27,6 +27,7 @@ import {
   readCurriculumQuery,
 } from '../../lib/curriculumFormPrefill.js'
 import { fetchGradeComponentsForSubject } from '../../lib/teacherSubjectCurriculum.js'
+import { fetchTeacherSubjectsForAssignments } from '../../lib/teacherAssignments.js'
 
 const ACCEPT = '.pdf'
 const ALLOWED_FILE_TYPES = [
@@ -36,6 +37,23 @@ const ALLOWED_FILE_TYPES = [
 const FALLBACK_SUBJECTS = ['English', 'Math', 'Science', 'Filipino']
 const FALLBACK_GRADES = ['Grade 7', 'Grade 8', 'Grade 9', 'Grade 10']
 import { SEMESTER_LABELS, SEMESTER_OPTIONS } from '../../lib/quizQuestionTypes.js'
+
+function normalizeSubjectMatchText(value) {
+  return String(value || '').trim().toLowerCase().replace(/\s+/g, ' ')
+}
+
+function resolveFacultySubjectId(subjects, subjectName, gradeLevel) {
+  const name = normalizeSubjectMatchText(subjectName)
+  const grade = normalizeSubjectMatchText(gradeLevel)
+  if (!name || !grade || !Array.isArray(subjects)) return ''
+  const row = subjects.find(
+    (s) =>
+      normalizeSubjectMatchText(s.subject_name) === name &&
+      normalizeSubjectMatchText(s.grade_level) === grade,
+  )
+  const id = row?.id ?? row?.subject_id
+  return id != null && String(id).trim() !== '' ? String(id).trim() : ''
+}
 
 export default function TeacherActivityForm({ mode = 'add' }) {
   const isEdit = mode === 'edit'
@@ -52,10 +70,12 @@ export default function TeacherActivityForm({ mode = 'add' }) {
   const [subjectOptions, setSubjectOptions] = useState(FALLBACK_SUBJECTS)
   const [gradeOptions, setGradeOptions] = useState(FALLBACK_GRADES)
   const [gradeComponents, setGradeComponents] = useState([])
+  const [teacherSubjects, setTeacherSubjects] = useState([])
+  const [resolvedSubjectId, setResolvedSubjectId] = useState('')
   const [loadedSubjectId, setLoadedSubjectId] = useState('')
   const [includeComponentId, setIncludeComponentId] = useState('')
   const [fallbackComponentName, setFallbackComponentName] = useState('')
-  const linkedSubjectId = curriculumQuery.subjectId || loadedSubjectId
+  const activeSubjectId = curriculumQuery.subjectId || loadedSubjectId || resolvedSubjectId
   const [loading, setLoading] = useState(isEdit)
   const [submitting, setSubmitting] = useState(false)
   const [file, setFile] = useState(null)
@@ -84,6 +104,8 @@ export default function TeacherActivityForm({ mode = 'add' }) {
         if (cancelled) return
         if (options.subjects.length) setSubjectOptions(options.subjects)
         if (options.gradeLevels.length) setGradeOptions(options.gradeLevels)
+        const facultySubjects = await fetchTeacherSubjectsForAssignments()
+        if (!cancelled) setTeacherSubjects(Array.isArray(facultySubjects) ? facultySubjects : [])
       } catch (e) {
         console.error('[TeacherActivityForm] options', e)
       }
@@ -92,6 +114,15 @@ export default function TeacherActivityForm({ mode = 'add' }) {
       cancelled = true
     }
   }, [])
+
+  useEffect(() => {
+    if (curriculumQuery.subjectId || loadedSubjectId) {
+      setResolvedSubjectId('')
+      return
+    }
+    const sid = resolveFacultySubjectId(teacherSubjects, form.subject_name, form.grade_level)
+    setResolvedSubjectId(sid)
+  }, [form.subject_name, form.grade_level, teacherSubjects, curriculumQuery.subjectId, loadedSubjectId])
 
   useEffect(() => {
     if (isEdit || !curriculumQuery.subjectId) return
@@ -157,9 +188,9 @@ export default function TeacherActivityForm({ mode = 'add' }) {
   }, [isEdit, id])
 
   useEffect(() => {
-    if (!linkedSubjectId) {
+    if (!activeSubjectId) {
       setGradeComponents([])
-      if (!curriculumQuery.subjectId) {
+      if (!curriculumQuery.subjectId && !loadedSubjectId) {
         setForm((p) => ({ ...p, grade_component_id: '' }))
       }
       return
@@ -167,21 +198,19 @@ export default function TeacherActivityForm({ mode = 'add' }) {
     let cancelled = false
     ;(async () => {
       try {
-        const rows = await fetchGradeComponentsForSubject(linkedSubjectId, 'activity', {
+        const rows = await fetchGradeComponentsForSubject(activeSubjectId, 'activity', {
           includeComponentId: includeComponentId || undefined,
         })
         if (cancelled) return
         setGradeComponents(rows)
-        if (!isEdit) {
-          setForm((p) => {
-            const selected = String(p.grade_component_id || '').trim()
-            if (selected && rows.some((r) => String(r.id) === selected)) return p
-            return {
-              ...p,
-              grade_component_id: rows[0]?.id != null ? String(rows[0].id) : '',
-            }
-          })
-        }
+        setForm((p) => {
+          const selected = String(p.grade_component_id || '').trim()
+          if (selected && rows.some((r) => String(r.id) === selected)) return p
+          return {
+            ...p,
+            grade_component_id: rows[0]?.id != null ? String(rows[0].id) : '',
+          }
+        })
       } catch (e) {
         if (!cancelled) {
           console.error('[TeacherActivityForm] grade components', e)
@@ -192,7 +221,7 @@ export default function TeacherActivityForm({ mode = 'add' }) {
     return () => {
       cancelled = true
     }
-  }, [linkedSubjectId, curriculumQuery.subjectId, includeComponentId, isEdit])
+  }, [activeSubjectId, curriculumQuery.subjectId, loadedSubjectId, includeComponentId])
 
   function onFilePick(next) {
     if (!next) {
@@ -290,7 +319,14 @@ export default function TeacherActivityForm({ mode = 'add' }) {
         return false
       }
     }
-    if (linkedSubjectId) {
+    if (String(form.subject_name || '').trim() && String(form.grade_level || '').trim()) {
+      if (!activeSubjectId) {
+        toastRef.current.error('This subject and grade level are not assigned to your faculty account.', {
+          toastId: FACULTY_TOAST_ID.activityAddError,
+          durationMs: FACULTY_ANNOUNCEMENT_TOAST_MS,
+        })
+        return false
+      }
       if (!gradeComponents.length) {
         toastRef.current.error('Configure grade criteria on the subject Grades tab first.', {
           toastId: FACULTY_TOAST_ID.activityAddError,
@@ -321,8 +357,8 @@ export default function TeacherActivityForm({ mode = 'add' }) {
       fd.append('grade_level', form.grade_level.trim())
       fd.append('semester', String(form.semester).trim())
       fd.append('total_score', String(form.total_score))
-      if (linkedSubjectId) {
-        fd.append('subject_id', linkedSubjectId)
+      if (activeSubjectId) {
+        fd.append('subject_id', activeSubjectId)
         fd.append('grade_component_id', String(form.grade_component_id).trim())
       }
       const iso = combineDateAndTimeToIso(form.submission_date, form.submission_time)
@@ -362,7 +398,7 @@ export default function TeacherActivityForm({ mode = 'add' }) {
         toastRef.current.error(
           msg.includes('PDF') || msg.includes('Only PDF')
             ? FACULTY_MSG.activities.fileType
-            : FACULTY_MSG.activities.addFailed,
+            : msg || FACULTY_MSG.activities.addFailed,
           {
             toastId: msg.includes('PDF') || msg.includes('Only PDF')
               ? FACULTY_TOAST_ID.activityFileTypeError
@@ -423,9 +459,10 @@ export default function TeacherActivityForm({ mode = 'add' }) {
                     }}
                   />
                   <p className="text-sm text-neutral-600">
-                    Drag and drop file here or{' '}
+                    Drag and drop PDF here or{' '}
                     <span className="font-semibold text-sky-600">click to select</span>
                   </p>
+                  <p className="mt-1 text-xs text-neutral-500">{DEFAULT_UPLOAD_LABEL}</p>
                   <p className="mt-2 text-xs text-neutral-500">{file ? file.name : existingFileName || 'No file chosen'}</p>
                 </div>
               </div>
@@ -494,7 +531,7 @@ export default function TeacherActivityForm({ mode = 'add' }) {
                 </select>
               </label>
             </div>
-            {linkedSubjectId ? (
+            {form.subject_name && form.grade_level ? (
               <label className="block max-w-md text-sm font-medium text-neutral-700">
                 Grade Component
                 <select
@@ -522,7 +559,9 @@ export default function TeacherActivityForm({ mode = 'add' }) {
                 </select>
                 {gradeComponents.length === 0 ? (
                   <p className="mt-1 text-xs text-amber-700">
-                    Configure grade criteria on the subject Grades tab first.
+                    {activeSubjectId
+                      ? 'Configure grade criteria on the subject Grades tab first.'
+                      : 'Select a subject and grade level assigned to your account.'}
                   </p>
                 ) : null}
               </label>

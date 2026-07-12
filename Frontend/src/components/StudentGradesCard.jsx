@@ -81,7 +81,9 @@ export default function StudentGradesCard({
     }
   }, [resolvedId, isAdmin])
 
-  const emptyMessage = isAdmin ? 'No graded submissions yet.' : teacherNoSubjectsMessage
+  const emptyMessage = isAdmin
+    ? 'No gradable work items past deadline yet.'
+    : teacherNoSubjectsMessage
   const noSubjectsMessage = isAdmin
     ? 'No subjects available for your grade level.'
     : teacherNoSubjectsMessage

@@ -438,34 +438,63 @@ function mapCriteriaComponent(comp) {
   }
 }
 
-function mapScoredWorkItem(item, cell) {
-  const score = toNum(cell?.score)
+export function mapScoredWorkItem(item, cell, { includeUnsubmittedLocked = false } = {}) {
   const maxScore = toNum(cell?.max_points ?? item.max_points)
-  if (score == null || !cell?.has_score) return null
-  const percent = computePercent(score, maxScore)
-  if (percent == null) return null
-  const submittedAt =
-    cell.submitted_at instanceof Date
-      ? cell.submitted_at.toISOString()
-      : cell.submitted_at ?? null
   const deadline = normalizeDeadlineIso(item.deadline)
-  return {
-    title: String(item.title || '').trim() || 'Untitled',
-    subject: '',
-    score,
-    max_score: maxScore,
-    percent,
-    submitted_at: submittedAt,
-    submission_id: cell.submission_id != null ? Number(cell.submission_id) : null,
-    entity_id: Number(item.id),
-    entity_type: item.type,
-    grade_component_id: item.grade_component_id != null ? Number(item.grade_component_id) : null,
-    deadline,
-    is_locked: isDeadlinePassed(deadline),
+  const locked = isDeadlinePassed(deadline)
+  const submittedAt =
+    cell?.submitted_at instanceof Date
+      ? cell.submitted_at.toISOString()
+      : cell?.submitted_at ?? null
+
+  if (cell?.has_score) {
+    const score = toNum(cell.score)
+    if (score == null) return null
+    const percent = computePercent(score, maxScore)
+    if (percent == null) return null
+    return {
+      title: String(item.title || '').trim() || 'Untitled',
+      subject: '',
+      score,
+      max_score: maxScore,
+      percent,
+      submitted_at: submittedAt,
+      submission_id: cell.submission_id != null ? Number(cell.submission_id) : null,
+      entity_id: Number(item.id),
+      entity_type: item.type,
+      grade_component_id: item.grade_component_id != null ? Number(item.grade_component_id) : null,
+      deadline,
+      is_locked: locked,
+      has_score: true,
+      is_no_submission: false,
+    }
   }
+
+  if (includeUnsubmittedLocked && locked) {
+    const safeMax = maxScore != null && maxScore > 0 ? maxScore : item.type === 'quiz' ? 0 : 100
+    return {
+      title: String(item.title || '').trim() || 'Untitled',
+      subject: '',
+      score: 0,
+      max_score: safeMax,
+      percent: safeMax > 0 ? 0 : 0,
+      submitted_at: submittedAt,
+      submission_id: cell?.submission_id != null ? Number(cell.submission_id) : null,
+      entity_id: Number(item.id),
+      entity_type: item.type,
+      grade_component_id: item.grade_component_id != null ? Number(item.grade_component_id) : null,
+      deadline,
+      is_locked: true,
+      has_score: false,
+      is_no_submission: cell?.submission_id == null,
+    }
+  }
+
+  return null
 }
 
-export async function fetchStudentSubjectGradeDetail(pool, studentId, subjectId) {
+export async function fetchStudentSubjectGradeDetail(pool, studentId, subjectId, options = {}) {
+  const { includeUnsubmittedLocked = false } = options
   const sid = Number(studentId)
   const subId = Number(subjectId)
   if (!Number.isFinite(sid) || sid <= 0 || !Number.isFinite(subId) || subId <= 0) {
@@ -492,16 +521,21 @@ export async function fetchStudentSubjectGradeDetail(pool, studentId, subjectId)
   const quizzes = []
   const assignments = []
   const activities = []
+  let has_gradable_locked_items = false
   for (const item of items) {
     const cell = scoreCells[itemKey(item.type, item.id)]
-    const mapped = mapScoredWorkItem(item, cell)
+    const mapped = mapScoredWorkItem(item, cell, { includeUnsubmittedLocked })
     if (!mapped) continue
+    if (mapped.is_locked) has_gradable_locked_items = true
     if (item.type === 'quiz') quizzes.push(mapped)
     else if (item.type === 'assignment') assignments.push(mapped)
     else if (item.type === 'activity') activities.push(mapped)
   }
 
-  const has_scored_items = quizzes.length + assignments.length + activities.length > 0
+  const has_scored_items = (items || []).some((item) => {
+    const cell = scoreCells[itemKey(item.type, item.id)]
+    return Boolean(cell?.has_score)
+  })
 
   return {
     subject_id: subId,
@@ -517,6 +551,7 @@ export async function fetchStudentSubjectGradeDetail(pool, studentId, subjectId)
     graded_weight_total,
     graded_component_ids,
     has_scored_items,
+    has_gradable_locked_items,
     quizzes,
     assignments,
     activities,
@@ -556,7 +591,7 @@ export async function fetchFacultySubjectsForGrade(pool, facultyId, gradeLevel) 
 }
 
 export async function fetchStudentGradesBySubject(pool, studentId, studentRow = null, options = {}) {
-  const { facultyId = null } = options
+  const { facultyId = null, includeUnsubmittedLocked = false } = options
   const sid = Number(studentId)
   if (!Number.isFinite(sid) || sid <= 0) return { subjects: [], has_any_scores: false }
 
@@ -589,6 +624,7 @@ export async function fetchStudentGradesBySubject(pool, studentId, studentRow = 
 
   const subjects = []
   let has_any_scores = false
+  let has_any_gradable_items = false
 
   for (const sub of subjectList) {
     const subjectId = Number(sub.id)
@@ -599,10 +635,11 @@ export async function fetchStudentGradesBySubject(pool, studentId, studentRow = 
       if (!owns) continue
     }
 
-    const detail = await fetchStudentSubjectGradeDetail(pool, sid, subjectId)
+    const detail = await fetchStudentSubjectGradeDetail(pool, sid, subjectId, { includeUnsubmittedLocked })
     if (!detail) continue
 
     if (detail.has_scored_items) has_any_scores = true
+    if (detail.has_gradable_locked_items) has_any_gradable_items = true
 
     subjects.push({
       subject_id: detail.subject_id,
@@ -616,13 +653,14 @@ export async function fetchStudentGradesBySubject(pool, studentId, studentRow = 
       graded_weight_total: detail.graded_weight_total,
       graded_component_ids: detail.graded_component_ids || [],
       has_scored_items: detail.has_scored_items,
+      has_gradable_locked_items: detail.has_gradable_locked_items,
       quizzes: detail.quizzes || [],
       assignments: detail.assignments || [],
       activities: detail.activities || [],
     })
   }
 
-  return { subjects, has_any_scores }
+  return { subjects, has_any_scores, has_any_gradable_items }
 }
 
 export async function facultySectionIds(pool, facultyRow) {

@@ -47,6 +47,11 @@ function GradeItemRow({ item, readOnly, isAdmin, studentId, studentName, onOverr
               Locked
             </span>
           ) : null}
+          {item.is_no_submission ? (
+            <span className="inline-flex rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800">
+              No submission
+            </span>
+          ) : null}
         </div>
       </div>
       <div className="flex w-full flex-col gap-2 sm:w-auto sm:min-w-[18rem] sm:flex-row sm:items-center">
@@ -58,7 +63,7 @@ function GradeItemRow({ item, readOnly, isAdmin, studentId, studentName, onOverr
             </span>
           ) : null}
         </div>
-        {isAdmin && item.is_locked && item.submission_id ? (
+        {isAdmin && item.is_locked && item.entity_id ? (
           <button
             type="button"
             onClick={() => onOverrideClick?.(item)}

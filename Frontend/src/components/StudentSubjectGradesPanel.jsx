@@ -109,7 +109,7 @@ export default function StudentSubjectGradesPanel({
   return (
     <>
       <div className="space-y-3">
-        {!grades.has_any_scores ? (
+        {!grades.has_any_scores && !(isAdmin && grades.has_any_gradable_items) ? (
           <p className="text-sm text-neutral-500">{emptyMessage}</p>
         ) : null}
         {subjects.map((subject) => (

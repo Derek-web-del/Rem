@@ -170,7 +170,8 @@ function EditStudyMaterialForm({
                 ev.target.value = ''
               }}
             />
-            <p className="text-sm text-neutral-600">Drag and drop files here or click to select</p>
+            <p className="text-sm text-neutral-600">Drag and drop PDF here or click to select</p>
+            <p className="mt-1 text-xs text-neutral-500">{DEFAULT_UPLOAD_LABEL}</p>
             <p className="mt-2 text-xs text-neutral-500">
               {file ? file.name : existingFileName || 'No file chosen'}
             </p>
@@ -302,7 +303,8 @@ function AddStudyMaterialForm({
                 ev.target.value = ''
               }}
             />
-            <p className="text-sm text-neutral-600">Drag and drop files here or click to select</p>
+            <p className="text-sm text-neutral-600">Drag and drop PDF here or click to select</p>
+            <p className="mt-1 text-xs text-neutral-500">{DEFAULT_UPLOAD_LABEL}</p>
             <p className="mt-2 text-xs text-neutral-500">{file ? file.name : 'No file chosen'}</p>
           </div>
           {fieldErrors.file ? <p className="mt-1 text-xs text-red-600">{fieldErrors.file}</p> : null}

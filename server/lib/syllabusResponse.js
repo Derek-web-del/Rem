@@ -19,7 +19,6 @@ export function syllabusDisplayFileName(syllabusRaw, subjectCode) {
   if (t.startsWith('data:')) {
     const code = String(subjectCode ?? '').trim()
     if (t.includes('application/pdf') || t.includes('pdf')) return code ? `${code}.pdf` : 'syllabus.pdf'
-    if (t.includes('wordprocessingml') || t.includes('msword')) return code ? `${code}.docx` : 'syllabus.docx'
     return code ? `${code}.pdf` : 'syllabus.pdf'
   }
   const code = String(subjectCode ?? '').trim()

@@ -37,9 +37,27 @@ import {
   readCurriculumQuery,
 } from '../../lib/curriculumFormPrefill.js'
 import { fetchGradeComponentsForSubject } from '../../lib/teacherSubjectCurriculum.js'
+import { fetchTeacherSubjectsForAssignments } from '../../lib/teacherAssignments.js'
 
 const FALLBACK_SUBJECTS = ['English', 'Math', 'Science', 'Filipino']
 const FALLBACK_GRADES = ['Grade 7', 'Grade 8', 'Grade 9', 'Grade 10']
+
+function normalizeSubjectMatchText(value) {
+  return String(value || '').trim().toLowerCase().replace(/\s+/g, ' ')
+}
+
+function resolveFacultySubjectId(subjects, subjectName, gradeLevel) {
+  const name = normalizeSubjectMatchText(subjectName)
+  const grade = normalizeSubjectMatchText(gradeLevel)
+  if (!name || !grade || !Array.isArray(subjects)) return ''
+  const row = subjects.find(
+    (s) =>
+      normalizeSubjectMatchText(s.subject_name) === name &&
+      normalizeSubjectMatchText(s.grade_level) === grade,
+  )
+  const id = row?.id ?? row?.subject_id
+  return id != null && String(id).trim() !== '' ? String(id).trim() : ''
+}
 
 function partFromApi(part, index) {
   return {
@@ -76,10 +94,12 @@ export default function TeacherQuizForm({ mode = 'add' }) {
   const [subjectOptions, setSubjectOptions] = useState(FALLBACK_SUBJECTS)
   const [gradeOptions, setGradeOptions] = useState(FALLBACK_GRADES)
   const [gradeComponents, setGradeComponents] = useState([])
+  const [teacherSubjects, setTeacherSubjects] = useState([])
+  const [resolvedSubjectId, setResolvedSubjectId] = useState('')
   const [loadedSubjectId, setLoadedSubjectId] = useState('')
   const [includeComponentId, setIncludeComponentId] = useState('')
   const [fallbackComponentName, setFallbackComponentName] = useState('')
-  const linkedSubjectId = curriculumQuery.subjectId || loadedSubjectId
+  const activeSubjectId = curriculumQuery.subjectId || loadedSubjectId || resolvedSubjectId
   const [loading, setLoading] = useState(isEdit)
   const [submitting, setSubmitting] = useState(false)
   const [hasPassword, setHasPassword] = useState(false)
@@ -116,6 +136,8 @@ export default function TeacherQuizForm({ mode = 'add' }) {
         if (cancelled) return
         if (options.subjects.length) setSubjectOptions(options.subjects)
         if (options.gradeLevels.length) setGradeOptions(options.gradeLevels)
+        const facultySubjects = await fetchTeacherSubjectsForAssignments()
+        if (!cancelled) setTeacherSubjects(Array.isArray(facultySubjects) ? facultySubjects : [])
       } catch (e) {
         console.error('[TeacherQuizForm] options', e)
       }
@@ -124,6 +146,15 @@ export default function TeacherQuizForm({ mode = 'add' }) {
       cancelled = true
     }
   }, [])
+
+  useEffect(() => {
+    if (curriculumQuery.subjectId || loadedSubjectId) {
+      setResolvedSubjectId('')
+      return
+    }
+    const sid = resolveFacultySubjectId(teacherSubjects, form.subject, form.grade_level)
+    setResolvedSubjectId(sid)
+  }, [form.subject, form.grade_level, teacherSubjects, curriculumQuery.subjectId, loadedSubjectId])
 
   useEffect(() => {
     if (isEdit || !curriculumQuery.subjectId) return
@@ -150,9 +181,9 @@ export default function TeacherQuizForm({ mode = 'add' }) {
   }, [isEdit, curriculumQuery.subjectId])
 
   useEffect(() => {
-    if (!linkedSubjectId) {
+    if (!activeSubjectId) {
       setGradeComponents([])
-      if (!curriculumQuery.subjectId) {
+      if (!curriculumQuery.subjectId && !loadedSubjectId) {
         setForm((p) => ({ ...p, grade_component_id: '', subject_id: '' }))
       }
       return
@@ -160,28 +191,22 @@ export default function TeacherQuizForm({ mode = 'add' }) {
     let cancelled = false
     ;(async () => {
       try {
-        const rows = await fetchGradeComponentsForSubject(linkedSubjectId, 'quiz', {
+        const rows = await fetchGradeComponentsForSubject(activeSubjectId, 'quiz', {
           includeComponentId: includeComponentId || undefined,
         })
         if (cancelled) return
         setGradeComponents(rows)
-        setForm((p) => ({
-          ...p,
-          subject_id: linkedSubjectId,
-        }))
-        if (!isEdit) {
-          setForm((p) => {
-            const selected = String(p.grade_component_id || '').trim()
-            if (selected && rows.some((r) => String(r.id) === selected)) {
-              return { ...p, subject_id: linkedSubjectId }
-            }
-            return {
-              ...p,
-              subject_id: linkedSubjectId,
-              grade_component_id: rows[0]?.id != null ? String(rows[0].id) : '',
-            }
-          })
-        }
+        setForm((p) => {
+          const selected = String(p.grade_component_id || '').trim()
+          if (selected && rows.some((r) => String(r.id) === selected)) {
+            return { ...p, subject_id: activeSubjectId }
+          }
+          return {
+            ...p,
+            subject_id: activeSubjectId,
+            grade_component_id: rows[0]?.id != null ? String(rows[0].id) : '',
+          }
+        })
       } catch (e) {
         if (!cancelled) {
           console.error('[TeacherQuizForm] grade components', e)
@@ -192,7 +217,7 @@ export default function TeacherQuizForm({ mode = 'add' }) {
     return () => {
       cancelled = true
     }
-  }, [linkedSubjectId, curriculumQuery.subjectId, includeComponentId, isEdit])
+  }, [activeSubjectId, curriculumQuery.subjectId, loadedSubjectId, includeComponentId])
 
   useEffect(() => {
     if (!isEdit || !id) return
@@ -285,12 +310,35 @@ export default function TeacherQuizForm({ mode = 'add' }) {
       })
       return false
     }
-    if (linkedSubjectId && !String(form.grade_component_id || '').trim()) {
-      toastRef.current.error('Grade component is required for subject-linked quizzes.', {
+    if (!String(form.grade_level || '').trim()) {
+      toastRef.current.error('Please select a Grade Level.', {
         toastId: FACULTY_TOAST_ID.quizAddError,
         durationMs: FACULTY_ANNOUNCEMENT_TOAST_MS,
       })
       return false
+    }
+    if (String(form.subject || '').trim() && String(form.grade_level || '').trim()) {
+      if (!activeSubjectId) {
+        toastRef.current.error('This subject and grade level are not assigned to your faculty account.', {
+          toastId: FACULTY_TOAST_ID.quizAddError,
+          durationMs: FACULTY_ANNOUNCEMENT_TOAST_MS,
+        })
+        return false
+      }
+      if (!gradeComponents.length) {
+        toastRef.current.error('Configure grade criteria on the subject Grades tab first.', {
+          toastId: FACULTY_TOAST_ID.quizAddError,
+          durationMs: FACULTY_ANNOUNCEMENT_TOAST_MS,
+        })
+        return false
+      }
+      if (!String(form.grade_component_id || '').trim()) {
+        toastRef.current.error('Grade component is required for subject-linked quizzes.', {
+          toastId: FACULTY_TOAST_ID.quizAddError,
+          durationMs: FACULTY_ANNOUNCEMENT_TOAST_MS,
+        })
+        return false
+      }
     }
     const hasQuestions = parts.some((p) => (p.questions || []).length > 0)
     if (!hasQuestions) {
@@ -325,6 +373,7 @@ export default function TeacherQuizForm({ mode = 'add' }) {
       const payload = quizToApiPayload(
         {
           ...form,
+          subject_id: activeSubjectId || form.subject_id,
           deadline,
           total_points: totalPoints,
           password_touched: isEdit ? passwordTouched : true,
@@ -337,7 +386,7 @@ export default function TeacherQuizForm({ mode = 'add' }) {
       } else {
         const created = await createTeacherQuiz({
           ...payload,
-          subject_id: curriculumQuery.subjectId || payload.subject_id,
+          subject_id: activeSubjectId || payload.subject_id,
           grade_component_id: payload.grade_component_id,
         })
         await linkCreatedItemToCurriculum({
@@ -345,7 +394,7 @@ export default function TeacherQuizForm({ mode = 'add' }) {
           itemId: created?.id,
           moduleId: curriculumQuery.moduleId,
           topicId: curriculumQuery.topicId,
-          subjectId: curriculumQuery.subjectId || payload.subject_id,
+          subjectId: curriculumQuery.subjectId || activeSubjectId || payload.subject_id,
         })
         navigate(curriculumReturnPath(curriculumQuery.subjectId, '/teacher/quizzes'), {
           state: { quizToast: 'created' },
@@ -530,7 +579,7 @@ export default function TeacherQuizForm({ mode = 'add' }) {
                 </div>
               </div>
 
-              {linkedSubjectId ? (
+              {form.subject && form.grade_level ? (
                 <div className="mt-3 max-w-md">
                   <label className={labelClass}>Grade component *</label>
                   <select
@@ -557,7 +606,9 @@ export default function TeacherQuizForm({ mode = 'add' }) {
                   </select>
                   {gradeComponents.length === 0 ? (
                     <p className="mt-1 text-xs text-amber-700">
-                      Configure grade criteria on the subject Grades tab first.
+                      {activeSubjectId
+                        ? 'Configure grade criteria on the subject Grades tab first.'
+                        : 'Select a subject and grade level assigned to your account.'}
                     </p>
                   ) : null}
                 </div>

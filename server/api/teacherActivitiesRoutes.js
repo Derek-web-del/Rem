@@ -409,11 +409,18 @@ export function mountTeacherActivitiesRoutes(router, {
       }
       const linked = await resolveSubjectIdForActivity(pool, facultyRow.id, subjectName, gradeLevel)
       const subjectId =
-        Number.isFinite(bodySubjectId) && bodySubjectId > 0 ? bodySubjectId : linked?.subjectId ?? null
+        Number.isFinite(bodySubjectId) && bodySubjectId > 0
+          ? bodySubjectId
+          : linked?.subjectId ??
+            (existing.subject_id != null && Number(existing.subject_id) > 0
+              ? Number(existing.subject_id)
+              : null)
       const gradeComponentId =
         Number.isFinite(parsedGradeComponentId) && parsedGradeComponentId > 0
           ? parsedGradeComponentId
-          : null
+          : existing.grade_component_id != null && Number(existing.grade_component_id) > 0
+            ? Number(existing.grade_component_id)
+            : null
       if (subjectId && !gradeComponentId) {
         res.status(400).json({
           error: 'BAD_REQUEST',

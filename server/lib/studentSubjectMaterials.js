@@ -94,17 +94,6 @@ function studentSubjectSyllabusFileUrl(subjectId) {
 }
 
 function inferSyllabusFileType(syllabusRaw) {
-  const t = String(syllabusRaw || '').trim().toLowerCase()
-  if (!t) return 'application/pdf'
-  if (t.startsWith('data:')) {
-    if (t.includes('pdf')) return 'application/pdf'
-    if (t.includes('wordprocessingml') || t.includes('msword')) {
-      return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-    }
-    return 'application/pdf'
-  }
-  if (t.endsWith('.docx')) return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-  if (t.endsWith('.doc')) return 'application/msword'
   return 'application/pdf'
 }
 

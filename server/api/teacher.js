@@ -1185,19 +1185,6 @@ async function appendStudyMaterialsForSubject(pool, subjectId, subjectRow, pushM
 }
 
 function inferSyllabusFileType(syllabusRaw) {
-  const t = String(syllabusRaw || '').trim().toLowerCase()
-  if (!t) return 'application/pdf'
-  if (t.startsWith('data:')) {
-    if (t.includes('pdf')) return 'application/pdf'
-    if (t.includes('wordprocessingml') || t.includes('msword')) {
-      return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-    }
-    return 'application/pdf'
-  }
-  if (t.endsWith('.docx')) {
-    return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-  }
-  if (t.endsWith('.doc')) return 'application/msword'
   return 'application/pdf'
 }
 
@@ -2991,11 +2978,18 @@ export function createTeacherApiRouter(express, auth) {
       }
       const linked = await resolveSubjectIdForAssignment(pool, facultyRow.id, subjectName, gradeLevel)
       const subjectId =
-        Number.isFinite(bodySubjectId) && bodySubjectId > 0 ? bodySubjectId : linked?.subjectId ?? null
+        Number.isFinite(bodySubjectId) && bodySubjectId > 0
+          ? bodySubjectId
+          : linked?.subjectId ??
+            (existing.subject_id != null && Number(existing.subject_id) > 0
+              ? Number(existing.subject_id)
+              : null)
       const gradeComponentId =
         Number.isFinite(parsedGradeComponentId) && parsedGradeComponentId > 0
           ? parsedGradeComponentId
-          : null
+          : existing.grade_component_id != null && Number(existing.grade_component_id) > 0
+            ? Number(existing.grade_component_id)
+            : null
       if (subjectId && !gradeComponentId) {
         res.status(400).json({
           error: 'BAD_REQUEST',

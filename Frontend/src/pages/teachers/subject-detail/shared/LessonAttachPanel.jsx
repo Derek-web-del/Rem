@@ -67,6 +67,7 @@ export default function LessonAttachPanel({
   return (
     <div className="rounded-lg border border-neutral-200 bg-white p-5 shadow-sm">
       <p className="text-sm font-semibold text-neutral-900">Attach</p>
+      <p className="mt-1 text-xs text-neutral-500">PDF only</p>
       <div className="mt-4 flex flex-wrap gap-6">
         <button
           type="button"

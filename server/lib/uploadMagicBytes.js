@@ -26,5 +26,3 @@ export async function verifyUploadMagicBytes(buffer, allowedMimes) {
 }
 
 export const PDF_MIMES = ['application/pdf']
-export const DOC_MIMES = ['application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']
-export const PDF_OR_DOC_MIMES = [...PDF_MIMES, ...DOC_MIMES]

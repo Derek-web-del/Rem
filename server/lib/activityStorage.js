@@ -60,8 +60,8 @@ export function deleteActivityFileByUrl(fileUrl) {
   }
 }
 
-function validateActivityFile(file) {
-  if (!file) return 'Activity file is required.'
+function validateActivityFile(file, { required = true } = {}) {
+  if (!file) return required ? 'Activity file is required.' : ''
   const ext = path.extname(String(file.originalname || '')).toLowerCase()
   const mime = String(file.mimetype || '').toLowerCase()
   if (!ALLOWED_EXT.has(ext) && !ALLOWED_MIMES.has(mime)) {
@@ -107,6 +107,6 @@ export function getActivityUploadFile(req) {
   return req.file || null
 }
 
-export function validateActivityUploadFile(file) {
-  return validateActivityFile(file)
+export function validateActivityUploadFile(file, { required = true } = {}) {
+  return validateActivityFile(file, { required })
 }

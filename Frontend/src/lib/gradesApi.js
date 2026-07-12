@@ -99,11 +99,18 @@ export async function fetchSectionGradesOverview(sectionId, { forceRefresh = fal
   return { ...data, fromCache }
 }
 
-export async function adminGradeOverride({ entity_type, submission_id, student_id, new_score, reason }) {
+export async function adminGradeOverride({
+  entity_type,
+  submission_id = null,
+  entity_id = null,
+  student_id,
+  new_score,
+  reason,
+}) {
   const res = await apiFetch(apiUrl('/api/v1/admin/grade-override'), {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ entity_type, submission_id, student_id, new_score, reason }),
+    body: JSON.stringify({ entity_type, submission_id, entity_id, student_id, new_score, reason }),
     softAuth: true,
   })
   const data = await res.json().catch(() => ({}))

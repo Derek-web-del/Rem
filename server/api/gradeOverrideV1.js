@@ -41,6 +41,7 @@ export function createGradeOverrideV1Router(express, auth) {
 
       const entityType = String(req.body?.entity_type ?? '').trim().toLowerCase()
       const submissionId = parsePositiveId(req.body?.submission_id)
+      const entityId = parsePositiveId(req.body?.entity_id)
       const studentId = parsePositiveId(req.body?.student_id)
       const newScore = Number(req.body?.new_score)
       const reason = String(req.body?.reason ?? '').trim()
@@ -49,8 +50,16 @@ export function createGradeOverrideV1Router(express, auth) {
         res.status(400).json({ success: false, error: 'BAD_REQUEST', message: 'entity_type must be assignment, activity, or quiz.' })
         return
       }
-      if (!submissionId || !studentId) {
-        res.status(400).json({ success: false, error: 'BAD_REQUEST', message: 'submission_id and student_id are required.' })
+      if (!studentId) {
+        res.status(400).json({ success: false, error: 'BAD_REQUEST', message: 'student_id is required.' })
+        return
+      }
+      if (!submissionId && !entityId) {
+        res.status(400).json({
+          success: false,
+          error: 'BAD_REQUEST',
+          message: 'submission_id or entity_id is required.',
+        })
         return
       }
       if (!Number.isFinite(newScore)) {
@@ -62,10 +71,24 @@ export function createGradeOverrideV1Router(express, auth) {
         return
       }
 
-      const result = await applySubmissionScoreOverride(pool, entityType, submissionId, studentId, newScore)
+      const result = await applySubmissionScoreOverride(
+        pool,
+        entityType,
+        { submissionId, entityId, studentId },
+        newScore,
+      )
 
       if (!result) {
         res.status(404).json({ success: false, error: 'NOT_FOUND', message: 'Submission not found for this student.' })
+        return
+      }
+
+      if (result.error === 'BAD_TARGET') {
+        res.status(400).json({
+          success: false,
+          error: 'BAD_REQUEST',
+          message: 'submission_id or entity_id is required.',
+        })
         return
       }
 
@@ -90,7 +113,11 @@ export function createGradeOverrideV1Router(express, auth) {
       const actor = adminSession.user ?? adminSession?.data?.user ?? {}
       const actorId = String(actor.id || '').trim()
       const studentName = await fetchStudentName(pool, studentId)
-      const oldPct = formatPercent(result.old_score, result.max_score)
+      const resolvedSubmissionId = result.submission?.id ?? submissionId ?? null
+      const oldPct =
+        result.old_score != null
+          ? formatPercent(result.old_score, result.max_score)
+          : '0%'
       const newPct = formatPercent(result.new_score, result.max_score)
       const overriddenAt = new Date().toISOString()
 
@@ -104,7 +131,8 @@ export function createGradeOverrideV1Router(express, auth) {
         description,
         displayType: 'Grade override',
         entity_type: entityType,
-        submission_id: submissionId,
+        submission_id: resolvedSubmissionId,
+        entity_id: result.entity_id ?? entityId ?? null,
         student_id: studentId,
         old_score: result.old_score,
         new_score: result.new_score,
@@ -117,7 +145,7 @@ export function createGradeOverrideV1Router(express, auth) {
         await insertAuditLogRecord('GRADE_OVERRIDE', auditPayload)
         await auditInstituteRecord(adminSession, 'GRADE_OVERRIDE', {
           recordType: entityType,
-          recordId: String(submissionId),
+          recordId: String(resolvedSubmissionId ?? result.entity_id ?? entityId ?? ''),
           description,
         })
       } catch {

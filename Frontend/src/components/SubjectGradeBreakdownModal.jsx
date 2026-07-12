@@ -39,7 +39,7 @@ export default function SubjectGradeBreakdownModal({
               <div>
                 {isAdmin ? (
                   <p className="text-xs text-neutral-500">
-                    Locked scores can be overwritten with a valid reason. Changes are audit logged.
+                    Locked work appears as 0/max when a student did not submit. Overwrite with a valid reason; changes sync to teacher and student views and are audit logged.
                   </p>
                 ) : null}
               </div>

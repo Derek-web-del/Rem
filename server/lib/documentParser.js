@@ -1,7 +1,6 @@
 import fs from 'node:fs/promises'
 import fsSync from 'node:fs'
 import path from 'node:path'
-import mammoth from 'mammoth'
 import { createRequire } from 'node:module'
 
 const require = createRequire(import.meta.url)
@@ -25,18 +24,12 @@ export async function parseFile(filePath, mimeType, originalName) {
 
     if (ext === '.txt' || mime === 'text/plain') {
       text = await fs.readFile(abs, 'utf-8')
-    } else if (
-      ext === '.docx' ||
-      mime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-    ) {
-      const result = await mammoth.extractRawText({ path: abs })
-      text = String(result?.value || '')
     } else if (ext === '.pdf' || mime === 'application/pdf') {
       const buffer = fsSync.readFileSync(abs)
       const result = await pdfParse(buffer)
       text = String(result?.text || '')
     } else {
-      return { text: null, error: 'Unsupported file type' }
+      return { text: null, error: 'Supported formats: .txt, .pdf' }
     }
 
     text = text.replace(/\s+/g, ' ').trim()

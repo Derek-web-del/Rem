@@ -166,6 +166,8 @@ export function createGradesV1Router(express, auth) {
           return
         }
         gradeOptions = { facultyId: facultyRow.id }
+      } else if (gate.kind === 'admin') {
+        gradeOptions = { includeUnsubmittedLocked: true }
       }
 
       const studentRow = await fetchStudentRowById(pool, studentId)
@@ -179,6 +181,7 @@ export function createGradesV1Router(express, auth) {
         success: true,
         subjects: result.subjects || [],
         has_any_scores: Boolean(result.has_any_scores),
+        has_any_gradable_items: Boolean(result.has_any_gradable_items),
       })
     } catch (e) {
       sendSafeServerError(res, e, 'GET /api/v1/grades/student/:studentId')

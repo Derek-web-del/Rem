@@ -35,8 +35,13 @@ function WorkItemRow({ item, isAdmin, onOverrideClick }) {
             Locked
           </span>
         ) : null}
+        {item.is_no_submission ? (
+          <span className="ml-2 inline-flex rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800">
+            No submission
+          </span>
+        ) : null}
       </p>
-      {isAdmin && item.is_locked && item.submission_id ? (
+      {isAdmin && item.is_locked && item.entity_id ? (
         <button
           type="button"
           onClick={() => onOverrideClick?.(item)}
@@ -183,7 +188,7 @@ export default function SubjectGradesBreakdown({
         </div>
       ) : null}
 
-      {noScoresYet && components.length > 0 ? (
+      {noScoresYet && components.length > 0 && !showWorkList ? (
         <p className="mt-4 text-sm text-neutral-500">No grades recorded yet for this subject.</p>
       ) : null}
     </div>

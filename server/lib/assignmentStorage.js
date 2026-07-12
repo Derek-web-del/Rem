@@ -61,8 +61,8 @@ export function deleteAssignmentFileByUrl(fileUrl) {
   }
 }
 
-function validateAssignmentFile(file) {
-  if (!file) return 'Assignment file is required.'
+function validateAssignmentFile(file, { required = true } = {}) {
+  if (!file) return required ? 'Assignment file is required.' : ''
   const ext = path.extname(String(file.originalname || '')).toLowerCase()
   const mime = String(file.mimetype || '').toLowerCase()
   if (!ALLOWED_EXT.has(ext) && !ALLOWED_MIMES.has(mime)) {
@@ -108,8 +108,8 @@ export function getAssignmentUploadFile(req) {
   return req.file || null
 }
 
-export function validateAssignmentUploadFile(file) {
-  return validateAssignmentFile(file)
+export function validateAssignmentUploadFile(file, { required = true } = {}) {
+  return validateAssignmentFile(file, { required })
 }
 
 export async function validateAssignmentUploadFileAsync(file) {
