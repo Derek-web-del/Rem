@@ -296,7 +296,7 @@ export function registerSubjectsRoutes(router, ctx) {
       }
       const syllabusRaw = String(rows[0]?.syllabus_pdf ?? '').trim()
       const fileName = syllabusDisplayFileName(syllabusRaw, rows[0]?.subject_code)
-      sendSubjectSyllabusResponse(res, syllabusRaw, fileName)
+      await sendSubjectSyllabusResponse(res, syllabusRaw, fileName)
     } catch (e) {
       sendSafeServerError(res, e, 'GET /api/v1/subjects/:id/syllabus-file')
     }

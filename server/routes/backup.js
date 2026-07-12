@@ -41,6 +41,8 @@ import {
 import { summarizeModuleCoverage } from '../lib/backupCoverage.js'
 import { probeSpacesReachability } from '../lib/doSpacesBackup.js'
 import { isSpacesConfigured } from '../lib/doSpacesClient.js'
+import { probeUploadsStorage, syncUploadsDirToSpaces } from '../lib/uploadFileStorage.js'
+import { getUploadStorageStats } from '../lib/uploadStorageStats.js'
 import { getPgPool } from '../pgPool.js'
 
 ensureBackupsDirectory()
@@ -188,6 +190,8 @@ export function createBackupRouter(express, auth) {
         backupsWritable = false
       }
       const spacesProbe = await probeSpacesReachability()
+      const uploadsProbe = await probeUploadsStorage()
+      const uploadStats = getUploadStorageStats()
       res.json({
         ok: true,
         restore_engine: RESTORE_ENGINE_VERSION,
@@ -214,11 +218,23 @@ export function createBackupRouter(express, auth) {
           hint: backupsWritable
             ? 'Backup directory is writable.'
             : 'Mount a DigitalOcean Volume and set UPLOAD_DIR=/data/uploads (backups auto-use /data/backups) or set BACKUP_DIR explicitly.',
+          uploads: uploadsProbe,
+          upload_stats: uploadStats,
           spaces: spacesProbe,
         },
       })
     } catch (e) {
       sendSafeServerError(res, e, 'GET /api/backup/restore-diagnostics')
+    }
+  })
+
+  router.post('/sync-uploads-to-spaces', async (req, res) => {
+    try {
+      if (!(await requireAdmin(req, res))) return
+      const result = await syncUploadsDirToSpaces(getUploadsDir())
+      res.json({ ok: true, ...result })
+    } catch (e) {
+      sendSafeServerError(res, e, 'POST /api/backup/sync-uploads-to-spaces')
     }
   })
 

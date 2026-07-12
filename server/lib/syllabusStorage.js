@@ -8,6 +8,7 @@ import {
   PDF_ONLY_TYPE_MSG,
 } from './uploadLimitsConfig.js'
 import { uploadsRoot } from './uploadPaths.js'
+import { persistUploadBuffer, deleteUploadByStoredPath } from './uploadFileStorage.js'
 
 export const SYLLABUS_UPLOAD_REL = '/uploads/syllabus'
 
@@ -29,32 +30,22 @@ function safeBaseName(name) {
   return base.replace(/[^\w.\-()+ ]+/g, '_').slice(0, 160) || 'syllabus'
 }
 
-export function saveSyllabusFile(buffer, originalName) {
+export async function saveSyllabusFile(buffer, originalName) {
   ensureSyllabusUploadDir()
   const ext = path.extname(originalName || '').toLowerCase()
   const safeExt = ALLOWED_EXT.has(ext) ? ext : '.pdf'
   const stem = safeBaseName(originalName).replace(new RegExp(`${safeExt.replace('.', '\\.')}$`, 'i'), '')
   const fileName = `${stem}-${randomUUID().slice(0, 8)}${safeExt}`
-  const abs = path.join(syllabusUploadAbsDir(), fileName)
-  fs.writeFileSync(abs, buffer)
+  const stored = `${SYLLABUS_UPLOAD_REL}/${fileName}`
+  await persistUploadBuffer(stored, buffer)
   return {
-    syllabus_pdf: `${SYLLABUS_UPLOAD_REL}/${fileName}`,
+    syllabus_pdf: stored,
     file_name: path.basename(originalName || fileName),
   }
 }
 
-export function deleteSyllabusFileByUrl(syllabusPdf) {
-  const t = String(syllabusPdf || '').trim()
-  if (!t.startsWith(`${SYLLABUS_UPLOAD_REL}/`)) return
-  const rel = t.slice(SYLLABUS_UPLOAD_REL.length + 1)
-  const abs = path.join(syllabusUploadAbsDir(), rel)
-  if (fs.existsSync(abs)) {
-    try {
-      fs.unlinkSync(abs)
-    } catch {
-      /* ignore */
-    }
-  }
+export async function deleteSyllabusFileByUrl(syllabusPdf) {
+  await deleteUploadByStoredPath(syllabusPdf)
 }
 
 function validateSyllabusFile(file) {

@@ -8,6 +8,7 @@ import {
 } from './uploadLimitsConfig.js'
 import { PDF_MIMES, verifyUploadMagicBytes } from './uploadMagicBytes.js'
 import { uploadsRoot } from './uploadPaths.js'
+import { persistUploadBuffer, deleteUploadByStoredPath } from './uploadFileStorage.js'
 
 export const CURRICULUM_UPLOAD_REL = '/uploads/curriculum'
 
@@ -37,36 +38,26 @@ function mimeForCurriculumExt() {
   return 'application/pdf'
 }
 
-export function saveCurriculumPdf(buffer, originalName) {
+export async function saveCurriculumPdf(buffer, originalName) {
   return saveCurriculumGuideFile(buffer, originalName)
 }
 
-export function saveCurriculumGuideFile(buffer, originalName) {
+export async function saveCurriculumGuideFile(buffer, originalName) {
   ensureCurriculumUploadDir()
   const ext = normalizeCurriculumExt(originalName)
   const stem = safeBaseName(originalName).replace(/\.pdf$/i, '')
   const fileName = `${stem}-${randomUUID().slice(0, 8)}${ext}`
-  const abs = path.join(curriculumUploadAbsDir(), fileName)
-  fs.writeFileSync(abs, buffer)
-  return `${CURRICULUM_UPLOAD_REL}/${fileName}`
+  const stored = `${CURRICULUM_UPLOAD_REL}/${fileName}`
+  await persistUploadBuffer(stored, buffer)
+  return stored
 }
 
 export function curriculumMimeForFileName() {
   return mimeForCurriculumExt()
 }
 
-export function deleteCurriculumFileByUrl(fileUrl) {
-  const t = String(fileUrl || '').trim()
-  if (!t.startsWith(`${CURRICULUM_UPLOAD_REL}/`)) return
-  const rel = t.slice(CURRICULUM_UPLOAD_REL.length + 1)
-  const abs = path.join(curriculumUploadAbsDir(), rel)
-  if (fs.existsSync(abs)) {
-    try {
-      fs.unlinkSync(abs)
-    } catch {
-      /* ignore */
-    }
-  }
+export async function deleteCurriculumFileByUrl(fileUrl) {
+  await deleteUploadByStoredPath(fileUrl)
 }
 
 export function validateCurriculumPdfFile(file) {

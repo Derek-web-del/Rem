@@ -8,6 +8,7 @@ import {
   PDF_ONLY_TYPE_MSG,
 } from './uploadLimitsConfig.js'
 import { uploadsRoot } from './uploadPaths.js'
+import { persistUploadBuffer, deleteUploadByStoredPath } from './uploadFileStorage.js'
 
 export const LESSON_UPLOAD_REL = '/uploads/lessons'
 export const LESSON_FILE_SIZE_MSG = GENERIC_UPLOAD_FAILED_MSG
@@ -31,33 +32,23 @@ function safeBaseName(name) {
   return base.replace(/[^\w.\-()+ ]+/g, '_').slice(0, 160) || 'lesson'
 }
 
-export function saveLessonFile(buffer, originalName) {
+export async function saveLessonFile(buffer, originalName) {
   ensureLessonsUploadDir()
   const ext = path.extname(originalName || '').toLowerCase()
   const safeExt = ALLOWED_EXT.has(ext) ? ext : '.pdf'
   const stem = safeBaseName(originalName).replace(new RegExp(`${safeExt.replace('.', '\\.')}$`, 'i'), '')
   const fileName = `${stem}-${randomUUID().slice(0, 8)}${safeExt}`
-  const abs = path.join(lessonsUploadAbsDir(), fileName)
-  fs.writeFileSync(abs, buffer)
+  const stored = `${LESSON_UPLOAD_REL}/${fileName}`
+  await persistUploadBuffer(stored, buffer)
   return {
-    file_path: `${LESSON_UPLOAD_REL}/${fileName}`,
+    file_path: stored,
     file_name: path.basename(originalName || fileName),
     file_size: buffer.length,
   }
 }
 
-export function deleteLessonFileByUrl(fileUrl) {
-  const t = String(fileUrl || '').trim()
-  if (!t.startsWith(`${LESSON_UPLOAD_REL}/`)) return
-  const rel = t.slice(LESSON_UPLOAD_REL.length + 1)
-  const abs = path.join(lessonsUploadAbsDir(), rel)
-  if (fs.existsSync(abs)) {
-    try {
-      fs.unlinkSync(abs)
-    } catch {
-      /* ignore */
-    }
-  }
+export async function deleteLessonFileByUrl(fileUrl) {
+  await deleteUploadByStoredPath(fileUrl)
 }
 
 function validateLessonFile(file, { required = false } = {}) {

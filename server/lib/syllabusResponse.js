@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { resolvePublicUploadPath } from './uploadPaths.js'
+import { ensureLocalUploadFile } from './uploadFileStorage.js'
 
 export function parseSyllabusDataUrl(dataUrl) {
   const t = String(dataUrl || '').trim()
@@ -32,7 +33,7 @@ export function syllabusDisplayFileName(syllabusRaw, subjectCode) {
  * @param {string} [downloadName]
  * @param {{ successField?: boolean }} [options]
  */
-export function sendSubjectSyllabusResponse(res, syllabusRaw, downloadName, { successField = false } = {}) {
+export async function sendSubjectSyllabusResponse(res, syllabusRaw, downloadName, { successField = false } = {}) {
   const err = (status, error, message) => {
     res.status(status).json(successField ? { success: false, error, message } : { error, message })
   }
@@ -55,7 +56,8 @@ export function sendSubjectSyllabusResponse(res, syllabusRaw, downloadName, { su
     return
   }
   if (t.startsWith('/uploads/')) {
-    const abs = resolvePublicUploadPath(t)
+    const abs =
+      (await ensureLocalUploadFile(t)) || resolvePublicUploadPath(t)
     if (!abs || !fs.existsSync(abs)) {
       err(404, 'NOT_FOUND', 'Syllabus file missing on disk.')
       return
@@ -70,6 +72,6 @@ export function sendSubjectSyllabusResponse(res, syllabusRaw, downloadName, { su
 }
 
 /** Student API error envelope (`success: false`). */
-export function sendStudentSubjectSyllabusResponse(res, syllabusRaw, downloadName) {
+export async function sendStudentSubjectSyllabusResponse(res, syllabusRaw, downloadName) {
   return sendSubjectSyllabusResponse(res, syllabusRaw, downloadName, { successField: true })
 }

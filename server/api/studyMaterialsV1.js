@@ -162,7 +162,7 @@ export function createStudyMaterialsV1Router(express, auth) {
         res.status(400).json({ success: false, error: 'BAD_REQUEST', message: fileErr })
         return
       }
-      const saved = saveStudyMaterialFile(file.buffer, file.originalname)
+      const saved = await saveStudyMaterialFile(file.buffer, file.originalname)
       const file_type = FACULTY_MATERIAL_FILE_TYPE
       const material = await insertFacultyStudyMaterial(pool, {
         title,
@@ -245,7 +245,7 @@ export function createStudyMaterialsV1Router(express, auth) {
           return
         }
         deleteStudyMaterialFileByUrl(existing.file_url)
-        const saved = saveStudyMaterialFile(file.buffer, file.originalname)
+        const saved = await saveStudyMaterialFile(file.buffer, file.originalname)
         file_url = saved.file_url
         file_name = saved.file_name
         file_size = saved.file_size

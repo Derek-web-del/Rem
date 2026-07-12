@@ -65,7 +65,7 @@ export function announcementRowToResponse(row) {
   }
 }
 
-export function resolveAnnouncementImageForSave({
+export async function resolveAnnouncementImageForSave({
   announcement_image,
   image_name,
   title,
@@ -94,7 +94,7 @@ export function resolveAnnouncementImageForSave({
         deleteOldPath: '',
       }
     }
-    const saved = saveAnnouncementImageFromDataUrl(dataUrl, image_name || title || 'announcement')
+    const saved = await saveAnnouncementImageFromDataUrl(dataUrl, image_name || title || 'announcement')
     if (saved) {
       return {
         announcement_image: dataUrl,
@@ -129,11 +129,11 @@ export function resolveAnnouncementImageForSave({
   }
 }
 
-export function maybeDeleteOldAnnouncementFile(oldPath, newPath) {
+export async function maybeDeleteOldAnnouncementFile(oldPath, newPath) {
   const oldP = String(oldPath || '').trim()
   const newP = String(newPath || '').trim()
   if (oldP && oldP.startsWith('/uploads/announcements/') && oldP !== newP) {
-    deleteAnnouncementFileByUrl(oldP)
+    await deleteAnnouncementFileByUrl(oldP)
   }
 }
 

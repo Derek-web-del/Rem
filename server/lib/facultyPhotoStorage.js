@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { PHOTO_MAX_BYTES, PHOTO_MAX_MSG } from './uploadLimitsConfig.js'
 import { resolvePublicUploadPath, uploadsRoot } from './uploadPaths.js'
+import { persistUploadBuffer, deleteUploadByStoredPath } from './uploadFileStorage.js'
 
 export const FACULTY_UPLOAD_REL = '/uploads/faculties'
 export const FACULTY_PHOTO_MAX_BYTES = PHOTO_MAX_BYTES
@@ -70,7 +71,7 @@ export async function saveFacultyPhotoBuffer(buffer, mime, facultyId) {
     .slice(0, 64)
   const name = `faculty_${safeId}_${Date.now()}.${ext}`
   const rel = `${FACULTY_UPLOAD_REL}/${name}`
-  await fs.promises.writeFile(path.join(dir, name), buffer)
+  await persistUploadBuffer(rel, buffer)
   return rel
 }
 
@@ -85,14 +86,7 @@ export async function saveFacultyPhotoFromDataUrl(dataUrl, facultyId) {
 }
 
 export async function deleteStoredFacultyPhotoIfLocal(photoUrl) {
-  if (!isStoredFacultyPhotoPath(photoUrl)) return
-  const rel = String(photoUrl).replace(/^\//, '')
-  const filePath = resolvePublicUploadPath(`/${rel}`)
-  try {
-    await fs.promises.unlink(filePath)
-  } catch {
-    /* ignore missing file */
-  }
+  await deleteUploadByStoredPath(photoUrl)
 }
 
 /**

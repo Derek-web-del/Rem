@@ -7,6 +7,7 @@ import {
 } from './uploadLimitsConfig.js'
 import { PDF_MIMES, verifyUploadMagicBytes } from './uploadMagicBytes.js'
 import { resolvePublicUploadPath, uploadsRoot } from './uploadPaths.js'
+import { persistUploadBuffer, deleteUploadByStoredPath, ensureLocalUploadFile } from './uploadFileStorage.js'
 
 export const ASSIGNMENT_SUBMISSION_REL = '/uploads/submissions/assignments'
 export const ACTIVITY_SUBMISSION_REL = '/uploads/submissions/activities'
@@ -35,32 +36,23 @@ function extFromFile(originalName, mime) {
   return '.bin'
 }
 
-export function saveStudentSubmissionFile({ buffer, originalName, mime, studentId, itemId, kind }) {
+export async function saveStudentSubmissionFile({ buffer, originalName, mime, studentId, itemId, kind }) {
   const relBase = kind === 'activity' ? ACTIVITY_SUBMISSION_REL : ASSIGNMENT_SUBMISSION_REL
   ensureDir(relBase)
   const ext = extFromFile(originalName, mime)
   const ts = Date.now()
   const fileName = `${studentId}_${itemId}_${ts}${ext}`
-  const abs = path.join(absDir(relBase), fileName)
-  fs.writeFileSync(abs, buffer)
+  const stored = `${relBase}/${fileName}`
+  await persistUploadBuffer(stored, buffer)
   return {
-    file_path: `${relBase}/${fileName}`,
+    file_path: stored,
     file_name: path.basename(String(originalName || fileName)),
     file_size: buffer.length,
   }
 }
 
-export function deleteSubmissionFileByUrl(fileUrl) {
-  const t = String(fileUrl || '').trim()
-  if (!t.startsWith(ASSIGNMENT_SUBMISSION_REL) && !t.startsWith(ACTIVITY_SUBMISSION_REL)) return
-  const abs = resolvePublicUploadPath(t)
-  if (fs.existsSync(abs)) {
-    try {
-      fs.unlinkSync(abs)
-    } catch {
-      /* ignore */
-    }
-  }
+export async function deleteSubmissionFileByUrl(fileUrl) {
+  await deleteUploadByStoredPath(fileUrl)
 }
 
 function validateStudentSubmissionFile(file) {
@@ -129,14 +121,17 @@ export async function validateStudentSubmissionUploadFileAsync(file) {
   return verifyUploadMagicBytes(file.buffer, PDF_MIMES)
 }
 
-export function streamSubmissionDownload(res, filePath, downloadName) {
+export async function streamSubmissionDownload(res, filePath, downloadName) {
   const rel = String(filePath || '').trim()
   if (!rel) {
     res.status(404).json({ success: false, error: 'NOT_FOUND', message: 'File not found.' })
     return
   }
-  const abs = resolvePublicUploadPath(rel.startsWith('/uploads/') ? rel : `/uploads/${rel.replace(/^uploads\//, '')}`)
-  if (!fs.existsSync(abs)) {
+  const stored = rel.startsWith('/uploads/') ? rel : `/uploads/${rel.replace(/^uploads\//, '')}`
+  const abs =
+    (await ensureLocalUploadFile(stored)) ||
+    resolvePublicUploadPath(stored)
+  if (!abs || !fs.existsSync(abs)) {
     res.status(404).json({ success: false, error: 'NOT_FOUND', message: 'File missing on disk.' })
     return
   }

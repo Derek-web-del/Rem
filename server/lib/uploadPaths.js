@@ -59,6 +59,13 @@ export function resolvePublicUploadPath(storedPath) {
   return path.join(uploadsRoot(), rel)
 }
 
+/** Async resolve — downloads from Spaces when local file is missing. */
+export async function resolvePublicUploadPathAsync(storedPath) {
+  const { ensureLocalUploadFile } = await import('./uploadFileStorage.js')
+  const local = await ensureLocalUploadFile(storedPath)
+  return local || resolvePublicUploadPath(storedPath)
+}
+
 const UPLOAD_SUBDIRS = [
   'assignments',
   'activities',

@@ -1822,7 +1822,7 @@ export function createTeacherApiRouter(express, auth) {
       )
       const syllabusRaw = String(rows?.[0]?.syllabus_pdf ?? '').trim()
       const fileName = syllabusDisplayFileName(syllabusRaw, rows?.[0]?.subject_code)
-      sendSubjectSyllabusResponse(res, syllabusRaw, fileName)
+      await sendSubjectSyllabusResponse(res, syllabusRaw, fileName)
     } catch (e) {
       sendSafeServerError(res, e, 'GET /api/teacher/subjects/:subjectId/syllabus-file')
     }
@@ -1916,7 +1916,7 @@ export function createTeacherApiRouter(express, auth) {
         [subjectId],
       )
       const oldSyllabus = String(existingRows?.[0]?.syllabus_pdf ?? '').trim()
-      const saved = saveSyllabusFile(file.buffer, file.originalname)
+      const saved = await saveSyllabusFile(file.buffer, file.originalname)
       const upd = await pool.query(
         `UPDATE subjects SET syllabus_pdf = $1 WHERE id = $2 AND faculty_id = $3`,
         [saved.syllabus_pdf, subjectId, String(facultyRow.id).trim()],
@@ -2025,7 +2025,7 @@ export function createTeacherApiRouter(express, auth) {
         return
       }
       await ensureSubjectMaterialsTable(pool)
-      const saved = saveStudyMaterialFile(file.buffer, file.originalname)
+      const saved = await saveStudyMaterialFile(file.buffer, file.originalname)
       const file_type = guessMaterialFileType(file.originalname, file.mimetype)
       const unitNoInt = Number.parseInt(unit_no, 10)
       await updateTeacherSubjectFields(pool, subjectId, facultyRow.id, {
@@ -2159,7 +2159,7 @@ export function createTeacherApiRouter(express, auth) {
           return
         }
         deleteStudyMaterialFileByUrl(existing.file_url)
-        const saved = saveStudyMaterialFile(file.buffer, file.originalname)
+        const saved = await saveStudyMaterialFile(file.buffer, file.originalname)
         file_url = saved.file_url
         file_name = saved.file_name
         file_size = saved.file_size
@@ -2410,7 +2410,7 @@ export function createTeacherApiRouter(express, auth) {
         res.status(400).json({ error: 'BAD_REQUEST', message: 'Invalid announcement type.' })
         return
       }
-      const imageFields = resolveAnnouncementImageForSave({
+      const imageFields = await resolveAnnouncementImageForSave({
         announcement_image,
         image_name,
         title,
@@ -2489,14 +2489,14 @@ export function createTeacherApiRouter(express, auth) {
         res.status(400).json({ error: 'BAD_REQUEST', message: 'Invalid announcement type.' })
         return
       }
-      const imageFields = resolveAnnouncementImageForSave({
+      const imageFields = await resolveAnnouncementImageForSave({
         announcement_image,
         image_name,
         title,
         existingPath: existing.image_path,
         existingDataUrl: existing.announcement_image,
       })
-      maybeDeleteOldAnnouncementFile(imageFields.deleteOldPath, imageFields.image_path)
+      await maybeDeleteOldAnnouncementFile(imageFields.deleteOldPath, imageFields.image_path)
       const { rows } = await pool.query(
         `
         UPDATE announcements
@@ -2858,7 +2858,7 @@ export function createTeacherApiRouter(express, auth) {
         })
         return
       }
-      const saved = saveAssignmentFile(file.buffer, file.originalname)
+      const saved = await saveAssignmentFile(file.buffer, file.originalname)
       const uploadedBy = facultyUploadedByLabel(facultyRow)
       const { rows } = await pool.query(
         `
@@ -3021,7 +3021,7 @@ export function createTeacherApiRouter(express, auth) {
       let file_size = existing.file_size
       if (file) {
         deleteAssignmentFileByUrl(existing.file_path)
-        const saved = saveAssignmentFile(file.buffer, file.originalname)
+        const saved = await saveAssignmentFile(file.buffer, file.originalname)
         file_path = saved.file_path
         file_name = saved.file_name
         file_size = saved.file_size

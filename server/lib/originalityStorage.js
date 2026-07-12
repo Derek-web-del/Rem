@@ -7,6 +7,7 @@ import {
   GENERIC_UPLOAD_FAILED_MSG,
 } from './uploadLimitsConfig.js'
 import { uploadsRoot } from './uploadPaths.js'
+import { syncLocalFileToSpaces } from './uploadFileStorage.js'
 
 export const ORIGINALITY_UPLOAD_REL = '/uploads/originality'
 export const ORIGINALITY_FILE_TYPE_MSG = 'Supported formats: .txt, .pdf'
@@ -73,8 +74,22 @@ function multerSingle(req, res, next) {
   })
 }
 
+async function syncOriginalityToSpaces(req, res, next) {
+  if (!req.file?.path) return next()
+  try {
+    const stored = `${ORIGINALITY_UPLOAD_REL}/${path.basename(req.file.path)}`
+    await syncLocalFileToSpaces(stored, req.file.path)
+    next()
+  } catch (e) {
+    next(e)
+  }
+}
+
 export function originalityUploadMiddleware(req, res, next) {
-  multerSingle(req, res, next)
+  multerSingle(req, res, (err) => {
+    if (err) return
+    syncOriginalityToSpaces(req, res, next)
+  })
 }
 
 export function getOriginalityUploadFile(req) {

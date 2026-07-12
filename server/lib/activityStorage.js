@@ -8,6 +8,7 @@ import {
   PDF_ONLY_TYPE_MSG,
 } from './uploadLimitsConfig.js'
 import { uploadsRoot } from './uploadPaths.js'
+import { persistUploadBuffer, deleteUploadByStoredPath } from './uploadFileStorage.js'
 
 export const ACTIVITY_UPLOAD_REL = '/uploads/activities'
 export const ACTIVITY_FILE_SIZE_MSG = GENERIC_UPLOAD_FAILED_MSG
@@ -31,33 +32,23 @@ function safeBaseName(name) {
   return base.replace(/[^\w.\-()+ ]+/g, '_').slice(0, 160) || 'activity'
 }
 
-export function saveActivityFile(buffer, originalName) {
+export async function saveActivityFile(buffer, originalName) {
   ensureActivitiesUploadDir()
   const ext = path.extname(originalName || '').toLowerCase()
   const safeExt = ALLOWED_EXT.has(ext) ? ext : '.bin'
   const stem = safeBaseName(originalName).replace(new RegExp(`${safeExt.replace('.', '\\.')}$`, 'i'), '')
   const fileName = `${stem}-${randomUUID().slice(0, 8)}${safeExt}`
-  const abs = path.join(activitiesUploadAbsDir(), fileName)
-  fs.writeFileSync(abs, buffer)
+  const stored = `${ACTIVITY_UPLOAD_REL}/${fileName}`
+  await persistUploadBuffer(stored, buffer)
   return {
-    file_path: `${ACTIVITY_UPLOAD_REL}/${fileName}`,
+    file_path: stored,
     file_name: path.basename(originalName || fileName),
     file_size: buffer.length,
   }
 }
 
-export function deleteActivityFileByUrl(fileUrl) {
-  const t = String(fileUrl || '').trim()
-  if (!t.startsWith(`${ACTIVITY_UPLOAD_REL}/`)) return
-  const rel = t.slice(ACTIVITY_UPLOAD_REL.length + 1)
-  const abs = path.join(activitiesUploadAbsDir(), rel)
-  if (fs.existsSync(abs)) {
-    try {
-      fs.unlinkSync(abs)
-    } catch {
-      /* ignore */
-    }
-  }
+export async function deleteActivityFileByUrl(fileUrl) {
+  await deleteUploadByStoredPath(fileUrl)
 }
 
 function validateActivityFile(file, { required = true } = {}) {

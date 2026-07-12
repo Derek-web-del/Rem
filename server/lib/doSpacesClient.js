@@ -26,7 +26,7 @@ export function isSpacesConfigured() {
   return Boolean(bucket && key && secret && endpoint)
 }
 
-/** @returns {{ enabled: boolean, bucket: string, endpoint: string, region: string, backupsPrefix: string, key: string, secret: string } | null} */
+/** @returns {{ enabled: boolean, bucket: string, endpoint: string, region: string, backupsPrefix: string, uploadsPrefix: string, key: string, secret: string } | null} */
 export function getSpacesConfig() {
   if (!isSpacesConfigured()) return null
   return {
@@ -35,6 +35,7 @@ export function getSpacesConfig() {
     endpoint: String(process.env.DO_SPACES_ENDPOINT || '').trim(),
     region: String(process.env.DO_SPACES_REGION || 'sgp1').trim() || 'sgp1',
     backupsPrefix: normalizePrefix(process.env.DO_SPACES_BACKUPS_PREFIX || 'backups/'),
+    uploadsPrefix: normalizePrefix(process.env.DO_SPACES_UPLOADS_PREFIX || 'uploads/'),
     key: String(process.env.DO_SPACES_KEY || '').trim(),
     secret: String(process.env.DO_SPACES_SECRET || process.env.DO_SPACES_SECRET_KEY || '').trim(),
   }

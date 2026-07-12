@@ -121,7 +121,7 @@ function registerWorkRoutes(router, { requireStudentSession, resolveStudentConte
         res.status(404).json({ success: false, error: 'NOT_FOUND', message: 'Assignment not found.' })
         return
       }
-      streamSubmissionDownload(res, row.file_path, row.file_name || 'assignment.pdf')
+      await streamSubmissionDownload(res, row.file_path, row.file_name || 'assignment.pdf')
     } catch (e) {
       sendSafeServerError(res, e, 'GET /api/v1/student/assignments/:id/prompt-file')
     }
@@ -152,7 +152,7 @@ function registerWorkRoutes(router, { requireStudentSession, resolveStudentConte
         res.status(404).json({ success: false, error: 'NOT_FOUND', message: 'No submission file.' })
         return
       }
-      streamSubmissionDownload(res, submission.file_path, submission.file_name || 'submission')
+      await streamSubmissionDownload(res, submission.file_path, submission.file_name || 'submission')
     } catch (e) {
       sendSafeServerError(res, e, 'GET /api/v1/student/assignments/:id/submission-file')
     }
@@ -338,7 +338,7 @@ function registerWorkRoutes(router, { requireStudentSession, resolveStudentConte
         res.status(404).json({ success: false, error: 'NOT_FOUND', message: 'Activity not found.' })
         return
       }
-      streamSubmissionDownload(res, row.file_path, row.file_name || 'activity.pdf')
+      await streamSubmissionDownload(res, row.file_path, row.file_name || 'activity.pdf')
     } catch (e) {
       sendSafeServerError(res, e, 'GET /api/v1/student/activities/:id/prompt-file')
     }
@@ -369,7 +369,7 @@ function registerWorkRoutes(router, { requireStudentSession, resolveStudentConte
         res.status(404).json({ success: false, error: 'NOT_FOUND', message: 'No submission file.' })
         return
       }
-      streamSubmissionDownload(res, submission.file_path, submission.file_name || 'submission')
+      await streamSubmissionDownload(res, submission.file_path, submission.file_name || 'submission')
     } catch (e) {
       sendSafeServerError(res, e, 'GET /api/v1/student/activities/:id/submission-file')
     }

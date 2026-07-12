@@ -8,6 +8,7 @@ import {
   PDF_ONLY_TYPE_MSG,
 } from './uploadLimitsConfig.js'
 import { uploadsRoot } from './uploadPaths.js'
+import { persistUploadBuffer, deleteUploadByStoredPath } from './uploadFileStorage.js'
 
 export const MATERIAL_UPLOAD_REL = '/uploads/materials'
 export const FILE_SIZE_MAX_MSG = GENERIC_UPLOAD_FAILED_MSG
@@ -60,33 +61,23 @@ export function guessMaterialFileType(originalName, mime) {
   return m || 'application/octet-stream'
 }
 
-export function saveStudyMaterialFile(buffer, originalName) {
+export async function saveStudyMaterialFile(buffer, originalName) {
   ensureMaterialsUploadDir()
   const ext = path.extname(originalName || '').toLowerCase()
   const safeExt = ALLOWED_EXT.has(ext) ? ext : '.bin'
   const stem = safeBaseName(originalName).replace(new RegExp(`${safeExt.replace('.', '\\.')}$`, 'i'), '')
   const fileName = `${stem}-${randomUUID().slice(0, 8)}${safeExt}`
-  const abs = path.join(materialsUploadAbsDir(), fileName)
-  fs.writeFileSync(abs, buffer)
+  const stored = `${MATERIAL_UPLOAD_REL}/${fileName}`
+  await persistUploadBuffer(stored, buffer)
   return {
-    file_url: `${MATERIAL_UPLOAD_REL}/${fileName}`,
+    file_url: stored,
     file_name: path.basename(originalName || fileName),
     file_size: buffer.length,
   }
 }
 
-export function deleteStudyMaterialFileByUrl(fileUrl) {
-  const t = String(fileUrl || '').trim()
-  if (!t.startsWith(`${MATERIAL_UPLOAD_REL}/`)) return
-  const rel = t.slice(MATERIAL_UPLOAD_REL.length + 1)
-  const abs = path.join(materialsUploadAbsDir(), rel)
-  if (fs.existsSync(abs)) {
-    try {
-      fs.unlinkSync(abs)
-    } catch {
-      /* ignore */
-    }
-  }
+export async function deleteStudyMaterialFileByUrl(fileUrl) {
+  await deleteUploadByStoredPath(fileUrl)
 }
 
 function validateDocumentMaterialFile(file) {

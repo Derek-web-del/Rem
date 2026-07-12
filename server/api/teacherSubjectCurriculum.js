@@ -486,7 +486,7 @@ export function createTeacherSubjectCurriculumRouter(express, auth) {
       }
       let file_path = null
       if (file) {
-        const saved = saveLessonFile(file.buffer, file.originalname)
+        const saved = await saveLessonFile(file.buffer, file.originalname)
         file_path = saved.file_path
       }
       const topicResolved = await resolveLessonTopicId(ctx.pool, ctx.subjectId, fields.topic_id)
@@ -593,7 +593,7 @@ export function createTeacherSubjectCurriculumRouter(express, auth) {
       if (fields.module_order != null) payload.module_order = fields.module_order
 
       if (file) {
-        const saved = saveLessonFile(file.buffer, file.originalname)
+        const saved = await saveLessonFile(file.buffer, file.originalname)
         payload.file_path = saved.file_path
         if (existing.file_path) deleteLessonFileByUrl(existing.file_path)
       } else if (fields.clear_file) {

@@ -6,6 +6,7 @@ import { logUnauthorizedAccessFromRequest } from '../lib/security.js'
 import { fetchStudentRowForSession, normalizeGradeLevel } from '../lib/studentSession.js'
 import { fetchFacultyRowForSession } from '../lib/facultySession.js'
 import { subjectAssetsRoot, uploadsRoot, normalizeStoredUploadPath } from '../lib/uploadPaths.js'
+import { ensureLocalUploadFile } from '../lib/uploadFileStorage.js'
 
 const ALLOWED_CATEGORIES = new Set([
   'assignments',
@@ -600,6 +601,25 @@ export function createFileDownloadRouter(express, { auth }) {
       }
 
       if (!fs.existsSync(resolved) || !fs.statSync(resolved).isFile()) {
+        const stored = storedUploadPath(category, splat)
+        const hydrated = await ensureLocalUploadFile(stored)
+        if (hydrated && fs.existsSync(hydrated) && fs.statSync(hydrated).isFile()) {
+          const ext = path.extname(hydrated).toLowerCase()
+          if (ext === '.pdf') {
+            res.setHeader('Content-Type', 'application/pdf')
+            res.setHeader('Content-Disposition', 'inline')
+          } else if (['.jpg', '.jpeg'].includes(ext)) {
+            res.setHeader('Content-Type', 'image/jpeg')
+          } else if (ext === '.png') {
+            res.setHeader('Content-Type', 'image/png')
+          } else if (ext === '.webp') {
+            res.setHeader('Content-Type', 'image/webp')
+          } else if (ext === '.gif') {
+            res.setHeader('Content-Type', 'image/gif')
+          }
+          res.sendFile(hydrated)
+          return
+        }
         if (category === 'announcements') {
           const served = await tryServeAnnouncementFromDatabase(storedUploadPath(category, splat), res)
           if (served) return

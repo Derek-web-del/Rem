@@ -54,7 +54,7 @@ export function registerAnnouncementsRoutes(router, ctx) {
         return
       }
 
-      const imageFields = resolveAnnouncementImageForSave({
+      const imageFields = await resolveAnnouncementImageForSave({
         announcement_image,
         image_name,
         title,
@@ -137,14 +137,14 @@ export function registerAnnouncementsRoutes(router, ctx) {
         return
       }
 
-      const imageFields = resolveAnnouncementImageForSave({
+      const imageFields = await resolveAnnouncementImageForSave({
         announcement_image,
         image_name,
         title,
         existingPath: existing.image_path,
         existingDataUrl: existing.announcement_image,
       })
-      maybeDeleteOldAnnouncementFile(imageFields.deleteOldPath, imageFields.image_path)
+      await maybeDeleteOldAnnouncementFile(imageFields.deleteOldPath, imageFields.image_path)
 
       const uploadedBy =
         String(existing.uploaded_by ?? '').trim() || resolveSessionUploadedByLabel(adminSession)

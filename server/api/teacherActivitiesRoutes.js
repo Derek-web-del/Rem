@@ -289,7 +289,7 @@ export function mountTeacherActivitiesRoutes(router, {
         res.status(400).json({ error: 'BAD_REQUEST', message: fileErr })
         return
       }
-      const saved = saveActivityFile(file.buffer, file.originalname)
+      const saved = await saveActivityFile(file.buffer, file.originalname)
       const uploadedBy = facultyUploadedByLabel(facultyRow)
       const { rows } = await pool.query(
         `
@@ -452,7 +452,7 @@ export function mountTeacherActivitiesRoutes(router, {
       let file_size = existing.file_size
       if (file) {
         deleteActivityFileByUrl(existing.file_path)
-        const saved = saveActivityFile(file.buffer, file.originalname)
+        const saved = await saveActivityFile(file.buffer, file.originalname)
         file_path = saved.file_path
         file_name = saved.file_name
         file_size = saved.file_size

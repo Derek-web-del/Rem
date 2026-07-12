@@ -26,6 +26,11 @@ import { repairFacultyAuthLinks, buildFacultyRestoreReport } from './repairFacul
 import { repairStudentAuthLinks } from './repairStudentAuthLinks.js'
 import { uploadsRoot, subjectAssetsRoot, resolvePublicUploadPath } from './uploadPaths.js'
 import { allBackupFileFields, summarizeModuleCoverage } from './backupCoverage.js'
+import {
+  hydrateUploadsDirFromSpaces,
+  syncUploadsDirToSpaces,
+  ensureLocalUploadFile,
+} from './uploadFileStorage.js'
 
 const require = createRequire(import.meta.url)
 const archiverLib = require('archiver')
@@ -1976,7 +1981,8 @@ export async function verifyRestoredFiles(parsed, manifest = null) {
   let verified = 0
   const byModule = {}
   for (const storedPath of samplePaths) {
-    const resolved = resolvePublicUploadPath(storedPath)
+    const resolved =
+      (await ensureLocalUploadFile(storedPath)) || resolvePublicUploadPath(storedPath)
     if (!resolved) continue
     const category = storedPath.split('/').filter(Boolean)[1] || 'other'
     if (!byModule[category]) byModule[category] = { verified: 0, missing: 0 }
@@ -2242,6 +2248,8 @@ export async function writeLnbakArchiveToPath({
 }) {
   ensureBackupsDirectory()
   await fsp.mkdir(path.dirname(diskPath), { recursive: true })
+
+  await hydrateUploadsDirFromSpaces(uploadsDir)
 
   const manifestPayload =
     manifest ||
@@ -2722,6 +2730,7 @@ export async function extractUploadsArchive(uploadsSource, { uploadsDir = getUpl
     }
     const files_on_disk = await countFilesRecursive(targetDir)
     console.log(`[BACKUP] Upload extract complete: ${files_on_disk} file(s) at ${targetDir}`)
+    await syncUploadsDirToSpaces(targetDir)
     return { ok: true, uploads_dir: targetDir, files_on_disk, error: null }
   } catch (e) {
     console.warn('[BACKUP] Upload extraction failed (DB restore already committed):', e?.message || e)

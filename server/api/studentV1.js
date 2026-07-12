@@ -356,7 +356,7 @@ export function createStudentV1Router(express, auth) {
       )
       const syllabusRaw = String(rows?.[0]?.syllabus_pdf ?? '').trim()
       const fileName = subject.syllabus_file_name || 'syllabus.pdf'
-      sendStudentSubjectSyllabusResponse(res, syllabusRaw, fileName)
+      await sendStudentSubjectSyllabusResponse(res, syllabusRaw, fileName)
     } catch (e) {
       sendSafeServerError(res, e, 'GET /api/v1/student/subjects/:id/syllabus-file')
     }

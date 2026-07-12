@@ -6,6 +6,7 @@ import {
   PHOTO_MAX_MSG,
 } from './uploadLimitsConfig.js'
 import { uploadsRoot } from './uploadPaths.js'
+import { persistUploadBuffer, deleteUploadByStoredPath } from './uploadFileStorage.js'
 
 export const ANNOUNCEMENT_UPLOAD_REL = '/uploads/announcements'
 const ALLOWED_MIME = new Set(['image/png', 'image/jpeg', 'image/jpg'])
@@ -43,24 +44,24 @@ export function validateAnnouncementImageBuffer(buffer, mimeType) {
   return ''
 }
 
-export function saveAnnouncementImageBuffer(buffer, originalName, mimeType) {
+export async function saveAnnouncementImageBuffer(buffer, originalName, mimeType) {
   const err = validateAnnouncementImageBuffer(buffer, mimeType)
   if (err) throw new Error(err)
-  const dir = ensureUploadDir()
+  ensureUploadDir()
   const ext =
     path.extname(String(originalName || '')).toLowerCase() === '.png' ? '.png' : extFromMime(mimeType)
   const stem = safeStem(path.basename(String(originalName || ''), ext))
   const token = crypto.randomBytes(4).toString('hex')
   const fileName = `${stem}-${token}${ext}`
-  const abs = path.join(dir, fileName)
-  fs.writeFileSync(abs, buffer)
+  const stored = `${ANNOUNCEMENT_UPLOAD_REL}/${fileName}`
+  await persistUploadBuffer(stored, buffer)
   return {
-    file_url: `${ANNOUNCEMENT_UPLOAD_REL}/${fileName}`,
+    file_url: stored,
     file_name: String(originalName || fileName).trim() || fileName,
   }
 }
 
-export function saveAnnouncementImageFromDataUrl(dataUrl, baseName = 'announcement') {
+export async function saveAnnouncementImageFromDataUrl(dataUrl, baseName = 'announcement') {
   const raw = String(dataUrl || '').trim()
   if (!raw.startsWith('data:')) return null
   const match = /^data:([^;]+);base64,(.+)$/i.exec(raw)
@@ -70,13 +71,6 @@ export function saveAnnouncementImageFromDataUrl(dataUrl, baseName = 'announceme
   return saveAnnouncementImageBuffer(buffer, baseName, mime)
 }
 
-export function deleteAnnouncementFileByUrl(publicPath) {
-  const rel = String(publicPath || '').replace(/^\/uploads\/announcements\//, '')
-  if (!rel || rel.includes('..')) return
-  const abs = path.join(getAnnouncementsUploadDir(), rel)
-  try {
-    if (fs.existsSync(abs)) fs.unlinkSync(abs)
-  } catch {
-    /* ignore */
-  }
+export async function deleteAnnouncementFileByUrl(publicPath) {
+  await deleteUploadByStoredPath(publicPath)
 }

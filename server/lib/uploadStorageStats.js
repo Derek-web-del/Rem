@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { uploadsRoot } from './uploadPaths.js'
+import { isUploadsOnSpaces } from './uploadFileStorage.js'
 
 function countFilesInDir(dir) {
   if (!fs.existsSync(dir)) return 0
@@ -36,9 +37,10 @@ export function getUploadStorageStats() {
   return {
     uploads_root: root,
     upload_dir_env_set: configured,
+    uploads_on_spaces: isUploadsOnSpaces(),
     ephemeral_warning:
       !configured &&
-      'App Platform disk is ephemeral — restore uploads from Droplet backup or use Spaces for persistence.',
+      'App Platform disk is ephemeral — enable DO Spaces uploads or mount a volume for persistence.',
     total_files: totalFiles,
     files_by_category: filesByCategory,
   }

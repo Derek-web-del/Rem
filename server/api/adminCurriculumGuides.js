@@ -96,7 +96,7 @@ export function createAdminCurriculumGuidesRouter(express, auth) {
         return
       }
 
-      const file_url = saveCurriculumGuideFile(file.buffer, file.originalname)
+      const file_url = await saveCurriculumGuideFile(file.buffer, file.originalname)
       const file_name = String(file.originalname || 'guide.pdf').trim() || 'guide.pdf'
       const id = randomUUID()
       const pool = getPgPool()
@@ -164,9 +164,9 @@ export function createAdminCurriculumGuidesRouter(express, auth) {
       let file_name = existing.file_name
       if (file) {
         if (existing.file_url?.startsWith('/uploads/curriculum/')) {
-          deleteCurriculumFileByUrl(existing.file_url)
+          await deleteCurriculumFileByUrl(existing.file_url)
         }
-        file_url = saveCurriculumGuideFile(file.buffer, file.originalname)
+        file_url = await saveCurriculumGuideFile(file.buffer, file.originalname)
         file_name = String(file.originalname || 'guide.pdf').trim() || 'guide.pdf'
       }
 
@@ -268,7 +268,7 @@ export function createAdminCurriculumGuidesRouter(express, auth) {
           return
         }
         if (removed.file_url?.startsWith('/uploads/curriculum/')) {
-          deleteCurriculumFileByUrl(removed.file_url)
+          await deleteCurriculumFileByUrl(removed.file_url)
         }
 
         const snap = curriculumGuideRowSnapshot(removed)
