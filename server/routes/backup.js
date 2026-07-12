@@ -34,7 +34,9 @@ import {
   resolveBackupTableOrder,
   testRestoreFkBypassCapability,
   getLastRestoreDebug,
+  getUploadsDir,
 } from '../lib/lnbakEngine.js'
+import { summarizeModuleCoverage } from '../lib/backupCoverage.js'
 import { getPgPool } from '../pgPool.js'
 
 ensureBackupsDirectory()
@@ -193,10 +195,13 @@ export function createBackupRouter(express, auth) {
         table_order_preview: tableOrder.slice(0, 20),
         fk_bypass: fkBypass,
         last_restore_debug: getLastRestoreDebug(),
+        module_coverage: summarizeModuleCoverage(tableOrder),
+        roles_covered: ['admin', 'teacher', 'student'],
         storage: {
           backups_dir: BACKUPS_DIR,
           backups_writable: backupsWritable,
-          uploads_dir: process.env.UPLOAD_DIR || path.join(process.cwd(), 'public', 'uploads'),
+          uploads_dir: getUploadsDir(),
+          backups_dir_resolved: BACKUPS_DIR,
           backup_dir_env_set: Boolean(String(process.env.BACKUP_DIR || process.env.BACKUPS_DIR || '').trim()),
           upload_dir_env_set: Boolean(String(process.env.UPLOAD_DIR || '').trim()),
           auto_backup_dir: !String(process.env.BACKUP_DIR || process.env.BACKUPS_DIR || '').trim() &&

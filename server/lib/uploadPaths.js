@@ -71,6 +71,7 @@ const UPLOAD_SUBDIRS = [
   'originality',
   'submissions/assignments',
   'submissions/activities',
+  'Subjects_images',
 ]
 
 /** Ensure upload subdirectories exist (safe on ephemeral or volume-backed storage). */

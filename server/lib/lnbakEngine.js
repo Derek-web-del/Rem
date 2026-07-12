@@ -10,10 +10,13 @@ import { getPgPool } from '../pgPool.js'
 import {
   STATE_ID,
   syncAppStateMirrorsAfterRestore,
+  rebuildCurriculumMirrorsFromGuidesTable,
+  rebuildInstituteAppStateFromPostgreSQL,
   getFacultiesColumnSet,
   facultyPgRowToAppStateMirror,
   mergeFacultyMirrorsIntoAppStateJson,
   curriculumPgRowToAppStateMirror,
+  curriculumGuidePgRowToAppStateMirror,
   mergeCurriculumMirrorsIntoAppStateJson,
   sectionPgRowToAppStateMirror,
   mergeSectionMirrorsIntoAppStateJson,
@@ -22,6 +25,7 @@ import { filterFacultyRowKeys } from './sqlGuards.js'
 import { repairFacultyAuthLinks, buildFacultyRestoreReport } from './repairFacultyAuthLinks.js'
 import { repairStudentAuthLinks } from './repairStudentAuthLinks.js'
 import { uploadsRoot, subjectAssetsRoot, resolvePublicUploadPath } from './uploadPaths.js'
+import { allBackupFileFields, summarizeModuleCoverage } from './backupCoverage.js'
 
 const require = createRequire(import.meta.url)
 const archiverLib = require('archiver')
@@ -56,11 +60,15 @@ export const BACKUPS_DIR = (() => {
   return path.join(process.cwd(), 'backups')
 })()
 export const BACKUP_UPLOADS_DIR = path.join(BACKUPS_DIR, '.uploads')
-export const UPLOADS_DIR = uploadsRoot()
+/** Resolve uploads root at call time (DO App Platform env must be loaded). */
+export function getUploadsDir() {
+  return uploadsRoot()
+}
+export const UPLOADS_DIR = getUploadsDir()
 export const SUBJECT_ASSETS_DIR = subjectAssetsRoot()
 
 /** Logged at restore start so deploy/runtime can be verified on DigitalOcean. */
-export const RESTORE_ENGINE_VERSION = '2026-07-05-nuclear-v12'
+export const RESTORE_ENGINE_VERSION = '2026-07-12-restore-v13'
 
 /** @param {string} hypothesisId @param {string} location @param {string} message @param {Record<string, unknown>} [data] */
 function dbgRestore(hypothesisId, location, message, data = {}) {
@@ -1473,6 +1481,21 @@ async function loadActiveFacultyMirrors(pool) {
   }
 }
 
+async function loadCurriculumGuidesMirrors(pool) {
+  try {
+    const { rows } = await pool.query(`
+      SELECT *
+      FROM curriculum_guides
+      WHERE archived_at IS NULL
+      ORDER BY COALESCE(created_at, updated_at) NULLS LAST, id
+    `)
+    return (rows || []).map((r) => curriculumGuidePgRowToAppStateMirror(r)).filter(Boolean)
+  } catch (e) {
+    console.warn('[BACKUP] Could not load curriculum_guides for app_state enrichment:', e?.message || e)
+    return []
+  }
+}
+
 async function loadActiveCurriculumMirrors(pool) {
   try {
     const { rows } = await pool.query(`
@@ -1517,7 +1540,9 @@ async function loadActiveCurriculumMirrors(pool) {
 
 export async function exportAppStateSnapshot(pool) {
   const pgFacultyMirrors = await loadActiveFacultyMirrors(pool)
-  const pgCurriculumMirrors = await loadActiveCurriculumMirrors(pool)
+  const pgGuideMirrors = await loadCurriculumGuidesMirrors(pool)
+  const pgCurriculumMirrors =
+    pgGuideMirrors.length > 0 ? pgGuideMirrors : await loadActiveCurriculumMirrors(pool)
   const pgSectionMirrors = await loadActiveSectionMirrors(pool)
   try {
     const { rows } = await pool.query(
@@ -1564,50 +1589,40 @@ export async function exportAppStateSnapshot(pool) {
 }
 
 /**
- * Restore institute app_state JSON; backfill public.faculties from state.faculties when PG roster is empty.
+ * Restore institute mirrors after nuclear DB restore.
+ * PostgreSQL rows restored from .lnbak are authoritative — never re-apply stale app_state mirrors.
  */
 export async function restoreAppStateFromParsed(parsed, pool = getPgPool()) {
-  const empty = {
-    restored: false,
-    synced_faculties: 0,
-    synced_sections: 0,
-    synced_curriculums: 0,
-  }
+  let preserveJson = {}
   const rows = parsed?.data?.app_state
-  if (!Array.isArray(rows) || rows.length === 0) return empty
-
-  const row = rows[0]
-  let stateJson = row.json
-  if (typeof stateJson === 'string') {
-    try {
-      stateJson = JSON.parse(stateJson)
-    } catch {
-      console.warn('[BACKUP] app_state JSON could not be parsed; skipping app_state restore')
-      return empty
+  if (Array.isArray(rows) && rows.length > 0) {
+    let stateJson = rows[0].json
+    if (typeof stateJson === 'string') {
+      try {
+        stateJson = JSON.parse(stateJson)
+      } catch {
+        console.warn('[BACKUP] app_state JSON could not be parsed; rebuilding mirrors from PostgreSQL only')
+        stateJson = null
+      }
+    }
+    if (stateJson && typeof stateJson === 'object') {
+      preserveJson = { ...stateJson }
+      delete preserveJson.faculties
+      delete preserveJson.sections
+      delete preserveJson.curriculums
     }
   }
-  if (!stateJson || typeof stateJson !== 'object') return empty
 
   const client = await pool.connect()
   try {
     await client.query('BEGIN')
-    await client.query(
-      `
-        INSERT INTO app_state (id, json, updated_at)
-        VALUES ($1, $2, NOW())
-        ON CONFLICT (id) DO UPDATE SET json = EXCLUDED.json, updated_at = NOW()
-      `,
-      [String(row.id || STATE_ID), JSON.stringify(stateJson)],
-    )
-
-    const mirrorCounts = await syncAppStateMirrorsAfterRestore(client, stateJson)
-
+    const counts = await rebuildInstituteAppStateFromPostgreSQL(client, { preserveJson })
     await client.query('COMMIT')
     return {
       restored: true,
-      synced_faculties: mirrorCounts.synced_faculties,
-      synced_sections: mirrorCounts.synced_sections,
-      synced_curriculums: mirrorCounts.synced_curriculums,
+      synced_faculties: counts.synced_faculties,
+      synced_sections: counts.synced_sections,
+      synced_curriculums: counts.synced_curriculums,
     }
   } catch (e) {
     await client.query('ROLLBACK')
@@ -1882,17 +1897,28 @@ export function buildOrderedBackupData(rawData, tableOrder) {
 }
 
 const DB_FILE_PATH_FIELDS = [
-  'photo_url',
-  'file_path',
-  'file_url',
-  'submission_file',
-  'announcement_image',
-  'image_path',
-  'syllabus_pdf',
-  'pdf_path',
-  'lesson_pdf',
-  'attachment_path',
+  ...new Set([
+    ...allBackupFileFields(),
+    'photo_url',
+    'file_path',
+    'file_url',
+    'file_data_url',
+    'submission_file',
+    'announcement_image',
+    'image_path',
+    'syllabus_pdf',
+    'pdf_path',
+    'lesson_pdf',
+    'attachment_path',
+    'subject_photo',
+  ]),
 ]
+
+function isStoredUploadPath(val) {
+  const t = String(val || '').trim()
+  if (!t || t.startsWith('data:') || t.startsWith('http')) return false
+  return t.startsWith('/uploads/') || t.startsWith('uploads/')
+}
 
 function collectDbFilePaths(parsed, limit = 50) {
   const paths = new Set()
@@ -1902,10 +1928,8 @@ function collectDbFilePaths(parsed, limit = 50) {
     for (const row of rows) {
       for (const field of DB_FILE_PATH_FIELDS) {
         const val = String(row?.[field] || '').trim()
-        if (!val || val.startsWith('data:') || val.startsWith('http')) continue
-        if (val.startsWith('/uploads/') || val.startsWith('uploads/')) {
-          paths.add(val.startsWith('/') ? val : `/${val}`)
-        }
+        if (!isStoredUploadPath(val)) continue
+        paths.add(val.startsWith('/') ? val : `/${val}`)
       }
       if (paths.size >= limit) return [...paths]
     }
@@ -1913,18 +1937,56 @@ function collectDbFilePaths(parsed, limit = 50) {
   return [...paths]
 }
 
+async function countFilesRecursive(dirPath) {
+  let count = 0
+  async function walk(dir) {
+    let entries = []
+    try {
+      entries = await fsp.readdir(dir, { withFileTypes: true })
+    } catch {
+      return
+    }
+    for (const ent of entries) {
+      const p = path.join(dir, ent.name)
+      if (ent.isDirectory()) await walk(p)
+      else if (ent.isFile()) count += 1
+    }
+  }
+  await walk(dirPath)
+  return count
+}
+
+/** @param {boolean | { ok?: boolean, uploads_dir?: string, files_on_disk?: number | null, error?: string }} result */
+export function normalizeUploadExtractResult(result) {
+  if (typeof result === 'boolean') {
+    return { ok: result, uploads_dir: getUploadsDir(), files_on_disk: null, error: null }
+  }
+  return {
+    ok: result?.ok !== false,
+    uploads_dir: result?.uploads_dir || getUploadsDir(),
+    files_on_disk: result?.files_on_disk ?? null,
+    error: result?.error ?? null,
+  }
+}
+
 export async function verifyRestoredFiles(parsed, manifest = null) {
-  const samplePaths = collectDbFilePaths(parsed, 50)
+  const uploads_dir = getUploadsDir()
+  const samplePaths = collectDbFilePaths(parsed, 100)
   const missing = []
   let verified = 0
+  const byModule = {}
   for (const storedPath of samplePaths) {
     const resolved = resolvePublicUploadPath(storedPath)
     if (!resolved) continue
+    const category = storedPath.split('/').filter(Boolean)[1] || 'other'
+    if (!byModule[category]) byModule[category] = { verified: 0, missing: 0 }
     try {
       await fsp.access(resolved, fs.constants.F_OK)
       verified++
+      byModule[category].verified += 1
     } catch {
       missing.push(storedPath)
+      byModule[category].missing += 1
     }
   }
 
@@ -1938,11 +2000,18 @@ export async function verifyRestoredFiles(parsed, manifest = null) {
   } else if (parsed?.meta?.files_backed_up != null) {
     warnings.push('Backup manifest missing — file count verification skipped')
   }
+  if (samplePaths.length > 0 && missing.length > Math.max(1, Math.floor(samplePaths.length * 0.25))) {
+    warnings.push(
+      `${missing.length}/${samplePaths.length} sampled DB file paths are missing on disk at ${uploads_dir}. Check UPLOAD_DIR matches backup source.`,
+    )
+  }
 
   return {
     verified,
     missing,
     sample_checked: samplePaths.length,
+    uploads_dir,
+    by_module: byModule,
     warnings,
     ok: missing.length === 0,
   }
@@ -2083,21 +2152,36 @@ export async function exportBackupData(pool, { createdBy = null } = {}) {
 }
 
 function appendDirTarGz(archive, dirPath, tarName) {
-  const tar = archiver('tar', { gzip: true, gzipOptions: { level: 9 } })
-  archive.append(tar, { name: tarName })
-
   return fsp
     .stat(dirPath)
-    .then((st) => {
-      if (st.isDirectory()) tar.directory(dirPath, false)
+    .then(async (st) => {
+      const tempFile = path.join(tmpdir(), `lnbak-pack-${randomUUID()}.tar.gz`)
+      if (!st.isDirectory()) {
+        await tar.c({ gzip: true, file: tempFile, cwd: tmpdir() }, [])
+      } else {
+        const entries = await fsp.readdir(dirPath)
+        if (!entries.length) {
+          await tar.c({ gzip: true, file: tempFile, cwd: dirPath }, [])
+        } else {
+          await tar.c({ gzip: true, file: tempFile, cwd: dirPath }, entries)
+        }
+      }
+      archive.file(tempFile, { name: tarName })
+      archive.on('end', () => {
+        fsp.unlink(tempFile).catch(() => {})
+      })
     })
-    .catch(() => {
-      /* empty tar.gz */
+    .catch(async () => {
+      const tempFile = path.join(tmpdir(), `lnbak-pack-empty-${randomUUID()}.tar.gz`)
+      await tar.c({ gzip: true, file: tempFile, cwd: tmpdir() }, []).catch(() => {})
+      archive.file(tempFile, { name: tarName })
+      archive.on('end', () => {
+        fsp.unlink(tempFile).catch(() => {})
+      })
     })
-    .then(() => tar.finalize())
 }
 
-function appendUploadsTarGz(archive, uploadsDir) {
+function appendUploadsTarGz(archive, uploadsDir = getUploadsDir()) {
   return appendDirTarGz(archive, uploadsDir, 'uploads_archive.tar.gz')
 }
 
@@ -2582,20 +2666,21 @@ export async function restoreDatabaseFromParsed(parsed) {
   }
 }
 
-async function extractTarGzFromPath(tarGzPath, destDir = UPLOADS_DIR, { replaceContents = true } = {}) {
-  await fsp.mkdir(destDir, { recursive: true })
+async function extractTarGzFromPath(tarGzPath, destDir = getUploadsDir(), { replaceContents = true } = {}) {
+  const targetDir = path.resolve(destDir)
+  await fsp.mkdir(targetDir, { recursive: true })
   if (replaceContents) {
-    await clearDirectoryContents(destDir)
+    await clearDirectoryContents(targetDir)
   }
-  await tar.x({ file: tarGzPath, cwd: destDir, gzip: true, strict: false })
-  return true
+  await tar.x({ file: tarGzPath, cwd: targetDir, gzip: true, strict: false })
+  return targetDir
 }
 
-async function extractTarGzToUploads(tarGzBuffer, uploadsDir = UPLOADS_DIR) {
+async function extractTarGzToUploads(tarGzBuffer, uploadsDir = getUploadsDir()) {
   const tempFile = path.join(tmpdir(), `lnbak-uploads-${randomUUID()}.tar.gz`)
   await fsp.writeFile(tempFile, tarGzBuffer)
   try {
-    await extractTarGzFromPath(tempFile, uploadsDir, { replaceContents: true })
+    return await extractTarGzFromPath(tempFile, uploadsDir, { replaceContents: true })
   } finally {
     await fsp.unlink(tempFile).catch(() => {})
   }
@@ -2623,18 +2708,29 @@ export async function extractSubjectAssetsArchive(assetsSource, { assetsDir = SU
   }
 }
 
-export async function extractUploadsArchive(uploadsSource, { uploadsDir = UPLOADS_DIR } = {}) {
+export async function extractUploadsArchive(uploadsSource, { uploadsDir = getUploadsDir() } = {}) {
+  const targetDir = path.resolve(uploadsDir)
+  console.log(`[BACKUP] Extracting uploads archive into ${targetDir}`)
   try {
     if (typeof uploadsSource === 'string' && uploadsSource) {
-      await extractTarGzFromPath(uploadsSource, uploadsDir)
+      await extractTarGzFromPath(uploadsSource, targetDir)
       await fsp.unlink(uploadsSource).catch(() => {})
     } else if (Buffer.isBuffer(uploadsSource)) {
-      await extractTarGzToUploads(uploadsSource, uploadsDir)
+      await extractTarGzToUploads(uploadsSource, targetDir)
+    } else {
+      return { ok: false, uploads_dir: targetDir, files_on_disk: 0, error: 'No uploads archive provided' }
     }
-    return true
+    const files_on_disk = await countFilesRecursive(targetDir)
+    console.log(`[BACKUP] Upload extract complete: ${files_on_disk} file(s) at ${targetDir}`)
+    return { ok: true, uploads_dir: targetDir, files_on_disk, error: null }
   } catch (e) {
     console.warn('[BACKUP] Upload extraction failed (DB restore already committed):', e?.message || e)
-    return false
+    return {
+      ok: false,
+      uploads_dir: targetDir,
+      files_on_disk: await countFilesRecursive(targetDir).catch(() => 0),
+      error: String(e?.message || e),
+    }
   }
 }
 
@@ -2692,12 +2788,28 @@ const RESTORE_VALIDATION_MAJOR_KEYS = [
   'students',
   'sections',
   'subjects',
+  'subject_schedules',
   'curriculum',
+  'curriculum_guides',
+  'announcements',
   'subject_topics',
   'subject_modules',
+  'subject_module_subtopics',
+  'subject_grade_components',
   'assignments',
   'activities',
   'quizzes',
+  'quiz_submissions',
+  'quiz_student_answers',
+  'assignment_submissions',
+  'activity_submissions',
+  'study_materials',
+  'subject_materials',
+  'faculty_study_materials',
+  'plagiarism_reports',
+  'score_overwrite_requests',
+  'audit_logs',
+  'lms_activity_logs',
 ]
 
 /**
@@ -2831,6 +2943,7 @@ export async function buildInstituteRestoreReport(pool) {
     sections_count,
     subjects_count,
     curriculum_rows,
+    curriculum_guides_count,
     student_users,
     admin_users,
     student_missing_auth_link,
@@ -2839,6 +2952,9 @@ export async function buildInstituteRestoreReport(pool) {
     safeCount(`SELECT COUNT(*)::int AS c FROM public.sections`),
     safeCount(`SELECT COUNT(*)::int AS c FROM public.subjects`),
     safeCount(`SELECT COUNT(*)::int AS c FROM public.curriculum`),
+    safeCount(
+      `SELECT COUNT(*)::int AS c FROM public.curriculum_guides WHERE archived_at IS NULL`,
+    ),
     safeCount(
       `SELECT COUNT(*)::int AS c FROM "user" WHERE lower(trim(coalesce(role, ''))) = 'student'`,
     ),
@@ -2856,6 +2972,7 @@ export async function buildInstituteRestoreReport(pool) {
     sections_count,
     subjects_count,
     curriculum_rows,
+    curriculum_guides_count,
     student_users,
     admin_users,
     student_missing_auth_link,
@@ -2864,10 +2981,10 @@ export async function buildInstituteRestoreReport(pool) {
 
 /** Post-DB restore: files, app_state, auth link repair, audit log, summary. */
 export async function completeRestoreAfterDatabase(parsed, uploadsSource, opts = {}) {
-  let files_restored = opts.files_restored
+  let uploadExtract = normalizeUploadExtractResult(opts.files_restored)
   let assets_restored = opts.assets_restored
   if (!opts.skipFileExtract) {
-    files_restored = await extractUploadsArchive(uploadsSource)
+    uploadExtract = normalizeUploadExtractResult(await extractUploadsArchive(uploadsSource))
     assets_restored = await extractSubjectAssetsArchive(opts.subjectAssetsSource)
   }
 
@@ -2891,12 +3008,36 @@ export async function completeRestoreAfterDatabase(parsed, uploadsSource, opts =
       `${file_verification.missing.length} referenced file(s) missing after restore (sample check)`,
     )
   }
-  const curriculumRowCount = Number(row_counts?.curriculum ?? parsed.data?.curriculum?.length ?? 0)
+  if (!uploadExtract.ok) {
+    mergedWarnings.push(
+      `Upload archive extraction failed: ${uploadExtract.error || 'unknown error'} (target: ${uploadExtract.uploads_dir})`,
+    )
+  } else if (
+    uploadExtract.files_on_disk != null &&
+    manifest?.files_backed_up != null &&
+    Number(manifest.files_backed_up) > 0 &&
+    uploadExtract.files_on_disk < Number(manifest.files_backed_up) * 0.5
+  ) {
+    mergedWarnings.push(
+      `Only ${uploadExtract.files_on_disk} file(s) on disk after extract vs ${manifest.files_backed_up} in backup manifest — verify UPLOAD_DIR on DigitalOcean.`,
+    )
+  }
+  const curriculumRowCount = Number(
+    instituteReport.curriculum_rows ?? row_counts?.curriculum ?? parsed.data?.curriculum?.length ?? 0,
+  )
+  const curriculumGuidesCount = Number(
+    instituteReport.curriculum_guides_count ??
+      row_counts?.curriculum_guides ??
+      parsed.data?.curriculum_guides?.length ??
+      0,
+  )
   const curriculumsInSnapshot = countCurriculumsInAppStateSnapshot(parsed.data?.app_state)
   const sectionsInSnapshot = countSectionsInAppStateSnapshot(parsed.data?.app_state)
 
   return {
-    files_restored,
+    files_restored: uploadExtract.ok,
+    files_on_disk: uploadExtract.files_on_disk,
+    uploads_dir: uploadExtract.uploads_dir,
     assets_restored,
     file_verification,
     files_restored_count: manifest?.files_backed_up ?? parsed?.meta?.files_backed_up ?? null,
@@ -2910,7 +3051,8 @@ export async function completeRestoreAfterDatabase(parsed, uploadsSource, opts =
     sections_restored: instituteReport.sections_count,
     subjects_restored: instituteReport.subjects_count,
     curriculum_rows_restored: curriculumRowCount,
-    curriculums_in_app_state: curriculumsInSnapshot,
+    curriculum_guides_restored: curriculumGuidesCount,
+    curriculums_in_app_state: Number(app_state?.synced_curriculums ?? curriculumsInSnapshot),
     curriculums_synced: Number(app_state?.synced_curriculums ?? 0),
     sections_in_app_state: sectionsInSnapshot,
     sections_synced: Number(app_state?.synced_sections ?? 0),
@@ -2974,8 +3116,9 @@ export async function runRestorePipeline({
   emit(3, {
     message: 'Restoring uploaded files',
     detail: filesExpected != null ? `${filesExpected} files` : undefined,
+    uploads_dir: getUploadsDir(),
   })
-  const files_restored = await extractUploadsArchive(uploadsSource)
+  const uploadExtract = normalizeUploadExtractResult(await extractUploadsArchive(uploadsSource))
   const assets_restored = await extractSubjectAssetsArchive(subjectAssetsSource)
 
   emit(4, { message: 'Verifying file integrity' })
@@ -2984,7 +3127,7 @@ export async function runRestorePipeline({
   emit(5, { message: 'Complete' })
   const restoreDetails = await completeRestoreAfterDatabase(parsed, uploadsSource, {
     skipFileExtract: true,
-    files_restored,
+    files_restored: uploadExtract,
     assets_restored,
     manifest,
     file_verification,

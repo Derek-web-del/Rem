@@ -745,6 +745,32 @@ export function curriculumFileDisplayName(c) {
   return ''
 }
 
+/** Map `curriculum_guides` row (admin upload or app_state) into dashboard `curriculums` item shape. */
+export function curriculumGuidePgRowToAppStateMirror(row) {
+  if (!row || typeof row !== 'object') return null
+  const id = String(row.id ?? '').trim()
+  if (!id) return null
+  const fileUrl = String(row.file_url ?? '').trim()
+  const fileData = String(row.file_data_url ?? '').trim()
+  const fileRef =
+    fileUrl.startsWith('/uploads/') || fileUrl.startsWith('uploads/')
+      ? fileUrl.startsWith('/') ? fileUrl : `/${fileUrl}`
+      : fileData.startsWith('/uploads/') || fileData.startsWith('uploads/')
+        ? fileData.startsWith('/') ? fileData : `/${fileData}`
+        : fileData || fileUrl
+  return {
+    id,
+    grade: String(row.grade_level || row.grade || '').trim(),
+    subject: String(row.subject || row.title || '').trim() || '(no subject)',
+    description: String(row.description || '').trim(),
+    fileName: String(row.file_name || '').trim(),
+    fileType: String(row.file_type || '').trim(),
+    fileDataUrl: fileRef,
+    uploadedAt: row.uploaded_at != null ? String(row.uploaded_at) : '',
+    uploadedBy: String(row.uploaded_by_name || row.uploaded_by || '').trim(),
+  }
+}
+
 /** Map `public.curriculum` (+ optional guide row) into dashboard `curriculums` item shape. */
 export function curriculumPgRowToAppStateMirror(row, guideRow = null) {
   if (!row || typeof row !== 'object') return null
@@ -1752,8 +1778,9 @@ export async function syncFaculties(client, state) {
 /**
  * Rebuild institute mirror tables from restored app_state (backup restore path).
  * Mirrors PUT /v1/state sync without local-only faculty gating.
+ * @param {{ skipCurriculum?: boolean }} [options]
  */
-export async function syncAppStateMirrorsAfterRestore(client, stateJson) {
+export async function syncAppStateMirrorsAfterRestore(client, stateJson, options = {}) {
   const counts = { synced_faculties: 0, synced_sections: 0, synced_curriculums: 0 }
   if (!stateJson || typeof stateJson !== 'object') return counts
 
@@ -1775,17 +1802,156 @@ export async function syncAppStateMirrorsAfterRestore(client, stateJson) {
     )
   }
 
-  const curriculums = Array.isArray(stateJson.curriculums) ? stateJson.curriculums : []
-  if (curriculums.length > 0) {
-    await syncCurriculumManifest(client, stateJson)
-    await syncCurriculums(client, stateJson)
-    counts.synced_curriculums = curriculums.length
-    console.warn(
-      `[BACKUP] Synced ${counts.synced_curriculums} curriculum guide(s) from app_state into public.curriculum and curriculum_guides`,
-    )
+  if (!options.skipCurriculum) {
+    const curriculums = Array.isArray(stateJson.curriculums) ? stateJson.curriculums : []
+    if (curriculums.length > 0) {
+      await syncCurriculumManifest(client, stateJson)
+      await syncCurriculums(client, stateJson)
+      counts.synced_curriculums = curriculums.length
+      console.warn(
+        `[BACKUP] Synced ${counts.synced_curriculums} curriculum guide(s) from app_state into public.curriculum and curriculum_guides`,
+      )
+    }
   }
 
   return counts
+}
+
+/**
+ * After nuclear DB restore, treat curriculum_guides as source of truth:
+ * rebuild public.curriculum + app_state.curriculums without deleting admin_upload rows.
+ */
+export async function rebuildCurriculumMirrorsFromGuidesTable(client) {
+  const { rows } = await client.query(`
+    SELECT *
+    FROM curriculum_guides
+    WHERE archived_at IS NULL
+    ORDER BY COALESCE(created_at, updated_at) NULLS LAST, id
+  `)
+  const mirrors = (rows || []).map((r) => curriculumGuidePgRowToAppStateMirror(r)).filter(Boolean)
+
+  await client.query('DELETE FROM curriculum')
+  if (mirrors.length > 0) {
+    const manifestRows = mirrors.map((c, idx) => [
+      String(c.subject || '(no subject)'),
+      String(c.description || ''),
+      String(c.grade || ''),
+      String(c.fileName || ''),
+      String(c.id || `legacy-${idx}`),
+    ])
+    const { text: ph } = pgValuePlaceholders(manifestRows.length, 5)
+    await client.query(
+      `INSERT INTO curriculum (title, description, grade_level, file_name, source_id) VALUES ${ph}`,
+      manifestRows.flat(),
+    )
+  }
+
+  const { rows: appRows } = await client.query('SELECT json FROM app_state WHERE id = $1 LIMIT 1', [
+    STATE_ID,
+  ])
+  let stateJson = {}
+  if (appRows[0]?.json) {
+    const raw = appRows[0].json
+    try {
+      stateJson = typeof raw === 'string' ? JSON.parse(raw) : raw
+    } catch {
+      stateJson = {}
+    }
+  }
+  if (!stateJson || typeof stateJson !== 'object') stateJson = {}
+  stateJson = mergeCurriculumMirrorsIntoAppStateJson(stateJson, mirrors)
+  stateJson.curriculums = mirrors
+
+  await client.query(
+    `
+      INSERT INTO app_state (id, json, updated_at)
+      VALUES ($1, $2, NOW())
+      ON CONFLICT (id) DO UPDATE SET json = EXCLUDED.json, updated_at = NOW()
+    `,
+    [STATE_ID, JSON.stringify(stateJson)],
+  )
+
+  console.warn(
+    `[BACKUP] Rebuilt curriculum mirrors from curriculum_guides: ${mirrors.length} guide(s), ${mirrors.length} manifest row(s)`,
+  )
+  return { synced_curriculums: mirrors.length, synced_manifest: mirrors.length }
+}
+
+/** Rebuild institute_sections mirror from restored public.sections (not stale app_state). */
+export async function syncInstituteSectionsFromPostgreSQL(client) {
+  const { rows } = await client.query(`SELECT * FROM public.sections ORDER BY id`)
+  const sections = (rows || []).map((r) => sectionPgRowToAppStateMirror(r)).filter(Boolean)
+  await syncSections(client, { sections })
+  return sections.length
+}
+
+/**
+ * After nuclear DB restore, PostgreSQL is source of truth for institute mirrors.
+ * Rebuild app_state.faculties/sections/curriculums + mirror tables from live PG rows.
+ * @param {Record<string, unknown>} [options.preserveJson] — non-mirror app_state keys to keep from backup
+ */
+export async function rebuildInstituteAppStateFromPostgreSQL(client, { preserveJson = {} } = {}) {
+  const { rows: facRows } = await client.query(`
+    SELECT * FROM public.faculties
+    WHERE archived_at IS NULL
+    ORDER BY updated_at DESC NULLS LAST, id
+  `)
+  const { rows: secRows } = await client.query(`SELECT * FROM public.sections ORDER BY id`)
+
+  const faculties = (facRows || []).map((r) => facultyPgRowToAppStateMirror(r)).filter(Boolean)
+  const sections = (secRows || []).map((r) => sectionPgRowToAppStateMirror(r)).filter(Boolean)
+
+  const curriculumRebuild = await rebuildCurriculumMirrorsFromGuidesTable(client)
+  const synced_sections = await syncInstituteSectionsFromPostgreSQL(client)
+
+  const { rows: appRows } = await client.query('SELECT json FROM app_state WHERE id = $1 LIMIT 1', [
+    STATE_ID,
+  ])
+  let stateJson = {}
+  if (appRows[0]?.json) {
+    try {
+      stateJson =
+        typeof appRows[0].json === 'string' ? JSON.parse(appRows[0].json) : appRows[0].json
+    } catch {
+      stateJson = {}
+    }
+  }
+  if (!stateJson || typeof stateJson !== 'object') stateJson = {}
+
+  const base =
+    preserveJson && typeof preserveJson === 'object' && !Array.isArray(preserveJson)
+      ? { ...preserveJson }
+      : {}
+  delete base.faculties
+  delete base.sections
+  delete base.curriculums
+
+  stateJson = {
+    ...stateJson,
+    ...base,
+    faculties,
+    sections,
+    curriculums: Array.isArray(stateJson.curriculums) ? stateJson.curriculums : [],
+  }
+
+  await client.query(
+    `
+      INSERT INTO app_state (id, json, updated_at)
+      VALUES ($1, $2, NOW())
+      ON CONFLICT (id) DO UPDATE SET json = EXCLUDED.json, updated_at = NOW()
+    `,
+    [STATE_ID, JSON.stringify(stateJson)],
+  )
+
+  console.warn(
+    `[BACKUP] Rebuilt institute app_state from PostgreSQL: ${faculties.length} facult(ies), ${sections.length} section(s), ${curriculumRebuild.synced_curriculums} curriculum guide(s)`,
+  )
+
+  return {
+    synced_faculties: faculties.length,
+    synced_sections,
+    synced_curriculums: curriculumRebuild.synced_curriculums,
+  }
 }
 
 export async function syncSections(client, state) {

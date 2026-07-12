@@ -8,20 +8,20 @@ import { dispatchAuditLogsRefresh, dispatchBackupRestored } from '../lib/auditLo
 const ACTION_BLUE = '#1e4fa3'
 
 const BACKUP_CHECKLIST = [
-  'Students + grades',
-  'Curriculum + curriculum guides',
-  'Faculties + profiles',
-  'Subjects',
-  'Sections + advisories',
-  'Announcements',
-  'Assignments + submissions',
+  'Students + grades + late submission extensions (on submission rows)',
+  'Curriculum + curriculum guides (admin uploads)',
+  'Faculties + profile photos',
+  'Subjects + syllabus PDFs + subject cover images',
+  'Sections + advisories + schedules',
+  'Announcements + images',
+  'Assignments + student submission files',
+  'Activities + student submission files',
+  'Quizzes + questions + student attempts + password access',
+  'Study / subject / faculty materials',
+  'Plagiarism reports + grade overwrite requests',
   'Audit logs + LMS activity logs',
-  'Activities + submissions',
-  'Quiz results + password access grants',
-  'Study materials',
-  'Teacher/admin auth users + login credentials (account table)',
-  'Institute app_state snapshot (curriculum UI blob)',
-  'All uploaded files (PDFs, photos, submissions)',
+  'Teacher/admin/student auth (user + account tables)',
+  'All uploaded files: curriculum, submissions, assignments, photos, etc.',
 ]
 
 const RESTORE_STEPS = [
@@ -1214,7 +1214,19 @@ export default function BackupPage() {
               {restoreResult.files_restored_count != null
                 ? ` (${Number(restoreResult.files_restored_count).toLocaleString()} files in backup)`
                 : ''}
+              {restoreResult.files_on_disk != null
+                ? ` · ${Number(restoreResult.files_on_disk).toLocaleString()} on disk`
+                : ''}
             </p>
+            {restoreResult.uploads_dir ? (
+              <p className="mt-1 text-xs text-gray-600 break-all">
+                Uploads path: {restoreResult.uploads_dir}
+                {restoreResult.file_verification?.uploads_dir &&
+                restoreResult.file_verification.uploads_dir !== restoreResult.uploads_dir
+                  ? ` (verified at ${restoreResult.file_verification.uploads_dir})`
+                  : ''}
+              </p>
+            ) : null}
             {restoreResult.file_verification ? (
               <p className="mt-1 text-xs text-neutral-500">
                 File verification: {restoreResult.file_verification.verified}/
@@ -1246,10 +1258,15 @@ export default function BackupPage() {
                 {restoreResult.subjects_restored ?? restoreResult.row_counts?.subjects ?? '—'}
               </p>
               <p className="mt-1">
-                <span className="font-semibold">Curriculum rows:</span>{' '}
+                <span className="font-semibold">Curriculum guides:</span>{' '}
+                {restoreResult.curriculum_guides_restored ??
+                  restoreResult.row_counts?.curriculum_guides ??
+                  '—'}
+                {' · '}
+                <span className="font-semibold">manifest rows:</span>{' '}
                 {restoreResult.curriculum_rows_restored ?? restoreResult.row_counts?.curriculum ?? '—'}
                 {' · '}
-                <span className="font-semibold">guides in app_state:</span>{' '}
+                <span className="font-semibold">in app_state:</span>{' '}
                 {restoreResult.curriculums_in_app_state ?? '—'}
               </p>
               <p className="mt-2">

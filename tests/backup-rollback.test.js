@@ -55,11 +55,37 @@ describe('upload restore replaces disk snapshot', () => {
       await fsp.unlink(path.join(uploadsDir, 'snapshot.txt'))
       await fsp.writeFile(path.join(uploadsDir, 'orphan-after-backup.txt'), 'should-be-removed')
 
-      await extractUploadsArchive(tarPath, { uploadsDir })
+      const result = await extractUploadsArchive(tarPath, { uploadsDir })
+      assert.equal(result.ok, true)
+      assert.ok(result.files_on_disk >= 1)
 
       const restored = await fsp.readFile(path.join(uploadsDir, 'snapshot.txt'), 'utf8')
       assert.equal(restored, 'original-content')
       await assert.rejects(() => fsp.access(path.join(uploadsDir, 'orphan-after-backup.txt')))
+    } finally {
+      await fsp.rm(uploadsDir, { recursive: true, force: true }).catch(() => {})
+      await fsp.unlink(tarPath).catch(() => {})
+    }
+  })
+
+  test('node-tar pack and extract roundtrip preserves nested upload paths', async () => {
+    const uploadsDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'lnbak-tar-pack-'))
+    const tarPath = path.join(os.tmpdir(), `lnbak-pack-${randomUUID()}.tar.gz`)
+    try {
+      const nested = path.join(uploadsDir, 'curriculum')
+      await fsp.mkdir(path.join(uploadsDir, 'assignments'), { recursive: true })
+      await fsp.mkdir(nested, { recursive: true })
+      await fsp.writeFile(path.join(nested, 'English-guide.pdf'), '%PDF-test')
+      await fsp.writeFile(path.join(uploadsDir, 'assignments', 'a.txt'), 'a')
+
+      const entries = await fsp.readdir(uploadsDir)
+      await tar.c({ gzip: true, file: tarPath, cwd: uploadsDir }, entries)
+
+      await clearDirectoryContents(uploadsDir)
+      const result = await extractUploadsArchive(tarPath, { uploadsDir })
+      assert.equal(result.ok, true)
+      await fsp.access(path.join(uploadsDir, 'curriculum', 'English-guide.pdf'))
+      await fsp.access(path.join(uploadsDir, 'assignments', 'a.txt'))
     } finally {
       await fsp.rm(uploadsDir, { recursive: true, force: true }).catch(() => {})
       await fsp.unlink(tarPath).catch(() => {})

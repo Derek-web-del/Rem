@@ -1,4 +1,4 @@
-# DigitalOcean App Platform spec — backup restore v12 (2026-07-05-nuclear-v12).
+# DigitalOcean App Platform spec — backup restore v13 (2026-07-12-restore-v13).
 # DO: Apps → LenLearn → Settings → App Spec → ensure branch + build_command match, then Force Rebuild.
 #
 # UPLOADS: App Platform disk is EPHEMERAL (no persistent volumes). User uploads
