@@ -1,15 +1,15 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import DeleteConfirmModal from './DeleteConfirmModal.jsx'
-import TopicFormModal from '../pages/teachers/subject-detail/shared/TopicFormModal.jsx'
-import TopicGroup from '../pages/teachers/subject-detail/shared/TopicGroup.jsx'
+import DeleteConfirmModal from '../DeleteConfirmModal.jsx'
+import TopicFormModal from '../../pages/teachers/subject-detail/shared/TopicFormModal.jsx'
+import TopicGroup from '../../pages/teachers/subject-detail/shared/TopicGroup.jsx'
 import {
   createAdminSubjectTopic,
   deleteAdminSubjectLesson,
   deleteAdminSubjectTopic,
   fetchAdminSubjectTopics,
   updateAdminSubjectTopic,
-} from '../lib/adminSubjectCurriculum.js'
+} from '../../lib/adminSubjectCurriculum.js'
 
 export default function AdminSubjectCurriculumPanel({ postgresSubjectId }) {
   const subjectId = String(postgresSubjectId || '').trim()

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
-import { apiUrl } from '../lib/lmsStateStorage.js'
-import { useNotify } from '../components/notifications.jsx'
+import { apiUrl } from '../../lib/lmsStateStorage.js'
+import { useNotify } from '../../components/notifications.jsx'
 
 export default function AdminTurnoverPage() {
   const toast = useNotify()

@@ -1,16 +1,16 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { useNotify } from '../components/notifications.jsx'
+import { useNotify } from '../../components/notifications.jsx'
 import {
   createAdminSubjectLessonMultipart,
   fetchAdminSubjectLesson,
   fetchAdminSubjectTopics,
   updateAdminSubjectLessonMultipart,
-} from '../lib/adminSubjectCurriculum.js'
-import { fetchStateApi, apiUrl } from '../lib/lmsStateStorage.js'
-import LessonAttachPanel from '../pages/teachers/subject-detail/shared/LessonAttachPanel.jsx'
-import LessonComposerSidebar from '../pages/teachers/subject-detail/shared/LessonComposerSidebar.jsx'
-import LessonRichTextField from '../pages/teachers/subject-detail/shared/LessonRichTextField.jsx'
+} from '../../lib/adminSubjectCurriculum.js'
+import { apiUrl } from '../../lib/lmsStateStorage.js'
+import LessonAttachPanel from '../teachers/subject-detail/shared/LessonAttachPanel.jsx'
+import LessonComposerSidebar from '../teachers/subject-detail/shared/LessonComposerSidebar.jsx'
+import LessonRichTextField from '../teachers/subject-detail/shared/LessonRichTextField.jsx'
 
 function fileNameFromPath(path) {
   if (!path) return ''
@@ -49,7 +49,7 @@ export default function AdminLessonFormPage({ mode = 'add' }) {
     setLoading(true)
     try {
       const [subRes, topicList] = await Promise.all([
-        fetchStateApi(apiUrl(`/api/v1/subjects`), { credentials: 'include' }).then((r) => r.json()),
+        fetch(apiUrl('/api/v1/subjects'), { credentials: 'include' }).then((r) => r.json()),
         fetchAdminSubjectTopics(subjectId),
       ])
       const subjects = Array.isArray(subRes?.subjects) ? subRes.subjects : []
