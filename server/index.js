@@ -148,7 +148,11 @@ export async function createApp() {
       contentSecurityPolicy: {
         directives: {
           defaultSrc: ["'self'"],
-          scriptSrc: ["'self'", 'https://static.cloudflareinsights.com'],
+          scriptSrc: [
+            "'self'",
+            'https://static.cloudflareinsights.com',
+            "'sha256-OAlmrnAfSq42IwvSSNZjYQPk0NOBTk8sSj43ikIwFb0='",
+          ],
           styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
           imgSrc: ["'self'", 'data:', 'blob:'],
           frameSrc: ["'self'", 'data:', 'blob:'],
