@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Link } from 'react-router-dom'
 
-export default function TopicAddItemMenu({ subjectId, topicId, buildQuery }) {
+export default function TopicAddItemMenu({ subjectId, topicId, buildQuery, allowLessons = false }) {
   const [open, setOpen] = useState(false)
   const [menuStyle, setMenuStyle] = useState(null)
   const buttonRef = useRef(null)
@@ -14,7 +14,7 @@ export default function TopicAddItemMenu({ subjectId, topicId, buildQuery }) {
       ? `/teacher/subjects/${encodeURIComponent(subjectId)}/lessons/new?topic_id=${encodeURIComponent(topicId)}`
       : `/teacher/subjects/${encodeURIComponent(subjectId)}/lessons/new`
   const links = [
-    { label: 'Lesson', path: lessonPath },
+    ...(allowLessons ? [{ label: 'Lesson', path: lessonPath }] : []),
     { label: 'Assignment', path: `/teacher/assignments/new?${q}` },
     { label: 'Activity', path: `/teacher/activities/new?${q}` },
     { label: 'Quiz', path: `/teacher/quizzes/new?${q}` },

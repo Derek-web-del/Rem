@@ -603,6 +603,10 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
     if (curriculumPage === 'upload') {
       return (
         <div className="space-y-4">
+          <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+            <p className="font-semibold">Upload a finished PDF prepared offline</p>
+            <p className="mt-1 text-blue-800">Do not edit PDF content in the browser — upload the completed file from your computer.</p>
+          </div>
           <div className="flex items-center justify-between">
             <h2 className="text-2xl font-bold text-neutral-900">Upload Curriculum Guide</h2>
             <BackButton onClick={openCurriculumManagePage} />
@@ -691,7 +695,10 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
     if (curriculumPage === 'edit' && editId) {
       return (
         <section className="rounded-xl border border-neutral-200 bg-white p-5 shadow-md md:p-6">
-          <h2 className="text-xl font-bold text-neutral-900">Edit Curriculum Guide</h2>
+          <h2 className="text-xl font-bold text-neutral-900">Edit details</h2>
+          <p className="mt-1 text-sm text-neutral-600">
+            Update metadata below. To change PDF content, edit the file offline and use Replace PDF.
+          </p>
           <form onSubmit={saveEdit} className="mt-5 grid gap-4">
             <label className="text-sm font-medium text-neutral-700">
               Grade Level
@@ -725,13 +732,13 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
               </select>
             </label>
             <label className="text-sm font-medium text-neutral-700">
-              Curriculum Guide File (PDF)
+              Replace PDF (optional)
               <div className="mt-1 flex items-center gap-2 rounded-lg border bg-white px-3 py-2 text-sm">
                 <label
                   htmlFor="edit-curriculum-file"
                   className="cursor-pointer rounded border border-neutral-400 bg-neutral-100 px-3 py-1 text-sm font-medium text-neutral-800 hover:bg-neutral-200"
                 >
-                  Choose File
+                  Choose new PDF
                 </label>
                 <span className="text-neutral-600">{editForm.file?.name || 'No file chosen'}</span>
                 <input
@@ -762,7 +769,7 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
             {editingError ? <p className="text-sm text-red-600">{editingError}</p> : null}
             <div className="flex gap-3">
               <button type="submit" className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white">
-                Update Curriculum
+                Save details
               </button>
               <button
                 type="button"
@@ -779,6 +786,13 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
 
     return (
       <div className="space-y-6">
+        <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+          <p className="font-semibold">Curriculum files are prepared offline</p>
+          <p className="mt-1 text-blue-800">
+            Prepare curriculum PDFs outside the LMS (e.g. DepEd template), then upload the finished file here. To change
+            PDF content, edit the file externally and use <span className="font-semibold">Edit details → Replace PDF</span>.
+          </p>
+        </div>
         <div className="flex items-center justify-between">
           <div>
             <BackButton onClick={() => setActiveNav('dashboard')} />
@@ -879,7 +893,7 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
                       className="rounded bg-amber-500 px-3 py-1.5 text-xs font-semibold text-white"
                       onClick={() => startEdit(item)}
                     >
-                      Edit
+                      Edit details
                     </button>
                     <button
                       type="button"

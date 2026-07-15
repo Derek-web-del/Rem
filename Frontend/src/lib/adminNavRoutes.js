@@ -10,6 +10,7 @@ export const NAV_ID_TO_PATH = {
   monitoring: '/admin/audit-logs',
   backup: '/admin/backup',
   archive: '/admin/archive-vault',
+  turnover: '/admin/turnover',
 }
 
 const PATH_TO_NAV_ID = Object.fromEntries(

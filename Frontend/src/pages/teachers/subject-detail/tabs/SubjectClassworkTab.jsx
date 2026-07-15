@@ -436,10 +436,6 @@ export default function SubjectClassworkTab({ subjectId, subject, onSyllabusUpda
           onToggle={() => setCollapsed((p) => ({ ...p, [topic.id]: !p[topic.id] }))}
           onEditTopic={(t) => setTopicModal({ open: true, topic: t })}
           onDeleteTopic={handleDeleteTopic}
-          onEditLesson={(lesson) =>
-            navigate(`/teacher/subjects/${encodeURIComponent(subjectId)}/lessons/${encodeURIComponent(lesson.id)}/edit`)
-          }
-          onDeleteLesson={handleDeleteLesson}
           onEditWork={handleEditWork}
           onDeleteWork={handleDeleteWork}
           onTopicDragStart={handleTopicDragStart}

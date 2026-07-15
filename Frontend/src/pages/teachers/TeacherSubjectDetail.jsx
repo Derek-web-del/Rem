@@ -92,7 +92,7 @@ export default function TeacherSubjectDetail() {
         ) : !subject ? (
           <p className="text-sm text-red-600">Subject not found.</p>
         ) : (
-          <div className="grid gap-4 lg:grid-cols-[1fr_320px] lg:items-start">
+          <div className="grid gap-4 lg:grid-cols-[1fr_380px] lg:items-start">
             <div className="flex max-h-[min(560px,70vh)] flex-col overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-sm">
               <SubjectDetailTopBar subject={subject} />
               <SubjectDetailTabs activeTab={activeTab} onChange={setActiveTab} />

@@ -16,7 +16,8 @@ flowchart TD
   curriculum --> subjects[CreateSubjects_withGuideScheduleFaculty]
   subjects --> faculty[CreateFaculty_withAdvisorySection]
   faculty --> students[EnrollStudents_inSections]
-  students --> facultyPublish[FacultyPublish_ModulesQuizzesMaterials]
+  students --> adminModules[AdminBuild_ModulesLessons]
+  adminModules --> facultyPublish[FacultyPublish_ClassworkQuizzesMaterials]
   facultyPublish --> studentUse[StudentsAccess_byGradeSection]
   studentUse --> audit[MonitoringRecords_AuditLogs]
 ```
@@ -28,12 +29,13 @@ flowchart TD
 | 1 | System Admin | Institute → Dashboard | `"user"` role `admin` |
 | 2 | System Admin | Sections → create grade/section | `sections` |
 | 3 | System Admin | Curriculum → upload & publish PDF | `curriculum_guides` |
-| 4 | System Admin | Subjects → code, grade, semester, **curriculum guide**, **schedule**, faculty | `subjects`, `subject_schedules`, `curriculum_guide_id` FK |
+| 4 | System Admin | Subjects → code, grade, semester, **curriculum guide**, **schedule** (conflict-checked), faculty | `subjects`, `subject_schedules`, `curriculum_guide_id` FK |
 | 5 | System Admin | Faculties → profile + advisory section | `faculties`, `faculty_sections` |
 | 6 | System Admin | Students → enroll in section | `students.section_id` |
-| 7 | Faculty | Subject detail → modules, quizzes, materials | `subject_modules`, `quizzes`, `study_materials` |
-| 8 | Student | Quizzes / materials (online or cached offline) | `quiz_submissions`, service worker cache |
-| 9 | System Admin | Audit Logs | `audit_logs`, `lms_activity_logs` |
+| 7 | System Admin | Subject edit → **modules and lessons** (topics, lesson PDFs) | `subject_topics`, `subject_lessons` |
+| 8 | Faculty | Subject detail → **read-only modules**; classwork (assignments, activities, quizzes, materials) | `assignments`, `activities`, `quizzes`, `study_materials` |
+| 9 | Student | Quizzes / materials (online or cached offline); **subjects with timetable conflicts hidden** | `quiz_submissions`, service worker cache |
+| 10 | System Admin | Audit Logs; **Transfer primary admin** when needed | `audit_logs`, `lms_activity_logs` |
 
 ### Glendale business rules (capstone scope)
 
@@ -41,7 +43,11 @@ flowchart TD
 - **One primary faculty owner per subject** (`subjects.faculty_id`).
 - **Students see subjects by grade level + semester**, not per-subject enrollment (JHS 7–10 scope).
 - **Faculty see advisory roster only** — name, enrollment, section, grades; **no student contact/address** (RA 10173 minimum necessary).
-- **Curriculum guides** are official PDF references; subject syllabus PDF should align with the linked guide.
+- **Curriculum guides** are official PDF references prepared **offline** (DepEd / school template); admins upload PDFs and replace files — no in-browser PDF editing.
+- **Subject schedules** are validated on save: faculty double-booking and grade-level student timetable overlaps return `409 SCHEDULE_CONFLICT`.
+- **Student subject list** hides subjects that would overlap another kept subject on the same weekday (deterministic by `subject_code`, then `id`).
+- **Modules and lessons** are owned by the institute admin; faculty have read-only access to the module tree.
+- **Primary admin turnover**: Institute → Admin Transfer promotes another user to `admin`, optional self-demotion to faculty, audit event `ADMIN_PRIMARY_TRANSFER`, and env checklist for `INSTITUTE_ADMIN_EMAIL`.
 
 ---
 
@@ -49,9 +55,9 @@ flowchart TD
 
 | Portal | Role in Better Auth | Visible badge | Access scope |
 |--------|---------------------|---------------|--------------|
-| Institute | `admin` | System Administrator | Full roster, curriculum, subjects, audit, backup, archive |
-| Faculty | `teacher` / `faculty` | Faculty Portal | Assigned subjects, advisory roster (no PII), grades, classwork |
-| Student | `student` | Student Portal | Own subjects by grade, quizzes, materials, grades |
+| Institute | `admin` | System Administrator | Full roster, curriculum, subjects, modules/lessons setup, audit, backup, archive, admin transfer |
+| Faculty | `teacher` / `faculty` | Faculty Portal | Assigned subjects (read-only modules), advisory roster (no PII), grades, classwork |
+| Student | `student` | Student Portal | Own subjects by grade (conflict-filtered), quizzes, materials, grades |
 
 There is **no separate School Admin database role** in this capstone; the Institute Admin portal represents system administration for Glendale School. A lighter school-admin role is listed in Ch.6.4 as future institutional adoption.
 
@@ -94,9 +100,10 @@ flowchart LR
 
 1. **Sign in as faculty** → open advisory student → show **restricted profile** (no contact/address).
 2. **Sign in as admin** → Audit Logs → filter `STUDENT_PROFILE_VIEWED`.
-3. **Create/edit subject** → show **curriculum guide link** + **class schedule** fields.
-4. **Student quiz violation** → show submission `violations` or monitoring entry.
-5. **Offline** → demonstrate cached quiz/material with offline banner (SO3 partial scope).
+3. **Create/edit subject** → show **curriculum guide link** + **class schedule** fields + conflict validation on overlapping slots.
+4. **Admin Transfer** → promote faculty user; show audit `ADMIN_PRIMARY_TRANSFER` and env checklist.
+5. **Student quiz violation** → show submission `violations` or monitoring entry.
+6. **Offline** → demonstrate cached quiz/material with offline banner (SO3 partial scope).
 
 ---
 

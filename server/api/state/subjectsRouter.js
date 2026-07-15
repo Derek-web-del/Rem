@@ -17,6 +17,7 @@ import {
   formatSchedulesSummary,
   ensureSubjectSchedulesSchema,
 } from '../../lib/subjectSchedulesDb.js'
+import { assertNoScheduleConflicts } from '../../lib/scheduleConflict.js'
 
 const SUBJECT_SELECT_WITH_FACULTY = `
   SELECT
@@ -123,6 +124,13 @@ export function registerSubjectsRoutes(router, ctx) {
       const row = rows?.[0]
       if (row?.id && has_schedule_fields) {
         await ensureSubjectSchedulesSchema(pool)
+        await assertNoScheduleConflicts(pool, {
+          subjectId: row.id,
+          facultyId: facultyIdParam,
+          gradeLevel: grade_level,
+          semester,
+          scheduleSpec: schedule_spec || {},
+        })
         await replaceSubjectWeekdaySchedules(pool, row.id, schedule_spec || {})
       }
       const createdSnap = subjectPgRowSnapshot(row, row?.faculty_name)
@@ -207,6 +215,13 @@ export function registerSubjectsRoutes(router, ctx) {
       const updatedRow = rows[0]
       if (has_schedule_fields) {
         await ensureSubjectSchedulesSchema(pool)
+        await assertNoScheduleConflicts(pool, {
+          subjectId: id,
+          facultyId: facultyIdParam,
+          gradeLevel: grade_level,
+          semester,
+          scheduleSpec: schedule_spec || {},
+        })
         await replaceSubjectWeekdaySchedules(pool, id, schedule_spec || {})
       }
       const detailedDiffs = computeSubjectDetailedDiffs(existing, updatedRow, {

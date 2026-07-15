@@ -14,6 +14,7 @@ const adminNavItems = [
   { label: 'Subjects', to: NAV_ID_TO_PATH.subjects, icon: 'ti-file-text' },
   { label: 'Announcements', to: NAV_ID_TO_PATH.updates, icon: 'ti-bell' },
   { label: 'Audit Logs', to: NAV_ID_TO_PATH.monitoring, icon: 'ti-activity' },
+  { label: 'Admin Transfer', to: NAV_ID_TO_PATH.turnover, icon: 'ti-user-check' },
   { label: 'Data Backup', to: NAV_ID_TO_PATH.backup, icon: 'ti-database-export' },
   { label: 'Archive Vault', to: NAV_ID_TO_PATH.archive, icon: 'ti-archive' },
 ]

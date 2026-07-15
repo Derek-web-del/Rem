@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import BackButton from './components/BackButton.jsx'
 import SubjectCoverImage from './components/SubjectCoverImage.jsx'
+import AdminSubjectCurriculumPanel from './components/admin/AdminSubjectCurriculumPanel.jsx'
 import {
   PREDEFINED_SUBJECT_NAMES,
   resolveSubjectImageFromMap,
@@ -65,6 +66,7 @@ export default function SubjectDetails({
   onSave,
   savingLabel = 'Save Changes',
   disableIdentity,
+  postgresSubjectId = '',
 }) {
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -329,10 +331,35 @@ export default function SubjectDetails({
             <div className="text-sm font-semibold text-neutral-900">Class Schedule</div>
             <p className="mt-1 text-xs text-neutral-600">Select weekdays (Monday–Friday), then set the class time and room.</p>
             <div className="mt-3">
-              <p className="text-sm font-medium text-neutral-700">
-                Weekdays<span className="text-red-600"> *</span>
-              </p>
-              <div className="mt-2 flex flex-wrap gap-2">
+              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                <p className="text-sm font-medium text-neutral-700">
+                  Weekdays<span className="text-red-600"> *</span>
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    disabled={submitting}
+                    className="rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-800 hover:bg-blue-100 disabled:opacity-60"
+                    onClick={() =>
+                      setForm((prev) => ({
+                        ...prev,
+                        scheduleDays: WEEKDAY_OPTIONS.map((d) => d.value),
+                      }))
+                    }
+                  >
+                    Select all Mon–Fri
+                  </button>
+                  <button
+                    type="button"
+                    disabled={submitting}
+                    className="rounded-lg border border-neutral-200 bg-white px-2.5 py-1 text-xs font-semibold text-neutral-700 hover:bg-neutral-50 disabled:opacity-60"
+                    onClick={() => setForm((prev) => ({ ...prev, scheduleDays: [] }))}
+                  >
+                    Clear all
+                  </button>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2">
                 {WEEKDAY_OPTIONS.map((day) => {
                   const checked = form.scheduleDays.includes(day.value)
                   return (
@@ -419,6 +446,10 @@ export default function SubjectDetails({
           </div>
         </form>
       </section>
+
+      {mode === 'edit' && postgresSubjectId ? (
+        <AdminSubjectCurriculumPanel postgresSubjectId={postgresSubjectId} />
+      ) : null}
     </div>
   )
 }

@@ -35,6 +35,7 @@ import { logUnauthorizedAccessFromRequest, requireDestructiveConfirm } from '../
 import { adminTermsAccepted, fetchAdminTermsRow } from '../../lib/adminTerms.js'
 import { isTermsExemptRequest, sendTermsNotAccepted } from '../../lib/termsGate.js'
 import { validateProfilePhotoPayload } from '../../../shared/uploadLimits.js'
+import { formatScheduleConflictMessage } from '../../lib/scheduleConflict.js'
 import { decryptStudentPiiFields, studentDisplayName } from '../../lib/studentPiiCrypto.js'
 import {
   announcementRowToResponse,
@@ -1344,6 +1345,18 @@ export function readSubjectBodyFields(b) {
 export function subjectPgError(res, e) {
   const code = String(e?.code || '')
   const constraint = String(e?.constraint || '')
+
+  if (code === 'SCHEDULE_CONFLICT') {
+    const message = formatScheduleConflictMessage(e.faculty_conflicts, e.student_conflicts)
+    res.status(409).json({
+      error: 'SCHEDULE_CONFLICT',
+      message: message || 'This class schedule conflicts with an existing slot.',
+      faculty_conflicts: e.faculty_conflicts || [],
+      student_conflicts: e.student_conflicts || [],
+    })
+    return
+  }
+
   const detail = String(e?.detail || e?.message || '')
 
   if (code === '23505') {

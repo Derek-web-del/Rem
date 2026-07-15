@@ -17,6 +17,7 @@ export default function TopicGroup({
   onEditLesson,
   onDeleteLesson,
   onViewLesson,
+  lessonsEditable = false,
   onEditWork,
   onDeleteWork,
   onTopicDragStart,
@@ -84,7 +85,14 @@ export default function TopicGroup({
           {topic.title}
         </button>
         <div className="flex items-center gap-1">
-          {editable ? <TopicAddItemMenu subjectId={subjectId} topicId={topic.id} buildQuery={buildQuery} /> : null}
+          {editable ? (
+            <TopicAddItemMenu
+              subjectId={subjectId}
+              topicId={topic.id}
+              buildQuery={buildQuery}
+              allowLessons={allowLessonMenu}
+            />
+          ) : null}
           {editable && topic.id !== 'uncategorized' ? (
             <div className="flex items-center gap-1" data-no-drag="">
               <button
@@ -146,11 +154,11 @@ export default function TopicGroup({
                 >
                   <LessonRow
                     lesson={entry.data}
-                    editable={editable}
+                    editable={editable && lessonsEditable}
                     isDragOver={isOver}
                     onEdit={onEditLesson}
                     onDelete={onDeleteLesson}
-                    onView={editable ? undefined : onViewLesson}
+                    onView={!lessonsEditable ? onViewLesson : undefined}
                   />
                 </div>
               )

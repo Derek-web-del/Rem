@@ -12,6 +12,7 @@ import { markAccessDenied } from '../lib/roleAccess.js'
 const InstituteDashboard = lazy(() => import('../modules/dashboard/InstituteDashboardModule.jsx'))
 const AdminLayout = lazy(() => import('../layouts/AdminLayout.jsx'))
 const AdminTermsPage = lazy(() => import('../pages/admin/AdminTermsPage.jsx'))
+const AdminLessonFormPage = lazy(() => import('../pages/admin/AdminLessonFormPage.jsx'))
 
 const IDLE_MS = 30 * 60 * 1000
 const SESSION_LOST_DEBOUNCE_MS = 3500
@@ -65,7 +66,8 @@ export default function AdminDashboardRoute() {
 
   useEffect(() => {
     const id = navIdFromPath(location.pathname)
-    if (!id && location.pathname.replace(/\/+$/, '') !== '/admin/terms') {
+    const onLessonForm = /^\/admin\/subjects\/[^/]+\/lessons/.test(location.pathname.replace(/\/+$/, ''))
+    if (!id && !onLessonForm && location.pathname.replace(/\/+$/, '') !== '/admin/terms') {
       navigate('/admin/institute_dashboard', { replace: true })
     }
   }, [location.pathname, navigate])
@@ -174,6 +176,24 @@ export default function AdminDashboardRoute() {
 
   if (!adminTermsAccepted && !isTermsAccepted()) {
     return <Navigate to="/admin/terms" replace />
+  }
+
+  const onAdminLessonForm = /^\/admin\/subjects\/[^/]+\/lessons/.test(pathname)
+  if (onAdminLessonForm) {
+    const isEdit = /\/edit$/.test(pathname)
+    return (
+      <Suspense
+        fallback={
+          <div className="flex h-svh items-center justify-center bg-neutral-100 text-sm font-medium text-neutral-600">
+            Loading…
+          </div>
+        }
+      >
+        <AdminLayout onLogout={handleDashboardLogout}>
+          <AdminLessonFormPage mode={isEdit ? 'edit' : 'add'} />
+        </AdminLayout>
+      </Suspense>
+    )
   }
 
   return (

@@ -6,6 +6,7 @@ import { normalizeGradeLevel, resolveStudentGradeLevel } from './studentSession.
 import { mapStudentWorkListRow } from './studentWorkPortal.js'
 import { resolveSubjectImagePath } from './subjectImageStorage.js'
 import { withSubjectSchedulesList } from './subjectScheduleAttach.js'
+import { filterSubjectsWithoutScheduleConflicts } from './scheduleConflict.js'
 
 const ANNOUNCEMENT_SELECT = `id, title, type, message, announcement_image, image_path, image_name, uploaded_by, created_at, updated_at`
 
@@ -30,7 +31,7 @@ export async function fetchStudentSubjects(pool, studentRow) {
     `,
     params,
   )
-  return withSubjectSchedulesList(
+  const withSchedules = await withSubjectSchedulesList(
     pool,
     (rows || []).map((row) => {
       const subject_name = String(row.subject_name ?? '').trim()
@@ -47,6 +48,7 @@ export async function fetchStudentSubjects(pool, studentRow) {
       }
     }),
   )
+  return filterSubjectsWithoutScheduleConflicts(withSchedules)
 }
 
 function submissionRowFromJoin(row) {

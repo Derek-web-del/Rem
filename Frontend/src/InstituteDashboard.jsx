@@ -23,6 +23,7 @@ import { resolveSubjectImageFromMap } from './lib/subjectImages.js'
 import MonitoringRecords from './pages/MonitoringRecords.jsx'
 import BackupPage from './pages/BackupPage.jsx'
 import ArchiveVault from './pages/ArchiveVault.jsx'
+import AdminTurnoverPage from './pages/admin/AdminTurnoverPage.jsx'
 import AuditStatisticsSection from './components/AuditStatisticsSection.jsx'
 import AdminLatestAnnouncementsExpanded from './components/admin/AdminLatestAnnouncementsExpanded.jsx'
 import AuthenticatedImage from './components/AuthenticatedImage.jsx'
@@ -294,7 +295,23 @@ function buildSubjectApiBody(payload) {
 }
 
 function subjectApiErrorMessage(data, fallback) {
-  return String(data?.error || data?.message || fallback)
+  if (data?.error === 'SCHEDULE_CONFLICT') {
+    const msg = String(data?.message || '').trim()
+    if (msg) return msg
+    const parts = []
+    for (const c of data?.faculty_conflicts || []) {
+      parts.push(
+        `Faculty conflict: ${c.subject_code || c.subject_name || 'subject'} on ${c.day_label || c.day_of_week} ${c.time || ''}`.trim(),
+      )
+    }
+    for (const c of data?.student_conflicts || []) {
+      parts.push(
+        `Student timetable conflict: ${c.subject_code || c.subject_name || 'subject'} on ${c.day_label || c.day_of_week} ${c.time || ''}`.trim(),
+      )
+    }
+    if (parts.length) return parts.join(' ')
+  }
+  return String(data?.message || data?.error || fallback)
 }
 
 function formatAnnouncementPosted(iso) {
@@ -679,6 +696,7 @@ const NAV = [
   { id: 'subjects', label: 'Subjects', icon: FileTextIcon, to: NAV_ID_TO_PATH.subjects },
   { id: 'updates', label: 'Announcements', icon: BellIcon, to: NAV_ID_TO_PATH.updates },
   { id: 'monitoring', label: 'Audit Logs', icon: ActivityIcon, to: NAV_ID_TO_PATH.monitoring },
+  { id: 'turnover', label: 'Admin Transfer', icon: UserTieIcon, to: NAV_ID_TO_PATH.turnover },
   { id: 'backup', label: 'Data Backup', icon: DatabaseExportIcon, to: NAV_ID_TO_PATH.backup },
   { id: 'archive', label: 'Archive Vault', icon: ArchiveIcon, to: NAV_ID_TO_PATH.archive },
 ]
@@ -3133,6 +3151,8 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
                               ? 'Announcements'
                               : activeNav === 'monitoring'
                                 ? 'Audit Logs'
+                                : activeNav === 'turnover'
+                                  ? 'Admin Transfer'
                                 : activeNav === 'backup'
                                   ? 'Data Backup'
                                   : activeNav === 'archive'
@@ -3172,6 +3192,8 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
             sectionContent()
           ) : activeNav === 'monitoring' ? (
             <MonitoringRecords />
+          ) : activeNav === 'turnover' ? (
+            <AdminTurnoverPage />
           ) : activeNav === 'backup' ? (
             <BackupPage />
           ) : activeNav === 'archive' ? (

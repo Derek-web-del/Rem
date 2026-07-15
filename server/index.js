@@ -23,6 +23,8 @@ import { createTeacherGradebookV1Router } from './api/teacherGradebookV1.js'
 import { createGradeOverrideV1Router } from './api/gradeOverrideV1.js'
 import { createSubmissionExtensionV1Router } from './api/submissionExtensionV1.js'
 import { createAdminCurriculumGuidesRouter } from './api/adminCurriculumGuides.js'
+import { createAdminSubjectCurriculumRouter } from './api/adminSubjectCurriculum.js'
+import { createAdminTurnoverRouter } from './api/adminTurnoverV1.js'
 import { createFileDownloadRouter, createLegacyUploadsRouter } from './api/fileDownload.js'
 import { getUploadStorageStats } from './lib/uploadStorageStats.js'
 import { ensureUploadDirs, subjectAssetsRoot } from './lib/uploadPaths.js'
@@ -486,6 +488,8 @@ app.all('/api/auth/*', toNodeHandler(auth))
   const { createAdminPasswordResetV1Router } = await import('./api/adminPasswordResetV1.js')
   app.use('/api/v1/admin', createAdminPasswordResetV1Router(express, auth))
   app.use('/api', createAdminCurriculumGuidesRouter(express, auth))
+  app.use('/api', createAdminSubjectCurriculumRouter(express, auth))
+  app.use('/api', createAdminTurnoverRouter(express, auth))
 
   // Audit logs (LMS rows + target user JOIN); bulk clear at /api/logs/audit/*
   const { createLogsApiRouter, createAuditLogsClearRouter } = await import('./api/logs.js')
