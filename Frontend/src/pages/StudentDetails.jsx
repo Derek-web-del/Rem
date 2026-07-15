@@ -310,7 +310,7 @@ export default function StudentDetails() {
       if (!res.ok) {
         throw new Error(String(data?.message || data?.error || `Save failed (${res.status}).`))
       }
-      toast.success(`Student ${String(form.enrollmentNo || '').trim() || displayName} successfully registered in PostgreSQL`, {
+      toast.success(`Student ${String(form.enrollmentNo || '').trim() || displayName} registered successfully.`, {
         durationMs: 6500,
       })
       if (editId) {
@@ -343,7 +343,6 @@ export default function StudentDetails() {
               « Home
             </Link>
             <h1 className="mt-1 text-2xl font-bold md:text-3xl">{editId ? 'Edit student' : 'New student'}</h1>
-            <p className="mt-1 text-sm text-neutral-600">Data is stored in PostgreSQL (`students`).</p>
           </div>
         </div>
 
@@ -484,7 +483,7 @@ export default function StudentDetails() {
               disabled={submitting || sections.length === 0}
               className="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {submitting ? 'Saving…' : editId ? 'Save changes' : 'Save to PostgreSQL'}
+              {submitting ? 'Saving…' : editId ? 'Save changes' : 'Register student'}
             </button>
             <button
               type="button"

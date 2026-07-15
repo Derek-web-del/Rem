@@ -61,17 +61,9 @@ export default function AdminTurnoverPage() {
       <div>
         <h2 className="text-3xl font-bold text-neutral-900">Transfer primary administrator</h2>
         <p className="mt-1 text-sm text-neutral-600">
-          Promote another user to institute admin. This does not remove your access unless you choose to demote yourself.
+          Promote a faculty member to institute admin. This does not remove your access unless you choose to demote yourself.
         </p>
       </div>
-
-      <section className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
-        <p className="font-semibold">Before you transfer</p>
-        <ul className="mt-2 list-disc space-y-1 pl-5">
-          <li>The new admin will have full Institute portal access including backup and audit logs.</li>
-          <li>Update deployment env vars (e.g. INSTITUTE_ADMIN_EMAIL) if your school uses email-based portal access.</li>
-        </ul>
-      </section>
 
       {loading ? (
         <p className="text-sm text-neutral-500">Loading…</p>
@@ -89,7 +81,7 @@ export default function AdminTurnoverPage() {
               value={targetUserId}
               onChange={(e) => setTargetUserId(e.target.value)}
             >
-              <option value="">Select user</option>
+              <option value="">Select faculty member</option>
               {candidates.map((c) => (
                 <option key={c.id} value={c.id}>
                   {(c.name || c.email || c.id) + (c.role ? ` (${c.role})` : '')}

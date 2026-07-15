@@ -72,7 +72,7 @@ export default function StudentsInSection({
               return res
             }
             if (res?.updatedPostgres) {
-              toast.success('Student records updated successfully in PostgreSQL', { durationMs: 6500 })
+              toast.success('Student records updated successfully.', { durationMs: 6500 })
             } else {
               toast.updated('Student updated successfully.')
             }

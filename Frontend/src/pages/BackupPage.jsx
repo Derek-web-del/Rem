@@ -278,7 +278,7 @@ function moduleRestoreWarnings(result) {
     warnings.push({
       key: 'sections',
       message:
-        'Sections show 0 rows in PostgreSQL and app_state — institute sections may be empty after restore.',
+        'No sections were found after restore — check Sections on the dashboard.',
     })
   } else if (restoreWarnings.some((w) => warningMatches(w, ['no section rows', 'sections may be empty']))) {
     warnings.push({
@@ -1452,7 +1452,7 @@ export default function BackupPage() {
               {(restoreResult.curriculums_synced ?? restoreResult.app_state?.synced_curriculums) > 0 ? (
                 <p className="mt-1 text-emerald-800">
                   Synced {restoreResult.curriculums_synced ?? restoreResult.app_state?.synced_curriculums} curriculum
-                  guide(s) from app_state into PostgreSQL.
+                  guide(s) from the backup into the system.
                 </p>
               ) : null}
               {restoreResult.auth_repair?.linked > 0 ? (

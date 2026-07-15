@@ -603,10 +603,6 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
     if (curriculumPage === 'upload') {
       return (
         <div className="space-y-4">
-          <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
-            <p className="font-semibold">Upload a finished PDF prepared offline</p>
-            <p className="mt-1 text-blue-800">Do not edit PDF content in the browser — upload the completed file from your computer.</p>
-          </div>
           <div className="flex items-center justify-between">
             <h2 className="text-2xl font-bold text-neutral-900">Upload Curriculum Guide</h2>
             <BackButton onClick={openCurriculumManagePage} />
@@ -696,9 +692,7 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
       return (
         <section className="rounded-xl border border-neutral-200 bg-white p-5 shadow-md md:p-6">
           <h2 className="text-xl font-bold text-neutral-900">Edit details</h2>
-          <p className="mt-1 text-sm text-neutral-600">
-            Update metadata below. To change PDF content, edit the file offline and use Replace PDF.
-          </p>
+          <p className="mt-1 text-sm text-neutral-600">Update the grade, subject, description, or PDF file below.</p>
           <form onSubmit={saveEdit} className="mt-5 grid gap-4">
             <label className="text-sm font-medium text-neutral-700">
               Grade Level
@@ -786,13 +780,6 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
 
     return (
       <div className="space-y-6">
-        <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
-          <p className="font-semibold">Curriculum files are prepared offline</p>
-          <p className="mt-1 text-blue-800">
-            Prepare curriculum PDFs outside the LMS (e.g. DepEd template), then upload the finished file here. To change
-            PDF content, edit the file externally and use <span className="font-semibold">Edit details → Replace PDF</span>.
-          </p>
-        </div>
         <div className="flex items-center justify-between">
           <div>
             <BackButton onClick={() => setActiveNav('dashboard')} />

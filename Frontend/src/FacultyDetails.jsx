@@ -434,7 +434,7 @@ export default function FacultyDetails({
         setPhotoUrl(facultyPhotoDisplaySrc(savedPhotoPath))
       }
       toast.success(
-        mode === 'edit' ? 'Faculty record updated.' : 'Faculty record saved to PostgreSQL.',
+        mode === 'edit' ? 'Faculty record updated.' : 'Faculty record saved.',
         { title: mode === 'edit' ? 'Saved' : 'Faculty added', durationMs: 5000 },
       )
       onBack()

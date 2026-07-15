@@ -526,7 +526,7 @@ async function fetchStateApi(input, init = {}) {
     if (e?.name === 'AbortError') {
       return new Response(
         JSON.stringify({
-          message: `Institute API did not respond within ${Math.round(ms / 1000)}s. Check PostgreSQL and the dev server.`,
+          message: `Institute API did not respond within ${Math.round(ms / 1000)}s. Check your connection and try again.`,
         }),
         { status: 408, headers: { 'Content-Type': 'application/json' } },
       )
@@ -1318,7 +1318,7 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
     if (persistenceMode === 'server') {
       const sectionIds = await resolveFacultySectionIds(payload, sections)
       if (!sectionIds.length) {
-        return { error: 'Could not resolve advisory sections in PostgreSQL. Refresh sections and try again.' }
+        return { error: 'Could not resolve advisory sections. Refresh sections and try again.' }
       }
       try {
         const saveReq = buildFacultySaveRequest(
@@ -1450,14 +1450,14 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
     if (persistenceMode === 'server') {
       const facultyKey = String(current.id || current.postgresFacultyId || '').trim()
       if (!facultyKey) {
-        return { error: 'Faculty is not linked to PostgreSQL. Re-add or refresh the list.' }
+        return { error: 'Faculty account is not linked. Re-add or refresh the list.' }
       }
       const sectionIds = await resolveFacultySectionIds(
         { ...current, ...patch, advisorySections: patch.advisorySections ?? current.advisorySections },
         sections,
       )
       if (!sectionIds.length) {
-        return { error: 'Could not resolve advisory sections in PostgreSQL.' }
+        return { error: 'Could not resolve advisory sections.' }
       }
       try {
         const saveReq = buildFacultySaveRequest(
@@ -1721,7 +1721,7 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
       } catch {
         void 0
       }
-      const msg = String(e?.message || e || 'Could not load subjects from PostgreSQL.')
+      const msg = String(e?.message || e || 'Could not load subjects. Please try again.')
       console.warn('[subjects] refreshSubjectsFromPostgres:', msg)
       return { ok: false, error: msg }
     }
@@ -1889,7 +1889,7 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
       setUpdates(list.map((row) => mapPgAnnouncementRow(row)))
       return { ok: true, count: list.length }
     } catch (e) {
-      const msg = String(e?.message || e || 'Could not load announcements from PostgreSQL.')
+      const msg = String(e?.message || e || 'Could not load announcements. Please try again.')
       console.warn('[announcements] refreshAnnouncementsFromPostgres:', msg)
       return { ok: false, error: msg }
     }
@@ -2103,7 +2103,7 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
         })
         const data = await res.json().catch(() => ({}))
         if (!res.ok) {
-          toast.error(String(data?.message || data?.error || `PostgreSQL save failed (${res.status}).`), {
+          toast.error(String(data?.message || data?.error || 'Could not save. Please try again.'), {
             title: 'Sections table',
             durationMs: 10000,
           })
@@ -2111,7 +2111,7 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
         }
         postgresSectionId = data?.id != null ? Number(data.id) : null
       } catch (err) {
-        toast.error(String(err?.message || err || 'Network error saving to PostgreSQL.'), {
+        toast.error(String(err?.message || err || 'Could not save. Check your connection and try again.'), {
           title: 'Sections table',
           durationMs: 10000,
         })
@@ -2281,7 +2281,7 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
       setCurriculums(mapped)
       return { ok: true, count: mapped.length }
     } catch (e) {
-      const msg = String(e?.message || e || 'Could not load curriculum from PostgreSQL.')
+      const msg = String(e?.message || e || 'Could not load curriculum. Please try again.')
       console.warn('[curriculum] refreshCurriculumFromPostgres:', msg)
       return { ok: false, error: msg }
     }
@@ -2313,7 +2313,7 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
       } catch {
         void 0
       }
-      const msg = String(e?.message || e || 'Could not load sections from PostgreSQL.')
+      const msg = String(e?.message || e || 'Could not load sections. Please try again.')
       console.warn('[sections] refreshSectionsFromPostgres:', msg)
       return { ok: false, error: msg }
     }
@@ -2430,7 +2430,7 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
       } catch {
         void 0
       }
-      const msg = String(e?.message || e || 'Could not load faculty from PostgreSQL.')
+      const msg = String(e?.message || e || 'Could not load faculty. Please try again.')
       console.warn('[faculty] refreshFacultiesFromPostgres:', msg)
       return { ok: false, error: msg }
     }
@@ -2563,7 +2563,7 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
       if (!pgSid) {
         return {
           error:
-            'Could not resolve PostgreSQL section id. Create the section from the dashboard so it exists in the database.',
+            'Could not find this section. Create the section from the dashboard and try again.',
         }
       }
       try {
@@ -2596,7 +2596,7 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
         })
         const data = await res.json().catch(() => ({}))
         if (!res.ok) {
-          return { error: String(data?.message || data?.error || `PostgreSQL save failed (${res.status}).`) }
+          return { error: String(data?.message || data?.error || 'Could not save. Please try again.') }
         }
         await refreshStudentsFromPostgres()
         const aid = String(authSync.authUserId || '').trim()
@@ -2609,7 +2609,7 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
         }
         return { ok: true, enrollmentNo, registeredPostgres: true }
       } catch (e) {
-        return { error: String(e?.message || e || 'Network error saving to PostgreSQL.') }
+        return { error: String(e?.message || e || 'Could not save. Check your connection and try again.') }
       }
     }
 
@@ -2734,7 +2734,7 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
       if (Number.isFinite(pgStudentId)) {
         const pgSid = await fetchPostgresSectionIdForSection(section)
         if (!pgSid) {
-          return { error: 'Could not resolve PostgreSQL section id.' }
+          return { error: 'Could not find this section.' }
         }
         const putBody = {
           firstName,

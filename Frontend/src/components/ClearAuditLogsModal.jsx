@@ -134,10 +134,7 @@ export default function ClearAuditLogsModal({ open, totalInList, onClose, onClea
           Clear Audit Logs
         </h3>
         <p className="mt-1 text-sm text-neutral-600">
-          Removes entries from local PostgreSQL{' '}
-          <code className="text-neutral-700">audit_logs</code> and{' '}
-          <code className="text-neutral-700">lms_activity_logs</code>. Better Auth Infra cloud
-          events are not deleted.
+          Permanently removes selected audit log entries from this system. Better Auth cloud events are not deleted.
         </p>
 
         <div className="mt-4 space-y-3">

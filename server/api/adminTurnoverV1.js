@@ -14,10 +14,10 @@ export function createAdminTurnoverRouter(express, auth) {
 
   if (!isPgConfigured()) {
     router.get('/v1/admin/turnover/candidates', (_req, res) => {
-      res.status(503).json({ error: 'DATABASE_NOT_CONFIGURED', message: 'PostgreSQL required.' })
+      res.status(503).json({ error: 'DATABASE_NOT_CONFIGURED', message: 'The system database is not available. Please try again later.' })
     })
     router.post('/v1/admin/turnover/transfer', (_req, res) => {
-      res.status(503).json({ error: 'DATABASE_NOT_CONFIGURED', message: 'PostgreSQL required.' })
+      res.status(503).json({ error: 'DATABASE_NOT_CONFIGURED', message: 'The system database is not available. Please try again later.' })
     })
     return router
   }
@@ -29,11 +29,14 @@ export function createAdminTurnoverRouter(express, auth) {
       const pool = getPgPool()
       const { rows } = await pool.query(
         `
-          SELECT id, name, email, role
-          FROM "user"
-          WHERE id::text <> $1
-            AND lower(trim(coalesce(role, ''))) IN ('teacher', 'faculty', 'student', 'admin', 'user')
-          ORDER BY lower(trim(coalesce(name, email, ''))) ASC
+          SELECT DISTINCT u.id, u.name, u.email, u.role
+          FROM "user" u
+          INNER JOIN public.faculties f
+            ON f.auth_user_id = u.id::text
+           AND f.archived_at IS NULL
+          WHERE u.id::text <> $1
+            AND lower(trim(coalesce(u.role, ''))) IN ('teacher', 'faculty')
+          ORDER BY lower(trim(coalesce(u.name, u.email, ''))) ASC
           LIMIT 200
         `,
         [ctx.userId],
@@ -70,12 +73,21 @@ export function createAdminTurnoverRouter(express, auth) {
 
       const pool = getPgPool()
       const { rows: targetRows } = await pool.query(
-        `SELECT id, name, email, role FROM "user" WHERE id::text = $1 LIMIT 1`,
+        `
+          SELECT u.id, u.name, u.email, u.role
+          FROM "user" u
+          INNER JOIN public.faculties f
+            ON f.auth_user_id = u.id::text
+           AND f.archived_at IS NULL
+          WHERE u.id::text = $1
+            AND lower(trim(coalesce(u.role, ''))) IN ('teacher', 'faculty')
+          LIMIT 1
+        `,
         [targetUserId],
       )
       const target = targetRows?.[0]
       if (!target) {
-        res.status(404).json({ error: 'NOT_FOUND', message: 'Target user not found.' })
+        res.status(404).json({ error: 'NOT_FOUND', message: 'Faculty member not found.' })
         return
       }
 
@@ -108,9 +120,8 @@ export function createAdminTurnoverRouter(express, auth) {
         promoted: { id: target.id, email: target.email, name: target.name, role: 'admin' },
         demoted_self: demoteSelf,
         checklist: [
-          'If you use INSTITUTE_ADMIN_EMAIL for portal tile access, update it in your deployment environment.',
-          'Confirm the new admin can sign in to the Institute portal.',
-          'Review backup and audit log access with the incoming administrator.',
+          'Ask the new admin to sign in and confirm they can open the Institute portal.',
+          'Review backup and audit log access together if needed.',
         ],
       })
     } catch (e) {

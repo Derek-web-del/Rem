@@ -609,11 +609,11 @@ export default function StudentsPage({
               return res
             }
             if (res?.registeredPostgres && res?.enrollmentNo) {
-              toast.success(`Student ${res.enrollmentNo} successfully registered in PostgreSQL`, {
+              toast.success(`Student ${res.enrollmentNo} registered successfully.`, {
                 durationMs: 6500,
               })
             } else if (detailsMode === 'edit' && res?.updatedPostgres) {
-              toast.success('Student records updated successfully in PostgreSQL', { durationMs: 6500 })
+              toast.success('Student records updated successfully.', { durationMs: 6500 })
             } else if (detailsMode === 'edit') {
               toast.updated('Student updated successfully.')
             } else {

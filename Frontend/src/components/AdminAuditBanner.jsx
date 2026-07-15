@@ -8,7 +8,7 @@ export default function AdminAuditBanner({ persistenceMode }) {
       role="status"
     >
       Changes in this mode are saved locally only and are <strong>not recorded in Audit Logs</strong>.
-      Connect to the server with PostgreSQL to enable audited institute mutations.
+      Connect to the server to save changes and keep audit records.
     </div>
   )
 }
