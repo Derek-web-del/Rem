@@ -1,5 +1,7 @@
 /** Display helpers for Audit Logs (Monitoring Records). */
 
+import { normalizeInstituteAdminDisplayName } from './instituteAdminDisplay.js'
+
 const EVENT_LABELS = {
   session_created: 'Session started',
   USER_SESSION_STARTED: 'Session started',
@@ -161,7 +163,10 @@ export function formatDescription(eventType, description, metadata = {}) {
     activityType === 'SESSION_CREATED'
 
   if (isSession) {
-    const name = pickStr(metadata?.name, metadata?.userName, metadata?.user?.name)
+    const name = normalizeInstituteAdminDisplayName(
+      pickStr(metadata?.name, metadata?.userName, metadata?.user?.name),
+      pickStr(metadata?.email, metadata?.userEmail, metadata?.user?.email),
+    )
     const role = pickStr(metadata?.role, metadata?.userRole, metadata?.user?.role)
     const method = pickStr(metadata?.login_method, metadata?.loginMethod, metadata?.method, 'credentials')
     const roleLabel = sessionRoleLabel(role)
@@ -189,7 +194,10 @@ export function resolveSessionDetailFields(e) {
   const ed = raw?.eventData || e?.detailsObj || {}
   const role = pickStr(ed?.role, ed?.userRole, e?.userRole)
   return {
-    name: pickStr(ed?.name, ed?.userName, ed?.targetName),
+    name: normalizeInstituteAdminDisplayName(
+      pickStr(ed?.name, ed?.userName, ed?.targetName),
+      pickStr(ed?.email, ed?.userEmail, ed?.targetEmail, e?.userEmail),
+    ),
     email: pickStr(ed?.email, ed?.userEmail, ed?.targetEmail, e?.userEmail),
     role,
     roleLabel: sessionRoleLabel(role),

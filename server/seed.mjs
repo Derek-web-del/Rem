@@ -23,7 +23,7 @@ if (!process.env.BETTER_AUTH_SECRET || process.env.BETTER_AUTH_SECRET.length < 3
 const ADMIN_EMAIL = process.env.SEED_ADMIN_EMAIL || INSTITUTE_ADMIN_EMAIL
 const ADMIN_USER = process.env.SEED_ADMIN_USERNAME || 'admin'
 const ADMIN_PASS = process.env.SEED_ADMIN_PASSWORD || 'Admin123@'
-const ADMIN_NAME = String(process.env.SEED_ADMIN_NAME || 'Derek John Bantad').trim()
+const ADMIN_NAME = String(process.env.SEED_ADMIN_NAME || 'Aldrich Juachon').trim()
 
 async function resetPasswordAndUnlock(pool, username, plainPassword) {
   const r1 = await pool.query('SELECT id FROM "user" WHERE username = $1', [username])

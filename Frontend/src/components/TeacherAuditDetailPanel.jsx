@@ -1,4 +1,5 @@
 import { resolveAuditPortalAffected, resolveAuditPortalModule } from '../lib/auditPortalModules.js'
+import { normalizeInstituteAdminDisplayName } from '../lib/instituteAdminDisplay.js'
 import {
   isGradeCriteriaAuditEvent,
   resolveGradeCriteriaAuditDisplay,
@@ -281,7 +282,10 @@ export function auditRowAffectedLabel(event) {
   const ed = event?.detailsObj || event?.raw?.eventData || {}
   const raw = event?.raw || {}
   if (ed?.target_label) return String(ed.target_label)
-  const targetName = ed?.targetName || ed?.userName || ed?.name || raw?.targetName || ''
+  const targetName = normalizeInstituteAdminDisplayName(
+    ed?.targetName || ed?.userName || ed?.name || raw?.targetName || '',
+    ed?.targetEmail || ed?.userEmail || ed?.email || raw?.targetEmail || '',
+  )
   const targetEmail = ed?.targetEmail || ed?.userEmail || ed?.email || raw?.targetEmail || ''
   if (targetName || targetEmail) return targetName || targetEmail
   const eventUserEmail = String(event?.userEmail || raw?.userEmail || '').trim()

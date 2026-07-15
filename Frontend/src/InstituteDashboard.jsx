@@ -41,7 +41,7 @@ const SIDEBAR_GOLD = '#1e4fa3'
 const SIDEBAR_GOLD_DARK = '#15397a'
 const ACTION_BLUE = '#1e4fa3'
 const ADMIN_AVATAR_STORAGE_KEY = 'lenlearn.adminAvatarDataUrl'
-const ADMIN_PROFILE_DISPLAY_NAME = 'Aldrich Juachon'
+import { normalizeInstituteAdminDisplayName } from './lib/instituteAdminDisplay.js'
 /** UI-only local preference (not roster data). */
 
 const GRADE_LEVELS = ['Grade 7', 'Grade 8', 'Grade 9', 'Grade 10']
@@ -719,10 +719,7 @@ function Avatar({ seed, size = 40 }) {
 }
 
 function normalizeAdminDisplayName(raw) {
-  const name = String(raw || '').trim()
-  if (!name) return ADMIN_PROFILE_DISPLAY_NAME
-  if (/^derek(\s+john)?\s+bantad$/i.test(name)) return ADMIN_PROFILE_DISPLAY_NAME
-  return name
+  return normalizeInstituteAdminDisplayName(raw)
 }
 
 function DashboardFacultyThumb({ faculty }) {

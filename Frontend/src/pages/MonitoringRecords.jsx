@@ -26,6 +26,7 @@ import {
   auditRowModuleLabel,
   teacherEventSubline,
 } from '../components/TeacherAuditDetailPanel.jsx'
+import { normalizeInstituteAdminDisplayName } from '../lib/instituteAdminDisplay.js'
 const EVENT_LABELS = {
   user_created: 'New user registration',
   user_signed_up: 'New user registration',
@@ -472,12 +473,17 @@ function accountChangeContext(e) {
       }
   if (!String(performedBy.name || '').trim()) {
     performedBy.name = 'Administrator'
+  } else {
+    performedBy.name = normalizeInstituteAdminDisplayName(performedBy.name, performedBy.email)
   }
   const targetUser = p?.target_user || {
     id: p?.targetUserId || d?.targetUserId || '',
     name: p?.targetName || d?.targetName || '',
     email: p?.targetEmail || d?.targetEmail || '',
     role: p?.targetRole || d?.targetRole || e?.userRole || '',
+  }
+  if (targetUser?.name) {
+    targetUser.name = normalizeInstituteAdminDisplayName(targetUser.name, targetUser.email)
   }
   const changedFields =
     (Array.isArray(p?.changed_fields) && p.changed_fields.length ? p.changed_fields : null) ||
@@ -580,7 +586,8 @@ function parseCombinedUserLabel(combined) {
 }
 
 function finalizeAuditUserDisplay(displayName, displayEmail) {
-  const name = String(displayName || '').trim()
+  const normalizedName = normalizeInstituteAdminDisplayName(displayName, displayEmail)
+  const name = String(normalizedName || '').trim()
   let email = String(displayEmail || '').trim()
   if (!name && email) return { displayName: email, displayEmail: '' }
   if (email === name) email = ''
@@ -1315,12 +1322,14 @@ export default function MonitoringRecords() {
                       dProfile,
                     })
                     const fieldsBadgeVariant = resolveFieldsBadgeVariant(e)
-                    const targetDisplayName =
+                    const targetDisplayName = normalizeInstituteAdminDisplayName(
                       accountCtx?.targetUser?.name ||
-                      accountCtx?.targetUser?.email ||
-                      dProfile?.targetName ||
-                      dProfile?.targetEmail ||
-                      ''
+                        accountCtx?.targetUser?.email ||
+                        dProfile?.targetName ||
+                        dProfile?.targetEmail ||
+                        '',
+                      accountCtx?.targetUser?.email || dProfile?.targetEmail || '',
+                    )
                     const { displayName, displayEmail } = resolveAuditUserDisplay(e, {
                       isSecurityAlert,
                       isLmsLockout,
@@ -1360,7 +1369,7 @@ export default function MonitoringRecords() {
                                 auditEventMetadata(e),
                               )
                             : ed?.userName && eventTitle
-                              ? `${eventTitle} for ${ed.userName}`
+                              ? `${eventTitle} for ${normalizeInstituteAdminDisplayName(ed.userName, ed.userEmail)}`
                               : ed?.userEmail
                                 ? `${eventTitle} for ${ed.userEmail}`
                                 : ''
@@ -1546,7 +1555,7 @@ export default function MonitoringRecords() {
                         auditEventMetadata(e),
                       )
                     : ed?.userName
-                      ? `Session created for ${ed.userName}`
+                      ? `Session created for ${normalizeInstituteAdminDisplayName(ed.userName, ed.userEmail)}`
                       : ed?.userEmail
                         ? `Session created for ${ed.userEmail}`
                         : ''

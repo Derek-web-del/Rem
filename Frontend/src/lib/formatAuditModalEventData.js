@@ -4,6 +4,7 @@ import {
   isGradeCriteriaAuditEvent,
   resolveGradeCriteriaAuditDisplay,
 } from '../../../shared/gradeCriteriaAudit.js'
+import { normalizeInstituteAdminDisplayName } from './instituteAdminDisplay.js'
 
 function trim(v) {
   const s = String(v ?? '').trim()
@@ -12,7 +13,7 @@ function trim(v) {
 
 function person(name, email, role) {
   const out = {}
-  const n = trim(name)
+  const n = trim(normalizeInstituteAdminDisplayName(name, email))
   const e = trim(email)
   const r = trim(role)
   if (n) out.name = n

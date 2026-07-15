@@ -1,5 +1,7 @@
 /** Portal sidebar module labels shown in Audit Logs. */
 
+import { normalizeInstituteAdminDisplayName } from './constants.js'
+
 export const TEACHER_PORTAL_MODULES = {
   DASHBOARD: 'Dashboard',
   CURRICULUM: 'Curriculum',
@@ -472,15 +474,20 @@ function pickLoginAffectedLabel(event, ed) {
   const raw = event?.raw || {}
   const payload = ed?.payload && typeof ed.payload === 'object' ? ed.payload : ed
   const targetUser = payload?.target_user || ed?.target_user
-  const name = String(
-    ed?.targetName ||
-      ed?.target_label ||
-      ed?.userName ||
-      ed?.name ||
-      targetUser?.name ||
-      raw?.targetName ||
-      '',
-  ).trim()
+  const name = normalizeInstituteAdminDisplayName(
+    String(
+      ed?.targetName ||
+        ed?.target_label ||
+        ed?.userName ||
+        ed?.name ||
+        targetUser?.name ||
+        raw?.targetName ||
+        '',
+    ).trim(),
+    String(
+      ed?.targetEmail || ed?.userEmail || ed?.email || targetUser?.email || raw?.targetEmail || '',
+    ).trim(),
+  )
   if (name) return name
 
   const email = String(

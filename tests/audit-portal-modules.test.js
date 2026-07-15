@@ -167,7 +167,7 @@ describe('auditPortalModules', () => {
         activityType: 'TERMS_ACCEPTED',
         detailsObj: { userName: 'Derek John Bantad' },
       }),
-      'Derek John Bantad',
+      'Aldrich Juachon',
     )
   })
 
@@ -185,7 +185,7 @@ describe('auditPortalModules', () => {
         activityType: 'USER_SIGNED_IN',
         detailsObj: { userName: 'Derek John Bantad', userEmail: 'derek@example.com' },
       }),
-      'Derek John Bantad',
+      'Aldrich Juachon',
     )
   })
 
@@ -244,7 +244,7 @@ describe('auditPortalModules', () => {
         activityType: 'USER_SESSION_STARTED',
         detailsObj: { userName: 'Derek John Bantad' },
       }),
-      'Derek John Bantad',
+      'Aldrich Juachon',
     )
   })
 
