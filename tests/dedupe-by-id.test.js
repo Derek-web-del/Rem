@@ -8,10 +8,10 @@ describe('dedupeById', () => {
     const out = dedupeById([
       { id: adminId, name: 'First' },
       { id: '2', name: 'Other' },
-      { id: adminId, name: 'Derek John Bantad' },
+      { id: adminId, name: 'Aldrich Juachon' },
     ])
     assert.equal(out.length, 2)
-    assert.equal(out.find((r) => r.id === adminId)?.name, 'Derek John Bantad')
+    assert.equal(out.find((r) => r.id === adminId)?.name, 'Aldrich Juachon')
   })
 
   it('dedupeAuditEvents drops identical source/id/time rows', () => {

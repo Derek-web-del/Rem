@@ -5,6 +5,7 @@ import {
   createTeacherActivity,
   fetchActivityFormOptions,
   fetchTeacherActivity,
+  isPastDeadline,
   splitDeadlineToDateAndTime,
   updateTeacherActivity,
 } from '../../lib/teacherActivities.js'
@@ -149,6 +150,14 @@ export default function TeacherActivityForm({ mode = 'add' }) {
       try {
         const row = await fetchTeacherActivity(id)
         if (cancelled) return
+        if (isPastDeadline(row.submission_deadline)) {
+          toastRef.current.error('This activity can no longer be edited because the deadline has passed.', {
+            toastId: FACULTY_TOAST_ID.activityEditError,
+            durationMs: FACULTY_ANNOUNCEMENT_TOAST_MS,
+          })
+          navigate('/teacher/activities', { replace: true })
+          return
+        }
         const { date, time } = splitDeadlineToDateAndTime(row.submission_deadline)
         setForm({
           title: row.title || '',

@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom'
 import { apiUrl } from '../../../../lib/lmsStateStorage.js'
 import { fetchAuthenticatedMediaUrl } from '../../../../lib/authenticatedMedia.js'
+import { isPastDeadline } from '../../../../lib/teacherAssignments.js'
 import { WORK_TYPE_CONFIG, formatDueDate, syllabusFilePath } from './workRowConfig.js'
 
 const actionBtnProps = {
@@ -25,6 +26,9 @@ export default function WorkRow({
   const cfg = WORK_TYPE_CONFIG[item.item_type] || WORK_TYPE_CONFIG.material
   const points = item.total_score != null ? `${item.total_score} pts` : null
   const isSyllabus = item.item_type === 'syllabus' || item.is_syllabus
+  const deadlineLocked =
+    (item.item_type === 'activity' || item.item_type === 'assignment') &&
+    isPastDeadline(item.submission_deadline)
   const canDrag = editable && draggable && !isSyllabus && !item.is_locked
   const filePath = isSyllabus && subjectId ? syllabusFilePath(subjectId, role) : ''
 
@@ -92,7 +96,7 @@ export default function WorkRow({
               >
                 Open
               </button>
-            ) : (
+            ) : deadlineLocked ? null : (
               <button
                 type="button"
                 className="rounded p-1 text-neutral-400 hover:bg-neutral-100"

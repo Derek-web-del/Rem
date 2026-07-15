@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { apiUrl } from '../../lib/lmsStateStorage.js'
 import { useNotify } from '../../components/notifications.jsx'
+import { normalizeInstituteAdminDisplayName } from '../../lib/instituteAdminDisplay.js'
 
 export default function AdminTurnoverPage() {
   const toast = useNotify()
@@ -19,7 +20,13 @@ export default function AdminTurnoverPage() {
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data?.message || data?.error || 'Could not load candidates.')
       setCurrentAdmin(data.current_admin || null)
-      setCandidates(Array.isArray(data.candidates) ? data.candidates : [])
+      const list = Array.isArray(data.candidates) ? data.candidates : []
+      setCandidates(
+        list.filter((c) => {
+          const role = String(c?.role || '').trim().toLowerCase()
+          return role === 'teacher' || role === 'faculty'
+        }),
+      )
     } catch (e) {
       toast.error(String(e?.message || e))
     } finally {
@@ -71,7 +78,7 @@ export default function AdminTurnoverPage() {
         <section className="max-w-xl rounded-xl border border-neutral-200 bg-white p-5 shadow-md">
           <p className="text-sm text-neutral-700">
             <span className="font-semibold">Current admin:</span>{' '}
-            {currentAdmin?.name || currentAdmin?.email || '—'}
+            {normalizeInstituteAdminDisplayName(currentAdmin?.name, currentAdmin?.email) || currentAdmin?.email || '—'}
           </p>
 
           <label className="mt-4 block text-sm font-medium text-neutral-700">

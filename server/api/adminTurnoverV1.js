@@ -1,6 +1,7 @@
 import { getPgPool, isPgConfigured } from '../pgPool.js'
 import { sendSafeServerError } from '../lib/safeApiError.js'
 import { requireAdminSession, auditInstituteRecord } from './state/shared.js'
+import { normalizeInstituteAdminDisplayName } from '../../shared/constants.js'
 
 async function requireAdmin(req, res, auth) {
   const session = await requireAdminSession(req, res, auth)
@@ -36,6 +37,12 @@ export function createAdminTurnoverRouter(express, auth) {
            AND f.archived_at IS NULL
           WHERE u.id::text <> $1
             AND lower(trim(coalesce(u.role, ''))) IN ('teacher', 'faculty')
+            AND NOT EXISTS (
+              SELECT 1
+              FROM public.students s
+              WHERE s.auth_user_id = u.id::text
+                AND s.archived_at IS NULL
+            )
           ORDER BY lower(trim(coalesce(u.name, u.email, ''))) ASC
           LIMIT 200
         `,
@@ -43,7 +50,11 @@ export function createAdminTurnoverRouter(express, auth) {
       )
       res.json({
         ok: true,
-        current_admin: { id: ctx.userId, email: ctx.user.email, name: ctx.user.name },
+        current_admin: {
+          id: ctx.userId,
+          email: ctx.user.email,
+          name: normalizeInstituteAdminDisplayName(ctx.user.name, ctx.user.email),
+        },
         candidates: (rows || []).map((r) => ({
           id: r.id,
           name: r.name,
@@ -81,6 +92,12 @@ export function createAdminTurnoverRouter(express, auth) {
            AND f.archived_at IS NULL
           WHERE u.id::text = $1
             AND lower(trim(coalesce(u.role, ''))) IN ('teacher', 'faculty')
+            AND NOT EXISTS (
+              SELECT 1
+              FROM public.students s
+              WHERE s.auth_user_id = u.id::text
+                AND s.archived_at IS NULL
+            )
           LIMIT 1
         `,
         [targetUserId],

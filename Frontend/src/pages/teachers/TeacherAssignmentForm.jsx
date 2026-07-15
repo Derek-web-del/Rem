@@ -16,6 +16,8 @@ import {
 
   fetchTeacherAssignment,
 
+  isPastDeadline,
+
   splitDeadlineToDateAndTime,
 
   updateTeacherAssignment,
@@ -226,6 +228,15 @@ export default function TeacherAssignmentForm({ mode = 'add' }) {
         const row = await fetchTeacherAssignment(id)
 
         if (cancelled) return
+
+        if (isPastDeadline(row.submission_deadline)) {
+          toastRef.current.error('This assignment can no longer be edited because the deadline has passed.', {
+            toastId: FACULTY_TOAST_ID.assignmentEditError,
+            durationMs: FACULTY_ANNOUNCEMENT_TOAST_MS,
+          })
+          navigate('/teacher/assignments', { replace: true })
+          return
+        }
 
         const { date, time } = splitDeadlineToDateAndTime(row.submission_deadline)
 

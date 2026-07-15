@@ -22,6 +22,9 @@ export default function LessonClassroomView({
   const fileName = fileNameFromLessonPath(lesson.file_path) || lesson.title
   const postDate = formatLessonPostDate(lesson.created_at)
   const authorLine = [authorName, postDate].filter(Boolean).join(' • ')
+  const showDescription =
+    String(lesson.description || '').trim() &&
+    !/^__curriculum_guide:/.test(String(lesson.description || '').trim())
   const editPath =
     role === 'teacher' && subjectId
       ? `/teacher/subjects/${encodeURIComponent(subjectId)}/lessons/${encodeURIComponent(lesson.id)}/edit`
@@ -114,7 +117,7 @@ export default function LessonClassroomView({
         </div>
       ) : null}
 
-      {lesson.description ? (
+      {showDescription ? (
         <div
           className="prose prose-sm mt-5 max-w-none text-neutral-700"
           dangerouslySetInnerHTML={{ __html: sanitizeHtml(lesson.description || '') }}

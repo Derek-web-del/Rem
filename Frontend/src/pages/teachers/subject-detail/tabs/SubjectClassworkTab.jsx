@@ -13,7 +13,7 @@ import {
   uploadSubjectSyllabus,
 } from '../../../../lib/teacherSubjectCurriculum.js'
 import { deleteTeacherAssignment } from '../../../../lib/teacherAssignments.js'
-import { deleteTeacherActivity } from '../../../../lib/teacherActivities.js'
+import { deleteTeacherActivity, isPastDeadline } from '../../../../lib/teacherActivities.js'
 import { deleteTeacherQuiz } from '../../../../lib/teacherQuizzes.js'
 import { useFacultyNotify } from '../../../../lib/facultyNotify.js'
 import DeleteConfirmModal from '../../../../components/DeleteConfirmModal.jsx'
@@ -143,6 +143,13 @@ export default function SubjectClassworkTab({ subjectId, subject, onSyllabusUpda
 
   const handleEditWork = (item) => {
     if (item?.item_type === 'syllabus' || item?.is_syllabus) return
+    if (
+      (item?.item_type === 'activity' || item?.item_type === 'assignment') &&
+      isPastDeadline(item.submission_deadline)
+    ) {
+      toast.error('This item can no longer be edited because the deadline has passed.')
+      return
+    }
     const subjectQ = `subject_id=${encodeURIComponent(subjectId)}`
     const paths = {
       assignment: `/teacher/assignments/${item.id}/edit?${subjectQ}`,

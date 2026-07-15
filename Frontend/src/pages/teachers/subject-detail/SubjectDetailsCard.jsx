@@ -16,14 +16,6 @@ function cell(value) {
 export default function SubjectDetailsCard({ subject }) {
   if (!subject) return null
   const scheduleLabel = formatSubjectScheduleLabel(subject) || '—'
-  const curriculumLabel = (() => {
-    const grade = String(subject?.curriculumGuideGrade ?? '').trim()
-    const title = String(subject?.curriculumGuideTitle ?? subject?.curriculumGuideLabel ?? '').trim()
-    if (grade && title) return `${grade} — ${title}`
-    if (title) return title
-    if (String(subject?.curriculumGuideId || subject?.curriculum_guide_id || '').trim()) return 'Linked'
-    return '—'
-  })()
 
   return (
     <aside className="lg:sticky lg:top-4 lg:self-start rounded-xl border border-neutral-200 bg-white p-4 shadow-sm">
@@ -44,13 +36,6 @@ export default function SubjectDetailsCard({ subject }) {
             <span>Schedule</span>
           </dt>
           <dd className="max-w-[11rem] text-right text-sm font-medium leading-snug text-neutral-900">{scheduleLabel}</dd>
-        </div>
-        <div className="flex items-start justify-between gap-3 text-sm">
-          <dt className="flex min-w-0 items-center gap-2 text-neutral-500">
-            <i className="ti ti-book-2 text-base" aria-hidden="true" />
-            <span>Curriculum guide</span>
-          </dt>
-          <dd className="max-w-[11rem] text-right text-sm font-medium leading-snug text-neutral-900">{curriculumLabel}</dd>
         </div>
       </dl>
     </aside>

@@ -8,15 +8,6 @@ function formatSubjectSchedule(subject) {
   return formatSubjectScheduleLabel(subject) || '—'
 }
 
-function curriculumGuideDisplay(subject) {
-  const title = String(subject?.curriculumGuideTitle ?? '').trim()
-  const grade = String(subject?.curriculumGuideGrade ?? '').trim()
-  if (title && grade) return `${grade} — ${title}`
-  if (title) return title
-  if (subject?.curriculumGuideId) return 'Linked institute guide'
-  return '—'
-}
-
 const labelStyle = {
   padding: '10px 14px',
   color: 'var(--color-text-secondary, #6b7280)',
@@ -67,7 +58,6 @@ export default function SubjectProfile({ subject, onBack, onEdit }) {
   const grade = subject?.grade || subject?.grade_level || '—'
   const semester = formatSemesterLabel(subject?.semester) || '—'
   const scheduleLabel = formatSubjectSchedule(subject)
-  const curriculumGuide = curriculumGuideDisplay(subject)
 
   return (
     <div className="space-y-5">
@@ -154,12 +144,6 @@ export default function SubjectProfile({ subject, onBack, onEdit }) {
                   <td style={valueStyle}>{cell(assignedFaculty)}</td>
                   <td style={labelStyle}>Subject Code</td>
                   <td style={valueStyle}>{cell(subject.subjectCode)}</td>
-                </tr>
-                <tr>
-                  <td style={labelStyle}>Institute Curriculum Guide</td>
-                  <td style={valueStyle} colSpan={3}>
-                    {cell(curriculumGuide)}
-                  </td>
                 </tr>
                 <tr>
                   <td style={labelStyle}>Class Schedule</td>

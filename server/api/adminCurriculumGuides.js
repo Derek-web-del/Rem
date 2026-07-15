@@ -22,6 +22,7 @@ import {
   curriculumAuditDetails,
   curriculumGuideRowSnapshot,
 } from '../lib/curriculumAudit.js'
+import { syncCurriculumGuideLessonForAllSubjects } from '../lib/syncCurriculumGuideLesson.js'
 
 function adminDisplayName(session) {
   const u = session?.user ?? session?.data?.user ?? {}
@@ -123,6 +124,10 @@ export function createAdminCurriculumGuidesRouter(express, auth) {
         })
       }
 
+      if (publishNow) {
+        await syncCurriculumGuideLessonForAllSubjects(pool, id)
+      }
+
       res.status(201).json(guide)
     } catch (e) {
       sendSafeServerError(res, e, 'POST /api/admin/curriculum-guides')
@@ -189,6 +194,10 @@ export function createAdminCurriculumGuidesRouter(express, auth) {
         })
       }
 
+      if (guide?.is_published === true) {
+        await syncCurriculumGuideLessonForAllSubjects(pool, id)
+      }
+
       res.json(guide)
     } catch (e) {
       if (e?.code === 'APP_STATE_SYNCED') {
@@ -245,6 +254,7 @@ export function createAdminCurriculumGuidesRouter(express, auth) {
           },
         })
       }
+      await syncCurriculumGuideLessonForAllSubjects(pool, id)
       res.json(guide)
     } catch (e) {
       sendSafeServerError(res, e, 'PATCH /api/admin/curriculum-guides/:id')
