@@ -1,5 +1,5 @@
 import { Suspense, useCallback, useEffect, useState } from 'react'
-import { Outlet, useNavigate, useOutletContext } from 'react-router-dom'
+import { Outlet, useOutletContext } from 'react-router-dom'
 import { authClient } from '../lib/auth-client.js'
 import { clearTermsAcceptance } from '../lib/termsSession.js'
 import { loginPathWithPortalId } from '../lib/loginRoutes.js'
@@ -22,7 +22,6 @@ function StudentOutletFallback() {
 }
 
 export default function StudentLayout() {
-  const navigate = useNavigate()
   const parentContext = useOutletContext() || {}
   const [sidebarNavLocked, setSidebarNavLocked] = useState(false)
 
@@ -30,8 +29,11 @@ export default function StudentLayout() {
     clearTermsAcceptance()
     await resetStudentTermsOnLogout()
     await authClient.signOut()
-    navigate(loginPathWithPortalId('STUDENT'), { replace: true })
-  }, [navigate])
+    /** Hard redirect (not client-side navigate) — avoids a stale cached session briefly
+     * re-triggering App.jsx's post-login redirect (which would bounce back to /student/terms
+     * instead of landing cleanly on the login page). */
+    window.location.assign(loginPathWithPortalId('STUDENT'))
+  }, [])
 
   useIdleSession({
     enabled: true,

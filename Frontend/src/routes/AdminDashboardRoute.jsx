@@ -107,11 +107,13 @@ export default function AdminDashboardRoute() {
     return () => document.removeEventListener('visibilitychange', onVis)
   }, [session])
 
+  /** Hard redirect (not client-side navigate) — avoids a stale cached session briefly
+   * re-triggering App.jsx's post-login redirect logic instead of landing on the login page. */
   const onIdleSignOut = useCallback(async () => {
     clearTermsAcceptance()
     await authClient.signOut()
-    navigate(loginPathWithPortalId('INSTITUTE'), { replace: true })
-  }, [navigate])
+    window.location.assign(loginPathWithPortalId('INSTITUTE'))
+  }, [])
 
   useIdleSession({
     enabled: !!session,
@@ -122,7 +124,7 @@ export default function AdminDashboardRoute() {
   async function handleDashboardLogout() {
     clearTermsAcceptance()
     await authClient.signOut()
-    navigate(loginPathWithPortalId('INSTITUTE'), { replace: true })
+    window.location.assign(loginPathWithPortalId('INSTITUTE'))
   }
 
   if (sessionPending) {
