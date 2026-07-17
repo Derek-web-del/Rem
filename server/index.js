@@ -317,8 +317,12 @@ function parseCorsOrigins() {
     }
     return next()
   })
+  // Sign-in is IP-keyed (pre-auth, shared school Wi‑Fi) and must not outlast the account
+  // lockout window (5 min — see LOCK_MS in server/auth.js), or a whole network gets blocked
+  // from signing in to ANY role/account for longer than the lockout message promises.
+  const SIGNIN_WINDOW_MS_DEFAULT = 5 * 60 * 1000
   const signInLimiter = makeLimiter({
-    windowMs: parseMs(process.env.RATE_LIMIT_WINDOW_MS_SIGNIN, RL_WINDOW_MS),
+    windowMs: parseMs(process.env.RATE_LIMIT_WINDOW_MS_SIGNIN, SIGNIN_WINDOW_MS_DEFAULT),
     max: Number(process.env.RATE_LIMIT_MAX_SIGNIN || (isDev ? 1000 : 30)),
     keyBySession: false,
   })

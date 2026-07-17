@@ -3,6 +3,7 @@ import { sendSafeServerError } from '../lib/safeApiError.js'
 import { requireAdminSession, auditInstituteRecord } from './state/shared.js'
 import {
   listSecurityIncidents,
+  countSecurityIncidents,
   fetchSecurityIncidentById,
   updateSecurityIncidentStatus,
 } from '../lib/securityIncidents.js'
@@ -34,13 +35,24 @@ export function createSecurityIncidentsRouter(express, auth) {
       const ctx = await requireAdmin(req, res, auth)
       if (!ctx) return
       const pool = getPgPool()
-      const incidents = await listSecurityIncidents(pool, {
+      const filters = {
         status: req.query?.status,
         severity: req.query?.severity,
         incident_type: req.query?.incident_type || req.query?.incidentType,
         limit: req.query?.limit,
+        offset: req.query?.offset,
+      }
+      const [incidents, total] = await Promise.all([
+        listSecurityIncidents(pool, filters),
+        countSecurityIncidents(pool, filters),
+      ])
+      res.json({
+        ok: true,
+        incidents,
+        total,
+        limit: Number(filters.limit) || incidents.length,
+        offset: Number(filters.offset) || 0,
       })
-      res.json({ ok: true, incidents })
     } catch (e) {
       sendSafeServerError(res, e, 'GET /api/v1/admin/security-incidents')
     }

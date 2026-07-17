@@ -123,40 +123,63 @@ export async function createSecurityIncident(
   }
 }
 
+/** Shared WHERE clause builder so list/count stay in sync for the same filters. */
+function buildIncidentFilterClause(filters = {}) {
+  const params = []
+  let clause = `WHERE 1=1`
+
+  const status = String(filters.status || '').trim().toLowerCase()
+  if (status && VALID_STATUSES.has(status)) {
+    params.push(status)
+    clause += ` AND status = $${params.length}`
+  }
+
+  const severity = String(filters.severity || '').trim().toLowerCase()
+  if (severity && VALID_SEVERITIES.has(severity)) {
+    params.push(severity)
+    clause += ` AND severity = $${params.length}`
+  }
+
+  const incidentType = String(filters.incident_type || filters.incidentType || '').trim().toUpperCase()
+  if (incidentType) {
+    params.push(incidentType)
+    clause += ` AND incident_type = $${params.length}`
+  }
+
+  return { clause, params }
+}
+
 /** Returns [] (never throws) on schema/query errors so a listing failure never crashes a page. */
 export async function listSecurityIncidents(pool, filters = {}) {
   try {
     await ensureSecurityIncidentsSchema(pool)
-    const params = []
-    let sql = `SELECT * FROM public.security_incidents WHERE 1=1`
-
-    const status = String(filters.status || '').trim().toLowerCase()
-    if (status && VALID_STATUSES.has(status)) {
-      params.push(status)
-      sql += ` AND status = $${params.length}`
-    }
-
-    const severity = String(filters.severity || '').trim().toLowerCase()
-    if (severity && VALID_SEVERITIES.has(severity)) {
-      params.push(severity)
-      sql += ` AND severity = $${params.length}`
-    }
-
-    const incidentType = String(filters.incident_type || filters.incidentType || '').trim().toUpperCase()
-    if (incidentType) {
-      params.push(incidentType)
-      sql += ` AND incident_type = $${params.length}`
-    }
+    const { clause, params } = buildIncidentFilterClause(filters)
 
     const limitNum = Number(filters.limit)
     const limit = Math.max(1, Math.min(200, Number.isFinite(limitNum) && limitNum > 0 ? limitNum : 100))
-    sql += ` ORDER BY created_at DESC LIMIT ${limit}`
+    const offsetNum = Number(filters.offset)
+    const offset = Math.max(0, Number.isFinite(offsetNum) && offsetNum > 0 ? offsetNum : 0)
 
+    const sql = `SELECT * FROM public.security_incidents ${clause} ORDER BY created_at DESC LIMIT ${limit} OFFSET ${offset}`
     const { rows } = await pool.query(sql, params)
     return (rows || []).map(mapIncidentRow).filter(Boolean)
   } catch (e) {
     console.warn('[security-incidents] listSecurityIncidents failed:', e?.message || e)
     return []
+  }
+}
+
+/** Returns 0 (never throws) on schema/query errors — used for pagination totals. */
+export async function countSecurityIncidents(pool, filters = {}) {
+  try {
+    await ensureSecurityIncidentsSchema(pool)
+    const { clause, params } = buildIncidentFilterClause(filters)
+    const sql = `SELECT COUNT(*)::int AS total FROM public.security_incidents ${clause}`
+    const { rows } = await pool.query(sql, params)
+    return Number(rows?.[0]?.total || 0)
+  } catch (e) {
+    console.warn('[security-incidents] countSecurityIncidents failed:', e?.message || e)
+    return 0
   }
 }
 

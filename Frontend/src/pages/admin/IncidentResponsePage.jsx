@@ -75,11 +75,15 @@ function incidentTypeLabel(t) {
   return TYPE_LABELS[t] || String(t || '').replace(/_/g, ' ')
 }
 
+const PAGE_SIZE = 15
+
 export default function IncidentResponsePage() {
   const toast = useNotify()
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
   const [incidents, setIncidents] = useState([])
+  const [total, setTotal] = useState(0)
+  const [offset, setOffset] = useState(0)
   const [statusFilter, setStatusFilter] = useState('')
   const [severityFilter, setSeverityFilter] = useState('')
   const [typeFilter, setTypeFilter] = useState('')
@@ -87,36 +91,44 @@ export default function IncidentResponsePage() {
   const [savingId, setSavingId] = useState(null)
   const [drafts, setDrafts] = useState({})
 
-  const load = useCallback(async () => {
-    setLoading(true)
-    setLoadError('')
-    try {
-      const params = new URLSearchParams()
-      if (statusFilter) params.set('status', statusFilter)
-      if (severityFilter) params.set('severity', severityFilter)
-      if (typeFilter) params.set('incident_type', typeFilter)
-      const res = await fetch(apiUrl(`/api/v1/admin/security-incidents?${params.toString()}`), {
-        credentials: 'include',
-      })
-      const data = await res.json().catch(() => ({}))
-      if (!res.ok) {
-        const msg = mapIncidentsApiError(res, data)
-        setLoadError(msg)
+  const load = useCallback(
+    async (nextOffset = offset) => {
+      setLoading(true)
+      setLoadError('')
+      try {
+        const params = new URLSearchParams()
+        if (statusFilter) params.set('status', statusFilter)
+        if (severityFilter) params.set('severity', severityFilter)
+        if (typeFilter) params.set('incident_type', typeFilter)
+        params.set('limit', String(PAGE_SIZE))
+        params.set('offset', String(nextOffset))
+        const res = await fetch(apiUrl(`/api/v1/admin/security-incidents?${params.toString()}`), {
+          credentials: 'include',
+        })
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok) {
+          const msg = mapIncidentsApiError(res, data)
+          setLoadError(msg)
+          setIncidents([])
+          return
+        }
+        setIncidents(Array.isArray(data.incidents) ? data.incidents : [])
+        setTotal(Number(data?.total ?? 0))
+        setOffset(nextOffset)
+      } catch (e) {
+        setLoadError(String(e?.message || 'Could not load incidents.'))
         setIncidents([])
-        return
+      } finally {
+        setLoading(false)
       }
-      setIncidents(Array.isArray(data.incidents) ? data.incidents : [])
-    } catch (e) {
-      setLoadError(String(e?.message || 'Could not load incidents.'))
-      setIncidents([])
-    } finally {
-      setLoading(false)
-    }
-  }, [statusFilter, severityFilter, typeFilter])
+    },
+    [statusFilter, severityFilter, typeFilter],
+  )
 
   useEffect(() => {
-    void load()
-  }, [load])
+    void load(0)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [statusFilter, severityFilter, typeFilter])
 
   function draftFor(incident) {
     return (
@@ -220,7 +232,7 @@ export default function IncidentResponsePage() {
         </select>
         <button
           type="button"
-          onClick={() => load()}
+          onClick={() => load(offset)}
           className="h-[42px] rounded-lg border border-neutral-200 bg-white px-4 text-sm font-semibold text-neutral-800 shadow-sm hover:bg-neutral-50"
         >
           Refresh
@@ -360,6 +372,30 @@ export default function IncidentResponsePage() {
               )}
             </tbody>
           </table>
+
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-neutral-100 bg-white px-4 py-3">
+            <div className="text-sm font-semibold text-neutral-700">
+              Offset <b>{offset}</b> • Showing <b>{incidents.length}</b> • Total <b>{total}</b>
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                className="rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-sm font-semibold text-neutral-800 hover:bg-neutral-50 disabled:opacity-50"
+                disabled={offset <= 0 || loading}
+                onClick={() => load(Math.max(0, offset - PAGE_SIZE))}
+              >
+                Prev
+              </button>
+              <button
+                type="button"
+                className="rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-sm font-semibold text-neutral-800 hover:bg-neutral-50 disabled:opacity-50"
+                disabled={offset + incidents.length >= total || loading}
+                onClick={() => load(offset + PAGE_SIZE)}
+              >
+                Next
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

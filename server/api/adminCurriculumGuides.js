@@ -16,7 +16,7 @@ import {
   setCurriculumGuidePublished,
   updateAdminCurriculumGuide,
 } from '../lib/curriculumGuidesDb.js'
-import { requireAdminSession, auditInstituteRecord } from './state/shared.js'
+import { requireAdminSession, auditInstituteRecord, purgeCurriculumFromAppStateJson } from './state/shared.js'
 import {
   curriculumAuditDescription,
   curriculumAuditDetails,
@@ -184,6 +184,11 @@ export function createAdminCurriculumGuidesRouter(express, auth) {
         file_url,
       })
 
+      /** Editing a legacy app_state-mirrored guide claims it permanently — purge the mirror so it can't reappear or overwrite this edit later. */
+      if (existing.source === 'app_state') {
+        await purgeCurriculumFromAppStateJson(pool, id)
+      }
+
       const snap = curriculumGuideRowSnapshot(guide)
       if (snap) {
         await auditInstituteRecord(session, 'CURRICULUM_UPDATED', {
@@ -200,13 +205,6 @@ export function createAdminCurriculumGuidesRouter(express, auth) {
 
       res.json(guide)
     } catch (e) {
-      if (e?.code === 'APP_STATE_SYNCED') {
-        res.status(409).json({
-          error: 'SYNCED_GUIDE',
-          message: 'Guides synced from legacy app state cannot be edited here.',
-        })
-        return
-      }
       sendSafeServerError(res, e, 'PUT /api/admin/curriculum-guides/:id')
     }
   })
@@ -271,40 +269,33 @@ export function createAdminCurriculumGuidesRouter(express, auth) {
         return
       }
       const pool = getPgPool()
-      try {
-        const removed = await deleteCurriculumGuideById(pool, id)
-        if (!removed) {
-          res.status(404).json({ error: 'NOT_FOUND', message: 'Curriculum guide not found.' })
-          return
-        }
-        if (removed.file_url?.startsWith('/uploads/curriculum/')) {
-          await deleteCurriculumFileByUrl(removed.file_url)
-        }
-
-        const snap = curriculumGuideRowSnapshot(removed)
-        if (snap) {
-          await auditInstituteRecord(session, 'CURRICULUM_DELETED', {
-            recordType: 'curriculum',
-            recordId: id,
-            description: curriculumAuditDescription('deleted', snap),
-            details: {
-              ...curriculumAuditDetails(snap),
-              deletedSnapshot: snap,
-            },
-          })
-        }
-
-        res.json({ ok: true, id: removed.id })
-      } catch (e) {
-        if (e?.code === 'APP_STATE_SYNCED') {
-          res.status(409).json({
-            error: 'SYNCED_GUIDE',
-            message: 'Guides synced from the institute dashboard cannot be deleted here. Remove them from Curriculum in the admin dashboard.',
-          })
-          return
-        }
-        throw e
+      const removed = await deleteCurriculumGuideById(pool, id)
+      if (!removed) {
+        res.status(404).json({ error: 'NOT_FOUND', message: 'Curriculum guide not found.' })
+        return
       }
+      if (removed.file_url?.startsWith('/uploads/curriculum/')) {
+        await deleteCurriculumFileByUrl(removed.file_url)
+      }
+      /** Legacy app_state-mirrored guides must be purged from the JSON mirror too, or a future state sync would resurrect them. */
+      if (removed.source === 'app_state') {
+        await purgeCurriculumFromAppStateJson(pool, id)
+      }
+
+      const snap = curriculumGuideRowSnapshot(removed)
+      if (snap) {
+        await auditInstituteRecord(session, 'CURRICULUM_DELETED', {
+          recordType: 'curriculum',
+          recordId: id,
+          description: curriculumAuditDescription('deleted', snap),
+          details: {
+            ...curriculumAuditDetails(snap),
+            deletedSnapshot: snap,
+          },
+        })
+      }
+
+      res.json({ ok: true, id: removed.id })
     } catch (e) {
       sendSafeServerError(res, e, 'DELETE /api/admin/curriculum-guides/:id')
     }

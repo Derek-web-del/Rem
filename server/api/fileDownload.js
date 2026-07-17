@@ -118,6 +118,12 @@ async function tryServeAnnouncementFromDatabase(filePath, res) {
   return true
 }
 
+/**
+ * Fallback when a curriculum guide's file is missing from disk (e.g. not persisted to Spaces).
+ * Only ever serves that same guide's own inline data — never another record's file. Matching a
+ * *different* subject's syllabus PDF by guessed subject name previously caused the wrong document
+ * (an unrelated subject's syllabus) to be displayed in place of the actual curriculum guide.
+ */
 async function tryServeCurriculumFromDatabase(filePath, res) {
   const pool = getPgPool()
   if (!pool) return false
@@ -126,7 +132,7 @@ async function tryServeCurriculumFromDatabase(filePath, res) {
   const basename = path.basename(normalizeStoredUploadPath(filePath))
   const { rows } = await pool.query(
     `
-      SELECT file_data_url, subject, file_name, title
+      SELECT file_data_url
       FROM curriculum_guides
       WHERE is_published = true
         AND (
@@ -140,61 +146,13 @@ async function tryServeCurriculumFromDatabase(filePath, res) {
   )
 
   const guide = rows?.[0]
-  const inlineCandidates = [
-    String(guide?.file_data_url || '').trim(),
-  ]
+  const parsed = parseDataUrlBuffer(String(guide?.file_data_url || '').trim())
+  if (!parsed?.buffer?.length) return false
 
-  const subjectKey = String(guide?.subject || guide?.title || '').trim()
-  if (subjectKey) {
-    try {
-      const { rows: subRows } = await pool.query(
-        `
-          SELECT syllabus_pdf
-          FROM subjects
-          WHERE lower(trim(subject_name)) = lower(trim($1))
-             OR lower(trim(subject_code)) = lower(trim($1))
-          LIMIT 1
-        `,
-        [subjectKey],
-      )
-      inlineCandidates.push(String(subRows?.[0]?.syllabus_pdf || '').trim())
-    } catch {
-      /* ignore */
-    }
-  }
-
-  if (basename) {
-    try {
-      const stem = basename.replace(/\.[^.]+$/, '').replace(/_Syllabus$/i, '')
-      const subjectHint = stem.includes('_') ? stem.split('_').slice(1).join(' ') : stem
-      if (subjectHint) {
-        const { rows: subRows } = await pool.query(
-          `
-            SELECT syllabus_pdf
-            FROM subjects
-            WHERE lower(replace(subject_name, ' ', '')) = lower(replace($1, ' ', ''))
-               OR lower(subject_name) LIKE lower($2)
-            LIMIT 1
-          `,
-          [subjectHint, `%${subjectHint.replace(/_/g, '%')}%`],
-        )
-        inlineCandidates.push(String(subRows?.[0]?.syllabus_pdf || '').trim())
-      }
-    } catch {
-      /* ignore */
-    }
-  }
-
-  for (const raw of inlineCandidates) {
-    const parsed = parseDataUrlBuffer(raw)
-    if (!parsed?.buffer?.length) continue
-    res.setHeader('Content-Type', parsed.mime || 'application/pdf')
-    res.setHeader('Content-Disposition', 'inline')
-    res.send(parsed.buffer)
-    return true
-  }
-
-  return false
+  res.setHeader('Content-Type', parsed.mime || 'application/pdf')
+  res.setHeader('Content-Disposition', 'inline')
+  res.send(parsed.buffer)
+  return true
 }
 
 async function tryServeFacultyPhotoFromDatabase(filePath, res) {

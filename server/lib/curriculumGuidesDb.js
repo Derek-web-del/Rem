@@ -176,11 +176,6 @@ export async function updateAdminCurriculumGuide(pool, id, payload) {
   await ensureCurriculumGuidesPublishColumns(pool)
   const existing = await fetchCurriculumGuideById(pool, id)
   if (!existing) return null
-  if (existing.source === 'app_state') {
-    const err = new Error('APP_STATE_SYNCED')
-    err.code = 'APP_STATE_SYNCED'
-    throw err
-  }
 
   const title = String(payload.title ?? payload.subject ?? existing.title ?? '').trim()
   const subject = String(payload.subject ?? existing.subject ?? title).trim()
@@ -190,6 +185,7 @@ export async function updateAdminCurriculumGuide(pool, id, payload) {
   const file_url = String(payload.file_url ?? existing.file_url ?? '').trim()
   const file_type = String(payload.file_type ?? curriculumMimeForFileName(file_name)).trim()
 
+  /** Any admin edit claims ownership from the legacy app_state mirror so it can't be silently resurrected/overwritten by a future state sync. */
   await pool.query(
     `
     UPDATE curriculum_guides
@@ -202,6 +198,7 @@ export async function updateAdminCurriculumGuide(pool, id, payload) {
         title = $8,
         file_url = $9,
         grade_level = $10,
+        source = 'admin_upload',
         updated_at = NOW()
     WHERE id = $1
     `,
@@ -229,11 +226,6 @@ export async function deleteCurriculumGuideById(pool, id) {
   await ensureCurriculumGuidesPublishColumns(pool)
   const row = await fetchCurriculumGuideById(pool, id)
   if (!row) return null
-  if (row.source === 'app_state') {
-    const err = new Error('APP_STATE_SYNCED')
-    err.code = 'APP_STATE_SYNCED'
-    throw err
-  }
   await pool.query(`DELETE FROM curriculum_guides WHERE id = $1`, [String(id)])
   return row
 }

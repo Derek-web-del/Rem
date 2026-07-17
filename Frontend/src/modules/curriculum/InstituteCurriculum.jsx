@@ -2,7 +2,7 @@ import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState }
 import BackButton from '../../components/BackButton.jsx'
 import AuthenticatedImage from '../../components/AuthenticatedImage.jsx'
 import { useNotify } from '../../components/notifications.jsx'
-import GlendaleWorkflowCallout, { curriculumGradeFilenameHint } from '../../components/GlendaleWorkflowCallout.jsx'
+import { curriculumGradeFilenameHint } from '../../components/GlendaleWorkflowCallout.jsx'
 import { authClient } from '../../lib/auth-client.js'
 import { uploadsPathToApiUrl } from '../../lib/fileUrls.js'
 import { resolvePdfUrl } from '../../lib/pdfCacheStatus.js'
@@ -612,7 +612,6 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
             <h2 className="text-2xl font-bold text-neutral-900">Upload Curriculum Guide</h2>
             <BackButton onClick={openCurriculumManagePage} />
           </div>
-          <GlendaleWorkflowCallout compact />
           <section className="rounded-xl border border-neutral-200 bg-white p-5 shadow-md md:p-6">
             <h3 className="text-lg font-semibold text-neutral-900">Upload New Curriculum</h3>
             <form onSubmit={submitUpload} className="mt-5 grid gap-4">
@@ -803,8 +802,6 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
           </button>
         </div>
 
-        <GlendaleWorkflowCallout />
-
         <section className="rounded-xl border border-neutral-200 bg-white p-5 shadow-md md:p-6">
           <h3 className="text-lg font-bold text-neutral-900">All Curriculum Guides</h3>
           <div className="mt-4 grid gap-3 md:grid-cols-4">
@@ -871,9 +868,6 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
                     <p className="mt-1 text-sm text-neutral-600">
                       {item.grade} | {item.subject}
                     </p>
-                    <span className="mt-1 inline-block rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700">
-                      Official DepEd Reference — not AI-generated
-                    </span>
                     {item.description ? (
                       <p className="mt-1 line-clamp-2 text-sm text-neutral-700">{item.description}</p>
                     ) : null}

@@ -247,7 +247,7 @@ Variables marked **(dev)** are mainly for local testing or advanced setups.
 |----------|---------|-------------|
 | `RATE_LIMIT_WINDOW_MS` | 15 min | Base window for limiters. |
 | `RATE_LIMIT_MAX_SIGNIN` | `10` | Max sign-in attempts per window per IP. |
-| `RATE_LIMIT_WINDOW_MS_SIGNIN` | — | Override window for sign-in. |
+| `RATE_LIMIT_WINDOW_MS_SIGNIN` | 5 min | Window for sign-in. Kept at/below `AUTH_LOCK_MS` (account lockout) so a shared network is never blocked from signing in longer than the lockout message promises. |
 | `RATE_LIMIT_MAX_SEND_OTP` | `5` | Max “send OTP” requests. |
 | `RATE_LIMIT_WINDOW_MS_SEND_OTP` | — | Window for send OTP. |
 | `RATE_LIMIT_MAX_VERIFY_OTP` | `10` | Max OTP verify attempts. |
