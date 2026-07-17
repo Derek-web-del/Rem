@@ -30,7 +30,7 @@
     "pg:activity-tracking": "node scripts/ensure-postgres-activity-tracking.mjs",
     "seed": "npx cross-env AUTH_DISABLE_SIGNUP=false node server/seed.mjs",
     "ensure:teacher": "npx cross-env AUTH_DISABLE_SIGNUP=false node scripts/ensure-teacher-account.mjs",
-    "ensure:faderek": "npx cross-env AUTH_DISABLE_SIGNUP=false TEACHER_EMAIL=adolfo.jbukele@gmail.com TEACHER_USERNAME=faderek TEACHER_PASSWORD=ChangeMe#Strong1 TEACHER_ENABLE_2FA=1 node scripts/ensure-teacher-account.mjs",
+    "ensure:faderek": "npx cross-env AUTH_DISABLE_SIGNUP=false TEACHER_USERNAME=faderek TEACHER_ENABLE_2FA=1 node scripts/ensure-teacher-account.mjs",
     "ensure:portal-mfa": "node --env-file=.env scripts/ensure-portal-mfa.mjs",
     "verify:portal-mfa": "node --env-file=.env scripts/verify-mfa-all-accounts.mjs",
     "purge:demo-teacher": "node scripts/purge-demo-teacher-account.mjs",

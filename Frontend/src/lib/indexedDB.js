@@ -1,5 +1,5 @@
 const DB_NAME = 'lenlearn_offline'
-const DB_VERSION = 3
+const DB_VERSION = 4
 
 /** All object store names (used by live-test-harness). */
 export const OFFLINE_STORE_NAMES = [
@@ -26,6 +26,7 @@ export const OFFLINE_STORE_NAMES = [
   'admin_faculties',
   'admin_subjects',
   'admin_sections',
+  'admin_curriculum',
   'faculty_work_details',
   'faculty_grades_overview',
   'faculty_subject_streams',
@@ -130,6 +131,23 @@ export async function getListSnapshot(storeName, listKey = 'list') {
   if (row?.items && Array.isArray(row.items)) return row.items
   const all = await getAllStore(storeName)
   return all.filter((r) => r.id !== listKey && r.id !== 'current')
+}
+
+/**
+ * Same as `getListSnapshot`, but also returns the `cachedAt` timestamp so
+ * callers can show the user how old the offline data is.
+ * @param {string} storeName @param {string} listKey
+ * @returns {Promise<{ items: Array<Record<string, unknown>>, cachedAt: number|null }>}
+ */
+export async function getListSnapshotWithMeta(storeName, listKey = 'list') {
+  const row = await getStore(storeName, listKey)
+  if (row?.items && Array.isArray(row.items)) {
+    return { items: row.items, cachedAt: row.cachedAt ?? null }
+  }
+  const all = await getAllStore(storeName)
+  const items = all.filter((r) => r.id !== listKey && r.id !== 'current')
+  const cachedAt = items.reduce((max, r) => (typeof r.cachedAt === 'number' && r.cachedAt > max ? r.cachedAt : max), 0)
+  return { items, cachedAt: cachedAt || null }
 }
 
 /** @param {string} storeName */

@@ -88,7 +88,7 @@ export function logUnauthorizedAccessFromRequest(req, meta = {}) {
       reason: meta.reason || 'Access denied',
       requiredRole: meta.requiredRole || '',
     })
-    .catch(() => {})
+    .catch((e) => console.warn('[security] logUnauthorizedAccess failed:', e?.message || e))
 }
 
 /**

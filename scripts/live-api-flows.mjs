@@ -16,7 +16,11 @@ const DATABASE_URL = process.env.DATABASE_URL
 const ORIGIN = process.env.BETTER_AUTH_URL || 'http://localhost:5173'
 
 const FACULTY_USER = process.env.LIVE_TEST_FACULTY_USER || 'faderek'
-const FACULTY_PASS = process.env.LIVE_TEST_FACULTY_PASS || process.env.TEACHER_PASSWORD || 'ChangeMe#Strong1'
+const FACULTY_PASS = process.env.LIVE_TEST_FACULTY_PASS || process.env.TEACHER_PASSWORD
+if (!FACULTY_PASS) {
+  console.error('Set LIVE_TEST_FACULTY_PASS or TEACHER_PASSWORD before running this script.')
+  process.exit(1)
+}
 
 const results = []
 

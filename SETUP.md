@@ -467,13 +467,15 @@ npm run ensure:teacher -- your.email@example.com
 
 The script prints the **username** to use on the Faculty login tile.
 
-Pre-configured demo (only if your team uses it):
+Pre-configured demo (only if your team uses it) — set `TEACHER_EMAIL` and `TEACHER_PASSWORD` in `.env` (or inline on the command line) first, no default credentials are stored in `package.json`:
 
 ```powershell
+$env:TEACHER_EMAIL="your.email@example.com"
+$env:TEACHER_PASSWORD="Your#Strong1Pass"
 npm run ensure:faderek
 ```
 
-(Uses env vars baked into `package.json` for that script.)
+The script always creates/updates the username `faderek` with 2FA enabled; only the email/password come from your environment.
 
 ---
 

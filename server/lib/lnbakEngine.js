@@ -7,6 +7,7 @@ import { finished, pipeline } from 'node:stream/promises'
 import { tmpdir } from 'node:os'
 import { createRequire } from 'node:module'
 import { getPgPool } from '../pgPool.js'
+import { createSecurityIncident } from './securityIncidents.js'
 import {
   STATE_ID,
   syncAppStateMirrorsAfterRestore,
@@ -74,28 +75,6 @@ export const SUBJECT_ASSETS_DIR = subjectAssetsRoot()
 
 /** Logged at restore start so deploy/runtime can be verified on DigitalOcean. */
 export const RESTORE_ENGINE_VERSION = '2026-07-12-restore-v13'
-
-/** @param {string} hypothesisId @param {string} location @param {string} message @param {Record<string, unknown>} [data] */
-function dbgRestore(hypothesisId, location, message, data = {}) {
-  const payload = {
-    sessionId: '127b1e',
-    hypothesisId,
-    location,
-    message,
-    data,
-    timestamp: Date.now(),
-    runId: String(data.runId || 'restore'),
-  }
-  // #region agent log
-  fetch('http://127.0.0.1:7837/ingest/c79b5560-e018-420c-ad0f-457fade4670e', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '127b1e' },
-    body: JSON.stringify(payload),
-  }).catch(() => {})
-  fsp.mkdir(path.join(process.cwd(), '.cursor'), { recursive: true }).catch(() => {})
-  fsp.appendFile(path.join(process.cwd(), '.cursor', 'debug-127b1e.log'), `${JSON.stringify(payload)}\n`).catch(() => {})
-  // #endregion
-}
 
 /** Latest restore debug snapshot — surfaced in API errors and diagnostics. */
 let _lastRestoreDebug = { engine: RESTORE_ENGINE_VERSION, phase: 'idle' }
@@ -2539,15 +2518,6 @@ export async function restoreDatabaseFromParsed(parsed) {
   const truncateOrder = [...tableOrder].reverse()
   logRestoreTableOrder(tableOrder)
 
-  // #region agent log
-  dbgRestore('H1', 'lnbakEngine.js:restoreDatabaseFromParsed', 'restore start', {
-    engine: RESTORE_ENGINE_VERSION,
-    topicLinkPlanCount: topicLinkPlan.length,
-    topicsIdx: tableOrder.indexOf('subject_topics'),
-    modulesIdx: tableOrder.indexOf('subject_modules'),
-  })
-  // #endregion
-
   try {
     savedFks = mergeKnownTopicForeignKeys(await captureAllPublicForeignKeys(client))
 
@@ -2601,15 +2571,6 @@ export async function restoreDatabaseFromParsed(parsed) {
       setRestoreDebug({ phase: restorePhase })
       if (key === 'subject_modules') {
         await forceDropKnownTopicForeignKeys(client)
-        const fkStillExists = await subjectModulesTopicFkExists(client)
-        const sampleCols = unionRowKeys(omitRestoreInsertColumns(key, prepareRestoreRowsForInsert(parsed, key, rows.slice(0, 1))))
-        // #region agent log
-        dbgRestore('H2', 'lnbakEngine.js:restoreDatabaseFromParsed', 'before subject_modules insert', {
-          fkStillExists,
-          hasTopicIdInCols: sampleCols.includes('topic_id'),
-          replicaRoleActive,
-        })
-        // #endregion
       }
       const prepared = prepareRestoreRowsForInsert(parsed, key, rows)
       if (!prepared.length) continue
@@ -2648,6 +2609,18 @@ export async function restoreDatabaseFromParsed(parsed) {
     await client.query('COMMIT')
     console.log('[BACKUP] COMMIT')
     console.log('[BACKUP] Database restore committed')
+    void createSecurityIncident(pool, {
+      incidentType: 'DATA_RECOVERY_EVENT',
+      severity: 'low',
+      summary: `Database restore completed (engine ${RESTORE_ENGINE_VERSION}, ${tableOrder.length} tables).`,
+      detectedBy: 'system',
+      details: {
+        engine: RESTORE_ENGINE_VERSION,
+        schema_version: parsed?.meta?.schema_version || 'unknown',
+        table_count: tableOrder.length,
+        restore_warnings: parsed?.meta?.restore_warnings || [],
+      },
+    })
   } catch (e) {
     await client.query('ROLLBACK').catch(() => {})
     console.log('[BACKUP] ROLLBACK')
@@ -2661,12 +2634,6 @@ export async function restoreDatabaseFromParsed(parsed) {
       fkExists: await subjectModulesTopicFkExists(client).catch(() => null),
     }
     setRestoreDebug({ phase: restorePhase, ok: false, ...failDebug })
-    // #region agent log
-    dbgRestore('H3', 'lnbakEngine.js:restoreDatabaseFromParsed', 'restore FAILED', {
-      ...failDebug,
-      engine: RESTORE_ENGINE_VERSION,
-    })
-    // #endregion
     if (e instanceof RestoreFailedError) throw e
     throw enrichRestoreError(e, null)
   } finally {

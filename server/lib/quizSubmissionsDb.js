@@ -9,6 +9,11 @@ import { normalizeGradeLevel, resolveStudentGradeLevel } from './studentSession.
 import { studentDisplayName } from './studentPiiCrypto.js'
 import { ensureLateSubmissionColumns } from './lateSubmissionSchema.js'
 import { buildTeacherSubmissionScoreMeta, isSubmissionOpenForStudent } from './studentWorkPortal.js'
+import { createSecurityIncident } from './securityIncidents.js'
+
+/** Violation count at/above this raises a tracked incident; at/above HIGH is severity=high. */
+const QUIZ_INCIDENT_THRESHOLD = 3
+const QUIZ_INCIDENT_HIGH_THRESHOLD = 6
 
 export async function ensureQuizSubmissionsSchema(pool) {
   await ensureQuizzesSchema(pool)
@@ -895,6 +900,21 @@ export async function saveQuizViolations(pool, quizId, studentId, violations = [
     `,
     [JSON.stringify(merged), quizId, studentId],
   )
+
+  const crossedThreshold =
+    merged.length >= QUIZ_INCIDENT_THRESHOLD && existing.length < QUIZ_INCIDENT_THRESHOLD
+  if (crossedThreshold) {
+    void createSecurityIncident(pool, {
+      incidentType: 'QUIZ_INTEGRITY',
+      severity: merged.length >= QUIZ_INCIDENT_HIGH_THRESHOLD ? 'high' : 'medium',
+      summary: `${merged.length} quiz integrity violation(s) recorded for quiz #${quizId} (tab switch / fullscreen exit / etc.).`,
+      affectedUserId: String(studentId),
+      affectedUserLabel: `Student #${studentId}`,
+      sourceEventId: String(quizId),
+      detectedBy: 'system',
+      details: { quiz_id: quizId, student_id: studentId, violation_count: merged.length, violations: merged },
+    })
+  }
 
   return { violation_count: merged.length }
 }

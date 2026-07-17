@@ -13,14 +13,16 @@ import { mapCurriculumGuideList } from './modules/curriculum/curriculumGuideMapp
 import { useNotify } from './components/notifications.jsx'
 import { authClient } from './lib/auth-client.js'
 import { getLmsStateEndpointUrl, apiUrl } from './lib/lmsStateStorage.js'
-import { saveListSnapshot, getListSnapshot } from './lib/indexedDB.js'
+import { saveListSnapshot, getListSnapshot, getListSnapshotWithMeta } from './lib/indexedDB.js'
 import { isOnline } from './lib/offlineSync.js'
 import { warmAdminOfflineCache } from './lib/adminPortalOffline.js'
 import OfflineBanner from './components/OfflineBanner.jsx'
 import SystemOfflineBanner from './components/SystemOfflineBanner.jsx'
 import AdminAuditBanner from './components/AdminAuditBanner.jsx'
+import OfflineCacheIndicator from './components/OfflineCacheIndicator.jsx'
 import { resolveSubjectImageFromMap } from './lib/subjectImages.js'
 import MonitoringRecords from './pages/MonitoringRecords.jsx'
+import IncidentResponsePage from './pages/admin/IncidentResponsePage.jsx'
 import BackupPage from './pages/BackupPage.jsx'
 import ArchiveVault from './pages/ArchiveVault.jsx'
 import AdminTurnoverPage from './pages/admin/AdminTurnoverPage.jsx'
@@ -666,6 +668,16 @@ function ActivityIcon({ className }) {
   )
 }
 
+function ShieldAlertIcon({ className }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" aria-hidden>
+      <path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6l8-3Z" />
+      <path d="M12 8v5" strokeLinecap="round" />
+      <path d="M12 16.5h.01" strokeLinecap="round" />
+    </svg>
+  )
+}
+
 function ArchiveIcon({ className }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" aria-hidden>
@@ -696,6 +708,7 @@ const NAV = [
   { id: 'subjects', label: 'Subjects', icon: FileTextIcon, to: NAV_ID_TO_PATH.subjects },
   { id: 'updates', label: 'Announcements', icon: BellIcon, to: NAV_ID_TO_PATH.updates },
   { id: 'monitoring', label: 'Audit Logs', icon: ActivityIcon, to: NAV_ID_TO_PATH.monitoring },
+  { id: 'incidents', label: 'Incident Response', icon: ShieldAlertIcon, to: NAV_ID_TO_PATH.incidents },
   { id: 'turnover', label: 'Admin Transfer', icon: UserTieIcon, to: NAV_ID_TO_PATH.turnover },
   { id: 'backup', label: 'Data Backup', icon: DatabaseExportIcon, to: NAV_ID_TO_PATH.backup },
   { id: 'archive', label: 'Archive Vault', icon: ArchiveIcon, to: NAV_ID_TO_PATH.archive },
@@ -718,8 +731,8 @@ function Avatar({ seed, size = 40 }) {
   )
 }
 
-function normalizeAdminDisplayName(raw) {
-  return normalizeInstituteAdminDisplayName(raw)
+function normalizeAdminDisplayName(name, email) {
+  return normalizeInstituteAdminDisplayName(name, email)
 }
 
 function DashboardFacultyThumb({ faculty }) {
@@ -741,7 +754,7 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
   const { data: adminSession } = authClient.useSession()
   const adminDisplayName = useMemo(() => {
     const u = adminSession?.user
-    return normalizeAdminDisplayName(u?.name || u?.email || '')
+    return normalizeAdminDisplayName(u?.name, u?.email)
   }, [adminSession])
   const location = useLocation()
   const navigate = useNavigate()
@@ -770,6 +783,8 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
   const [sectionError, setSectionError] = useState('')
   const [activeSectionGrade, setActiveSectionGrade] = useState(GRADE_LEVELS[0])
   const [curriculums, setCurriculums] = useState([])
+  /** Per-list offline cache status: { subjects|sections|students|faculties|curriculum: { fromCache, cachedAt } } */
+  const [cacheMeta, setCacheMeta] = useState({})
 
   const [persistenceMode, setPersistenceMode] = useState('loading')
   const [stateBootstrapDone, setStateBootstrapDone] = useState(false)
@@ -1710,12 +1725,14 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
       const list = Array.isArray(data.subjects) ? data.subjects : []
       await saveListSnapshot('admin_subjects', list)
       setSubjects(list.map((row) => mapPgSubjectRow(row, facultiesRef.current)))
+      setCacheMeta((prev) => ({ ...prev, subjects: { fromCache: false, cachedAt: null } }))
       return { ok: true, count: list.length }
     } catch (e) {
       try {
-        const list = await getListSnapshot('admin_subjects')
+        const { items: list, cachedAt } = await getListSnapshotWithMeta('admin_subjects')
         if (list.length) {
           setSubjects(list.map((row) => mapPgSubjectRow(row, facultiesRef.current)))
+          setCacheMeta((prev) => ({ ...prev, subjects: { fromCache: true, cachedAt } }))
           return { ok: true, count: list.length, fromCache: true }
         }
       } catch {
@@ -2278,9 +2295,22 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
       }
       const list = Array.isArray(data) ? data : []
       const mapped = mapCurriculumGuideList(list, uploadsPathToApiUrl)
+      await saveListSnapshot('admin_curriculum', list)
       setCurriculums(mapped)
+      setCacheMeta((prev) => ({ ...prev, curriculum: { fromCache: false, cachedAt: null } }))
       return { ok: true, count: mapped.length }
     } catch (e) {
+      try {
+        const { items: list, cachedAt } = await getListSnapshotWithMeta('admin_curriculum')
+        if (list.length) {
+          const mapped = mapCurriculumGuideList(list, uploadsPathToApiUrl)
+          setCurriculums(mapped)
+          setCacheMeta((prev) => ({ ...prev, curriculum: { fromCache: true, cachedAt } }))
+          return { ok: true, count: mapped.length, fromCache: true }
+        }
+      } catch {
+        void 0
+      }
       const msg = String(e?.message || e || 'Could not load curriculum. Please try again.')
       console.warn('[curriculum] refreshCurriculumFromPostgres:', msg)
       return { ok: false, error: msg }
@@ -2301,13 +2331,15 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
       await saveListSnapshot('admin_sections', apiSec)
       const merged = mergePostgresSectionIdsIntoSections(sectionsRef.current, apiSec)
       setSections(merged)
+      setCacheMeta((prev) => ({ ...prev, section: { fromCache: false, cachedAt: null } }))
       return { ok: true, count: merged.length }
     } catch (e) {
       try {
-        const apiSec = await getListSnapshot('admin_sections')
+        const { items: apiSec, cachedAt } = await getListSnapshotWithMeta('admin_sections')
         if (apiSec.length) {
           const merged = mergePostgresSectionIdsIntoSections(sectionsRef.current, apiSec)
           setSections(merged)
+          setCacheMeta((prev) => ({ ...prev, section: { fromCache: true, cachedAt } }))
           return { ok: true, count: merged.length, fromCache: true }
         }
       } catch {
@@ -2338,16 +2370,18 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
       const mapped = list.map((row) => mapPgStudentRow(row, merged))
       setStudents(mapped)
       recomputeSectionStudentCounts(mapped)
+      setCacheMeta((prev) => ({ ...prev, students: { fromCache: false, cachedAt: null } }))
     } catch {
       try {
         const apiSec = await getListSnapshot('admin_sections')
-        const list = await getListSnapshot('admin_students')
+        const { items: list, cachedAt } = await getListSnapshotWithMeta('admin_students')
         const merged = mergePostgresSectionIdsIntoSections(sectionsRef.current, apiSec)
         if (apiSec.length) setSections(merged)
         if (list.length) {
           const mapped = list.map((row) => mapPgStudentRow(row, merged))
           setStudents(mapped)
           recomputeSectionStudentCounts(mapped)
+          setCacheMeta((prev) => ({ ...prev, students: { fromCache: true, cachedAt } }))
         }
       } catch {
         /* ignore */
@@ -2416,15 +2450,17 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
       const list = Array.isArray(facData.faculty) ? facData.faculty : []
       await saveListSnapshot('admin_faculties', list)
       setFaculties(dedupeById(list.map((row) => mapPgFacultyRow(row, merged))))
+      setCacheMeta((prev) => ({ ...prev, faculties: { fromCache: false, cachedAt: null } }))
       return { ok: true, count: list.length }
     } catch (e) {
       try {
         const apiSec = await getListSnapshot('admin_sections')
-        const list = await getListSnapshot('admin_faculties')
+        const { items: list, cachedAt } = await getListSnapshotWithMeta('admin_faculties')
         const merged = mergePostgresSectionIdsIntoSections(sectionsRef.current, apiSec)
         if (apiSec.length) setSections(merged)
         if (list.length) {
           setFaculties(dedupeById(list.map((row) => mapPgFacultyRow(row, merged))))
+          setCacheMeta((prev) => ({ ...prev, faculties: { fromCache: true, cachedAt } }))
           return { ok: true, count: list.length, fromCache: true }
         }
       } catch {
@@ -3148,6 +3184,8 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
                               ? 'Announcements'
                               : activeNav === 'monitoring'
                                 ? 'Audit Logs'
+                                : activeNav === 'incidents'
+                                  ? 'Incident Response'
                                 : activeNav === 'turnover'
                                   ? 'Admin Transfer'
                                 : activeNav === 'backup'
@@ -3170,6 +3208,11 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
         <OfflineBanner />
         <SystemOfflineBanner />
         <AdminAuditBanner persistenceMode={persistenceMode} />
+        <OfflineCacheIndicator
+          fromCache={cacheMeta[activeNav]?.fromCache}
+          cachedAt={cacheMeta[activeNav]?.cachedAt}
+          className="px-4 pt-2 md:px-8"
+        />
 
         <main className="min-h-0 flex-1 space-y-6 overflow-y-auto overflow-x-hidden p-4 md:space-y-8 md:p-8">
           <>
@@ -3189,6 +3232,8 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
             sectionContent()
           ) : activeNav === 'monitoring' ? (
             <MonitoringRecords />
+          ) : activeNav === 'incidents' ? (
+            <IncidentResponsePage />
           ) : activeNav === 'turnover' ? (
             <AdminTurnoverPage />
           ) : activeNav === 'backup' ? (

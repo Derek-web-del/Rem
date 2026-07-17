@@ -10,7 +10,8 @@ export default function TopicGroup({
   role = 'teacher',
   editable = false,
   collapsed = false,
-  buildQuery,
+  buildQuery = () => '',
+  showAddItemMenu = true,
   onToggle,
   onEditTopic,
   onDeleteTopic,
@@ -85,12 +86,12 @@ export default function TopicGroup({
           {topic.title}
         </button>
         <div className="flex items-center gap-1">
-          {editable ? (
+          {editable && showAddItemMenu ? (
             <TopicAddItemMenu
               subjectId={subjectId}
               topicId={topic.id}
               buildQuery={buildQuery}
-              allowLessons={allowLessonMenu}
+              allowLessons={lessonsEditable}
             />
           ) : null}
           {editable && topic.id !== 'uncategorized' ? (

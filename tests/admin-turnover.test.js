@@ -1,6 +1,28 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { listenTestServer, teardownTestApp } from './helpers/teardown-test-app.js'
+import {
+  INSTITUTE_ADMIN_DISPLAY_NAME,
+  INSTITUTE_ADMIN_EMAIL,
+  normalizeInstituteAdminDisplayName,
+} from '../shared/constants.js'
+
+describe('admin turnover display names', () => {
+  it('maps legacy Derek Bantad name to Aldrich Juachon', () => {
+    assert.equal(normalizeInstituteAdminDisplayName('Derek John Bantad'), INSTITUTE_ADMIN_DISPLAY_NAME)
+  })
+
+  it('maps institute admin email to Aldrich Juachon', () => {
+    assert.equal(
+      normalizeInstituteAdminDisplayName('', INSTITUTE_ADMIN_EMAIL),
+      INSTITUTE_ADMIN_DISPLAY_NAME,
+    )
+  })
+
+  it('leaves other faculty names unchanged', () => {
+    assert.equal(normalizeInstituteAdminDisplayName('Beatrice Fairchild'), 'Beatrice Fairchild')
+  })
+})
 
 describe('admin turnover API', () => {
   it('GET /api/v1/admin/turnover/candidates requires admin session', async () => {

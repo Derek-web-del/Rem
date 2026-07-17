@@ -1,7 +1,11 @@
 import { getPgPool, isPgConfigured } from '../pgPool.js'
 import { sendSafeServerError } from '../lib/safeApiError.js'
 import { requireAdminSession, auditInstituteRecord } from './state/shared.js'
-import { normalizeInstituteAdminDisplayName } from '../../shared/constants.js'
+import {
+  normalizeInstituteAdminDisplayName,
+  INSTITUTE_ADMIN_DISPLAY_NAME,
+} from '../../shared/constants.js'
+import { repairFacultyAuthLinks } from '../lib/repairFacultyAuthLinks.js'
 
 async function requireAdmin(req, res, auth) {
   const session = await requireAdminSession(req, res, auth)
@@ -9,6 +13,52 @@ async function requireAdmin(req, res, auth) {
   const user = session.user ?? session?.data?.user ?? {}
   return { session, user, userId: String(user.id || '').trim() }
 }
+
+function currentAdminDisplay(user) {
+  const normalized = normalizeInstituteAdminDisplayName(user?.name, user?.email)
+  if (normalized) return normalized
+  const role = String(user?.role || '').trim().toLowerCase()
+  if (role === 'admin') return INSTITUTE_ADMIN_DISPLAY_NAME
+  return String(user?.email || '').trim() || INSTITUTE_ADMIN_DISPLAY_NAME
+}
+
+const CANDIDATE_SELECT = `
+  SELECT
+    u.id,
+    COALESCE(NULLIF(trim(MAX(f.name)), ''), u.name) AS name,
+    u.email,
+    u.role
+  FROM public.faculties f
+  INNER JOIN "user" u ON u.id::text = f.auth_user_id
+  WHERE f.archived_at IS NULL
+    AND u.id::text <> $1
+    AND lower(trim(coalesce(u.role, ''))) IN ('teacher', 'faculty')
+    AND NOT EXISTS (
+      SELECT 1
+      FROM public.students s
+      WHERE s.auth_user_id = u.id::text
+        AND s.archived_at IS NULL
+    )
+  GROUP BY u.id, u.name, u.email, u.role
+  ORDER BY lower(trim(coalesce(MAX(f.name), u.name, u.email, ''))) ASC
+  LIMIT 200
+`
+
+const TARGET_SELECT = `
+  SELECT u.id, u.name, u.email, u.role
+  FROM public.faculties f
+  INNER JOIN "user" u ON u.id::text = f.auth_user_id
+  WHERE f.archived_at IS NULL
+    AND u.id::text = $1
+    AND lower(trim(coalesce(u.role, ''))) IN ('teacher', 'faculty')
+    AND NOT EXISTS (
+      SELECT 1
+      FROM public.students s
+      WHERE s.auth_user_id = u.id::text
+        AND s.archived_at IS NULL
+    )
+  LIMIT 1
+`
 
 export function createAdminTurnoverRouter(express, auth) {
   const router = express.Router()
@@ -28,32 +78,14 @@ export function createAdminTurnoverRouter(express, auth) {
       const ctx = await requireAdmin(req, res, auth)
       if (!ctx) return
       const pool = getPgPool()
-      const { rows } = await pool.query(
-        `
-          SELECT DISTINCT u.id, u.name, u.email, u.role
-          FROM "user" u
-          INNER JOIN public.faculties f
-            ON f.auth_user_id = u.id::text
-           AND f.archived_at IS NULL
-          WHERE u.id::text <> $1
-            AND lower(trim(coalesce(u.role, ''))) IN ('teacher', 'faculty')
-            AND NOT EXISTS (
-              SELECT 1
-              FROM public.students s
-              WHERE s.auth_user_id = u.id::text
-                AND s.archived_at IS NULL
-            )
-          ORDER BY lower(trim(coalesce(u.name, u.email, ''))) ASC
-          LIMIT 200
-        `,
-        [ctx.userId],
-      )
+      await repairFacultyAuthLinks(pool)
+      const { rows } = await pool.query(CANDIDATE_SELECT, [ctx.userId])
       res.json({
         ok: true,
         current_admin: {
           id: ctx.userId,
           email: ctx.user.email,
-          name: normalizeInstituteAdminDisplayName(ctx.user.name, ctx.user.email),
+          name: currentAdminDisplay(ctx.user),
         },
         candidates: (rows || []).map((r) => ({
           id: r.id,
@@ -83,25 +115,8 @@ export function createAdminTurnoverRouter(express, auth) {
       }
 
       const pool = getPgPool()
-      const { rows: targetRows } = await pool.query(
-        `
-          SELECT u.id, u.name, u.email, u.role
-          FROM "user" u
-          INNER JOIN public.faculties f
-            ON f.auth_user_id = u.id::text
-           AND f.archived_at IS NULL
-          WHERE u.id::text = $1
-            AND lower(trim(coalesce(u.role, ''))) IN ('teacher', 'faculty')
-            AND NOT EXISTS (
-              SELECT 1
-              FROM public.students s
-              WHERE s.auth_user_id = u.id::text
-                AND s.archived_at IS NULL
-            )
-          LIMIT 1
-        `,
-        [targetUserId],
-      )
+      await repairFacultyAuthLinks(pool)
+      const { rows: targetRows } = await pool.query(TARGET_SELECT, [targetUserId])
       const target = targetRows?.[0]
       if (!target) {
         res.status(404).json({ error: 'NOT_FOUND', message: 'Faculty member not found.' })

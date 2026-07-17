@@ -52,6 +52,35 @@ describe('IndexedDB offline stores (schema)', () => {
     for (const name of required) {
       assert.ok(idb.includes(`'${name}'`), `missing store: ${name}`)
     }
-    assert.ok(idb.includes('DB_VERSION = 3'))
+  })
+
+  it('includes the admin_curriculum store and getListSnapshotWithMeta helper (v4)', () => {
+    const idb = fs.readFileSync(path.join(ROOT, 'Frontend', 'src', 'lib', 'indexedDB.js'), 'utf8')
+    assert.ok(idb.includes("'admin_curriculum'"), 'missing store: admin_curriculum')
+    assert.ok(idb.includes('DB_VERSION = 4'))
+    assert.ok(idb.includes('export async function getListSnapshotWithMeta'))
+  })
+})
+
+describe('OfflineCacheIndicator (cachedAt support)', () => {
+  it('accepts a cachedAt prop and renders a relative-time message', () => {
+    const src = fs.readFileSync(
+      path.join(ROOT, 'Frontend', 'src', 'components', 'OfflineCacheIndicator.jsx'),
+      'utf8',
+    )
+    assert.ok(src.includes('cachedAt'), 'component should accept a cachedAt prop')
+    assert.ok(src.includes('Showing cached data'))
+  })
+})
+
+describe('InstituteDashboard admin curriculum offline fallback', () => {
+  it('refreshCurriculumFromPostgres falls back to the admin_curriculum cache', () => {
+    const src = fs.readFileSync(path.join(ROOT, 'Frontend', 'src', 'InstituteDashboard.jsx'), 'utf8')
+    const start = src.indexOf('const refreshCurriculumFromPostgres')
+    assert.ok(start !== -1, 'refreshCurriculumFromPostgres not found')
+    const fnSrc = src.slice(start, start + 1500)
+    assert.ok(fnSrc.includes('admin_curriculum'), 'refreshCurriculumFromPostgres should read/write admin_curriculum cache')
+    assert.ok(fnSrc.includes('getListSnapshotWithMeta'), 'refreshCurriculumFromPostgres should use getListSnapshotWithMeta for fallback')
+    assert.ok(fnSrc.includes('fromCache: true'), 'refreshCurriculumFromPostgres should report fromCache on fallback')
   })
 })

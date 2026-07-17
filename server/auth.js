@@ -31,6 +31,7 @@ import {
 import { clearPortalTermsOnLogout } from './lib/portalTermsReset.js'
 import { hashPasswordBcrypt, verifyPasswordCompat } from './password.js'
 import { getPgPool, isPgConfigured } from './pgPool.js'
+import { createSecurityIncident } from './lib/securityIncidents.js'
 import { ensurePortalUserEmailOtpMfa } from './lib/enrollEmailOtpMfa.js'
 import { toWebOrigin } from './lib/webOrigin.js'
 import {
@@ -629,7 +630,7 @@ export const auth = betterAuth({
         } catch {
           /* ignore */
         }
-      } else if (Number(user.failedLoginAttempts || 0) >= MAX_LOCKOUT_ATTEMPTS) {
+      } else if (user && Number(user.failedLoginAttempts || 0) >= MAX_LOCKOUT_ATTEMPTS) {
         // Repair stale rows where attempts reached the threshold but lockedUntil was not persisted.
         const until = new Date(Date.now() + LOCK_MS)
         try {
@@ -965,7 +966,20 @@ export const auth = betterAuth({
                 target_label: lockPayload.target_label || lockPayload.userName || lockPayload.loginId || null,
               },
             )
-          } catch {}
+          } catch (e) {
+            console.warn('[auth] AUTH_LOCKOUT audit log failed:', e?.message || e)
+          }
+          if (isPgConfigured()) {
+            void createSecurityIncident(getPgPool(), {
+              incidentType: 'AUTH_BRUTE_FORCE',
+              severity: 'medium',
+              summary: `Account locked after ${lockPayload.attempts || MAX_LOCKOUT_ATTEMPTS} failed sign-in attempts (${portal} portal).`,
+              affectedUserId: user.id,
+              affectedUserLabel: lockPayload.userEmail || identifier,
+              detectedBy: 'system',
+              details: lockPayload,
+            })
+          }
         }
       }
       await ctx.context.internalAdapter.updateUser(user.id, patch)

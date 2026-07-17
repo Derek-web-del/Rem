@@ -130,6 +130,7 @@ export default function AdminSubjectCurriculumPanel({ postgresSubjectId }) {
               role="teacher"
               editable
               lessonsEditable
+              showAddItemMenu={false}
               collapsed={Boolean(collapsed[topic.id])}
               onToggle={() => setCollapsed((p) => ({ ...p, [topic.id]: !p[topic.id] }))}
               onEditTopic={(t) => setTopicModal({ open: true, topic: t })}

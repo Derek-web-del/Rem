@@ -25,6 +25,7 @@ import { createSubmissionExtensionV1Router } from './api/submissionExtensionV1.j
 import { createAdminCurriculumGuidesRouter } from './api/adminCurriculumGuides.js'
 import { createAdminSubjectCurriculumRouter } from './api/adminSubjectCurriculum.js'
 import { createAdminTurnoverRouter } from './api/adminTurnoverV1.js'
+import { createSecurityIncidentsRouter } from './api/securityIncidentsV1.js'
 import { createFileDownloadRouter, createLegacyUploadsRouter } from './api/fileDownload.js'
 import { getUploadStorageStats } from './lib/uploadStorageStats.js'
 import { ensureUploadDirs, subjectAssetsRoot } from './lib/uploadPaths.js'
@@ -494,6 +495,7 @@ app.all('/api/auth/*', toNodeHandler(auth))
   app.use('/api', createAdminCurriculumGuidesRouter(express, auth))
   app.use('/api', createAdminSubjectCurriculumRouter(express, auth))
   app.use('/api', createAdminTurnoverRouter(express, auth))
+  app.use('/api', createSecurityIncidentsRouter(express, auth))
 
   // Audit logs (LMS rows + target user JOIN); bulk clear at /api/logs/audit/*
   const { createLogsApiRouter, createAuditLogsClearRouter } = await import('./api/logs.js')
@@ -522,6 +524,11 @@ app.all('/api/auth/*', toNodeHandler(auth))
       await ensureQuizzesSchema(getPgPool())
       const { ensurePlagiarismReportsSchema } = await import('./lib/plagiarismReportsDb.js')
       await ensurePlagiarismReportsSchema(getPgPool())
+      const { repairFacultyAuthLinks } = await import('./lib/repairFacultyAuthLinks.js')
+      const linkStats = await repairFacultyAuthLinks(getPgPool())
+      if (linkStats.linked > 0) {
+        console.log(`[startup] Linked ${linkStats.linked} faculty profile(s) to auth users`)
+      }
     }
   } catch (e) {
     console.warn('[startup] study_materials schema bootstrap skipped:', e?.message || e)
