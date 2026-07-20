@@ -66,13 +66,14 @@ describe('gradebookCalc', () => {
     assert.equal(grouped['2'][0].id, 31)
   })
 
-  it('groupItemsByComponent leaves unlinked assignments ungrouped', () => {
+  it('groupItemsByComponent maps null grade_component_id via type defaults', () => {
     const orphanItems = [
       { id: 10, type: 'assignment', max_points: 100, grade_component_id: null },
       { id: 20, type: 'quiz', max_points: 50, grade_component_id: null },
     ]
     const grouped = groupItemsByComponent(components, orphanItems)
-    assert.equal(grouped['1'].length, 0)
+    assert.equal(grouped['1'].length, 1)
+    assert.equal(grouped['1'][0].id, 10)
     assert.equal(grouped['2'].length, 1)
     assert.equal(grouped['2'][0].id, 20)
   })

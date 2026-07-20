@@ -182,4 +182,17 @@ describe('grantSubmissionExtension', () => {
 
     assert.equal(result.error, 'NOT_LOCKED')
   })
+
+  it('rejects quiz late submission grants', async () => {
+    const pool = { query: async () => ({ rows: [] }) }
+    const result = await grantSubmissionExtension(pool, {
+      entityType: 'quiz',
+      entityId: 3,
+      studentId: 7,
+      until: futureUntil.toISOString(),
+      reason: 'Should not apply',
+      grantedBy: 'admin-1',
+    })
+    assert.equal(result.error, 'NOT_APPLICABLE')
+  })
 })

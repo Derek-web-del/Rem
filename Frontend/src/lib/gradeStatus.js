@@ -109,3 +109,9 @@ export function formatSubmittedAt(iso) {
   if (Number.isNaN(d.getTime())) return '—'
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
 }
+
+/** Late submission extensions apply to file-based work only, not quizzes. */
+export function supportsLateSubmission(entityType) {
+  const t = String(entityType || '').toLowerCase()
+  return t === 'assignment' || t === 'activity'
+}

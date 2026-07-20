@@ -83,6 +83,12 @@ export async function grantSubmissionExtension(
   const type = String(entityType || '').trim().toLowerCase()
   const entId = parsePositiveId(entityId)
   const sid = parsePositiveId(studentId)
+  if (type === 'quiz') {
+    return {
+      error: 'NOT_APPLICABLE',
+      message: 'Late submission extensions apply to assignments and activities only.',
+    }
+  }
   if (!ENTITY_TYPES.has(type) || !entId || !sid) return { error: 'BAD_REQUEST' }
 
   const untilDate = parseUntilIso(until)

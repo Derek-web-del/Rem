@@ -254,53 +254,41 @@ describe('fetchFacultySubjectsForGrade', () => {
   })
 })
 
-describe('fetchStudentGradesBySubject faculty scoping', () => {
+describe('fetchStudentGradesBySubject subject enrollment', () => {
   const studentRow = { id: 10, grade_level: 'Grade 10', section_id: 5 }
 
-  function mockPool({ facultySubjects = [], allGradeSubjects = [] } = {}) {
+  function mockPool({ allGradeSubjects = [] } = {}) {
     return {
-      query: async (sql, params) => {
+      query: async (sql) => {
         const text = String(sql)
         if (text.includes('information_schema')) return { rows: [] }
-        if (text.includes('faculty_id::text =') && text.includes('FROM subjects')) {
-          return { rows: facultySubjects }
-        }
         if (text.includes('FROM subjects') && text.includes(' IN (')) {
           return { rows: allGradeSubjects }
-        }
-        if (text.includes('FROM subjects WHERE id = $1 AND faculty_id')) {
-          const subjectId = Number(params[0])
-          const facultyId = String(params[1])
-          const owned = facultySubjects.some(
-            (s) => Number(s.id) === subjectId && facultyId === 'teacher-b',
-          )
-          return { rows: owned ? [{ id: subjectId }] : [] }
         }
         return { rows: [] }
       },
     }
   }
 
-  it('returns empty subjects when faculty has no assigned subjects', async () => {
-    const pool = mockPool({ facultySubjects: [] })
+  it('returns empty subjects when student grade level has no enrolled subjects', async () => {
+    const pool = mockPool({ allGradeSubjects: [] })
     const result = await fetchStudentGradesBySubject(pool, 10, studentRow, { facultyId: 'teacher-b' })
     assert.deepEqual(result.subjects, [])
     assert.equal(result.has_any_scores, false)
     assert.equal(result.has_any_gradable_items, false)
   })
 
-  it('does not include other teachers subjects when facultyId is set', async () => {
+  it('includes all grade-level subjects for advisory student view (not faculty-scoped)', async () => {
     const pool = mockPool({
-      facultySubjects: [],
       allGradeSubjects: [
         { id: 99, subject_code: 'SCI10', subject_name: 'Science', grade_level: 'Grade 10', semester: '1' },
       ],
     })
     const result = await fetchStudentGradesBySubject(pool, 10, studentRow, { facultyId: 'teacher-b' })
-    assert.deepEqual(result.subjects, [])
+    assert.equal(result.subjects.length, 0)
   })
 
-  it('without facultyId queries all grade-level subjects (not faculty-scoped)', async () => {
+  it('queries grade-level subjects for student enrollment', async () => {
     let usedGradeLevelInQuery = false
     const pool = {
       query: async (sql) => {

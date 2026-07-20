@@ -4,6 +4,7 @@ import {
   formatGradeAvg,
   formatSubmittedAt,
   gradeStatusFromPercent,
+  supportsLateSubmission,
 } from '../lib/gradeStatus.js'
 import GradeOverrideModal from './GradeOverrideModal.jsx'
 import LateSubmissionModal from './LateSubmissionModal.jsx'
@@ -71,13 +72,15 @@ function GradeItemRow({ item, readOnly, isAdmin, studentId, studentName, onOverr
         </div>
         {isAdmin && item.is_locked && item.entity_id ? (
           <div className="flex shrink-0 flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => onLateSubmissionClick?.(item)}
-              className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700"
-            >
-              Allow Late Submission
-            </button>
+            {supportsLateSubmission(item.entity_type) ? (
+              <button
+                type="button"
+                onClick={() => onLateSubmissionClick?.(item)}
+                className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700"
+              >
+                Allow Late Submission
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={() => onOverrideClick?.(item)}

@@ -100,6 +100,28 @@ export function sanitizeGradeSummary(summary) {
   }
 }
 
+function effectiveMaxScoreForCell(item, cell) {
+  let max = toNum(cell?.max_points ?? item.max_points)
+  if (max != null && max > 0) return max
+  const score = toNum(cell?.score)
+  if (score != null && score > 0) return score
+  return item.type === 'quiz' ? 0 : 100
+}
+
+function computeOverallFromScoredItems(items, scoreCells) {
+  const percents = []
+  for (const item of items || []) {
+    const cell = scoreCells[itemKey(item.type, item.id)]
+    if (!cell?.has_score) continue
+    const max = effectiveMaxScoreForCell(item, cell)
+    if (max <= 0) continue
+    const pct = computePercent(cell.score, max)
+    if (pct != null) percents.push(pct)
+  }
+  if (!percents.length) return null
+  return Math.round(percents.reduce((a, b) => a + b, 0) / percents.length)
+}
+
 function normalizeDeadlineIso(raw) {
   if (!raw) return null
   if (raw instanceof Date) return raw.toISOString()
@@ -442,7 +464,7 @@ function mapCriteriaComponent(comp) {
 }
 
 export function mapScoredWorkItem(item, cell, { includeUnsubmittedLocked = false } = {}) {
-  const maxScore = toNum(cell?.max_points ?? item.max_points)
+  const maxScore = effectiveMaxScoreForCell(item, cell || {})
   const deadline = normalizeDeadlineIso(item.deadline)
   const lateUntil = normalizeDeadlineIso(cell?.late_submission_until)
   const locked = isWorkLockedForStudent(deadline, lateUntil)
@@ -543,9 +565,7 @@ export async function fetchStudentSubjectGradeDetail(pool, studentId, subjectId,
 
   const scored = computeScoredStudentGradeRow(components, groupedItems, scoreCells)
   const componentAvgs = scored.componentAvgs
-  const overall_avg =
-    scored.finalGrade != null ? safeGrade(scored.finalGrade) : 0
-  const graded_weight_total = safeGrade(scored.gradedWeightTotal)
+  let graded_weight_total = safeGrade(scored.gradedWeightTotal)
   const graded_component_ids = Object.keys(componentAvgs)
 
   const quizzes = []
@@ -566,6 +586,15 @@ export async function fetchStudentSubjectGradeDetail(pool, studentId, subjectId,
     const cell = scoreCells[itemKey(item.type, item.id)]
     return Boolean(cell?.has_score)
   })
+
+  let overall_avg = scored.finalGrade != null ? safeGrade(scored.finalGrade) : 0
+  if (has_scored_items && scored.finalGrade == null) {
+    const fallback = computeOverallFromScoredItems(items, scoreCells)
+    if (fallback != null) {
+      overall_avg = fallback
+      if (graded_weight_total <= 0) graded_weight_total = 100
+    }
+  }
 
   return {
     subject_id: subId,
@@ -635,22 +664,7 @@ export async function fetchStudentGradesBySubject(pool, studentId, studentRow = 
   }
   if (!row) return { subjects: [], has_any_scores: false }
 
-  const facultyIdText = facultyId != null ? String(facultyId).trim() : ''
-  let subjectList
-  if (facultyIdText) {
-    const gradeLevel = await resolveStudentGradeLevel(pool, row)
-    if (!gradeLevel) return { subjects: [], has_any_scores: false }
-    const facultySubjects = await fetchFacultySubjectsForGrade(pool, facultyIdText, gradeLevel)
-    subjectList = facultySubjects.map((sub) => ({
-      id: String(sub.id),
-      subject_code: sub.subject_code,
-      subject_name: sub.subject_name,
-      grade_level: sub.grade_level,
-      semester: sub.semester,
-    }))
-  } else {
-    subjectList = await fetchStudentSubjects(pool, row)
-  }
+  const subjectList = await fetchStudentSubjects(pool, row)
 
   const subjects = []
   let has_any_scores = false
@@ -659,11 +673,6 @@ export async function fetchStudentGradesBySubject(pool, studentId, studentRow = 
   for (const sub of subjectList) {
     const subjectId = Number(sub.id)
     if (!Number.isFinite(subjectId) || subjectId <= 0) continue
-
-    if (facultyIdText) {
-      const owns = await facultyOwnsSubject(pool, facultyIdText, subjectId)
-      if (!owns) continue
-    }
 
     const detail = await fetchStudentSubjectGradeDetail(pool, sid, subjectId, { includeUnsubmittedLocked })
     if (!detail) continue

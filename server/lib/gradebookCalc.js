@@ -63,17 +63,14 @@ export function groupItemsByComponent(components, items) {
 
   function resolveComponentId(item) {
     const type = String(item.type || '').toLowerCase()
-    const hasExplicitComponent = Object.prototype.hasOwnProperty.call(item, 'grade_component_id')
 
-    if (hasExplicitComponent) {
+    if (Object.prototype.hasOwnProperty.call(item, 'grade_component_id')) {
       const raw = item.grade_component_id
-      if (raw == null || raw === '') {
-        if (type === 'quiz' && quizComponent) return String(quizComponent.id)
+      if (raw != null && raw !== '') {
+        const id = String(raw)
+        if (grouped[id]) return id
         return null
       }
-      const id = String(raw)
-      if (grouped[id]) return id
-      return null
     }
 
     if (type === 'quiz' && quizComponent) return String(quizComponent.id)
@@ -109,7 +106,11 @@ export function computeScoredComponentAvg(items, scoreCells) {
     const key = itemKey(item.type, item.id)
     const cell = scoreCells?.[key]
     if (!cell?.has_score) continue
-    const max = Number(item.max_points) || Number(cell.max_points) || 0
+    let max = Number(item.max_points) || Number(cell.max_points) || 0
+    if (max <= 0) {
+      const score = Number(cell.score)
+      max = Number.isFinite(score) && score > 0 ? score : 0
+    }
     if (max <= 0) continue
     const score = Number(cell.score)
     if (!Number.isFinite(score)) continue

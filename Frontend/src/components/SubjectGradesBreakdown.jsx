@@ -1,4 +1,4 @@
-import { displayGrade, formatGradeAvg, formatSubmittedAt } from '../lib/gradeStatus.js'
+import { displayGrade, formatGradeAvg, formatSubmittedAt, supportsLateSubmission } from '../lib/gradeStatus.js'
 import { buildComponentWorkGroups, entityTypeLabel } from '../lib/gradeComponentWorkGroups.js'
 
 function componentMapsTo(comp) {
@@ -13,7 +13,8 @@ function WorkItemRow({ item, isAdmin, canAllowLateSubmission, onOverrideClick, o
   const scoreLabel =
     item.score != null && item.max_score != null ? `${item.score}/${item.max_score}` : '—'
   const typeLabel = entityTypeLabel(item.entity_type)
-  const showLateSubmission = (isAdmin || canAllowLateSubmission) && item.is_locked
+  const showLateSubmission =
+    (isAdmin || canAllowLateSubmission) && item.is_locked && supportsLateSubmission(item.entity_type)
 
   return (
     <div className="flex flex-col gap-2 py-2 sm:flex-row sm:items-center sm:justify-between">
