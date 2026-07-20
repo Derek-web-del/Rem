@@ -2,9 +2,83 @@
  * Create or link Better Auth users for institute roster records (students / faculty).
  * Mirrors the admin dashboard flow without changing server/auth.js configuration.
  */
+import { randomUUID } from 'node:crypto'
 import { findAuthUserIdByEmail, findAuthUserIdByUsername } from '../api/logs.js'
 import { hashPasswordBcrypt } from '../password.js'
 import { ensurePortalUserEmailOtpMfa } from './enrollEmailOtpMfa.js'
+
+async function ensureCredentialAccount(pool, userId, email, plainPassword) {
+  const hash = await hashPasswordBcrypt(plainPassword)
+  const now = new Date().toISOString()
+  const { rows } = await pool.query(
+    `SELECT id FROM account WHERE "userId" = $1 AND "providerId" = 'credential'`,
+    [userId],
+  )
+  if (rows[0]?.id) {
+    await pool.query(
+      `UPDATE account SET password = $1, "accountId" = $2, "updatedAt" = $3 WHERE id = $4`,
+      [hash, email, now, rows[0].id],
+    )
+    return
+  }
+  await pool.query(
+    `
+      INSERT INTO account (id, "accountId", "providerId", "userId", password, "createdAt", "updatedAt")
+      VALUES ($1, $2, 'credential', $3, $4, $5, $5)
+    `,
+    [randomUUID(), email, userId, hash, now],
+  )
+}
+
+/**
+ * Admin-provisioned portal user via direct PostgreSQL inserts.
+ * Works when AUTH_DISABLE_SIGNUP=true (public sign-up blocked).
+ * @param {import('pg').Pool} pool
+ * @param {{
+ *   email: string,
+ *   name: string,
+ *   username: string,
+ *   password: string,
+ *   role: string,
+ * }} opts
+ * @returns {Promise<{ ok: true, userId: string } | { ok: false, code: string, message: string }>}
+ */
+export async function createInstituteAuthUserDirect(pool, opts) {
+  const email = String(opts.email || '').trim().toLowerCase()
+  const name = String(opts.name || '').trim() || email
+  const username = String(opts.username || '').trim().toLowerCase()
+  const password = String(opts.password || '').trim()
+  const role = String(opts.role || 'user').trim().toLowerCase()
+
+  if (!email || !username || !password) {
+    return { ok: false, code: 'BAD_REQUEST', message: 'Email, username, and password are required.' }
+  }
+
+  const existingEmail = await findAuthUserIdByEmail(email)
+  if (existingEmail) {
+    return { ok: false, code: 'USER_EXISTS', message: 'A user with this email already exists.' }
+  }
+  const existingUsername = await findAuthUserIdByUsername(username)
+  if (existingUsername) {
+    return { ok: false, code: 'USER_EXISTS', message: 'A user with this login ID already exists.' }
+  }
+
+  const userId = randomUUID()
+  const now = new Date().toISOString()
+  await pool.query(
+    `
+      INSERT INTO "user" (
+        id, name, email, "emailVerified", role, username, "displayUsername",
+        "twoFactorEnabled", "failedLoginAttempts", "lockedUntil", "createdAt", "updatedAt"
+      )
+      VALUES ($1, $2, $3, true, $4, $5, $5, true, 0, NULL, $6, $6)
+    `,
+    [userId, name, email, role, username, now],
+  )
+  await ensureCredentialAccount(pool, userId, email, password)
+  await ensurePortalUserEmailOtpMfa(pool, userId, { role })
+  return { ok: true, userId }
+}
 
 async function trySignUp(auth, body) {
   try {
@@ -22,12 +96,9 @@ async function trySignUp(auth, body) {
 async function setCredentialPassword(pool, userId, plainPassword) {
   const pw = String(plainPassword || '').trim()
   if (!pw || !userId) return
-  const hash = await hashPasswordBcrypt(pw)
-  const now = new Date().toISOString()
-  await pool.query(
-    `UPDATE account SET password = $1, "updatedAt" = $2 WHERE "userId" = $3 AND "providerId" = $4`,
-    [hash, now, userId, 'credential'],
-  )
+  const { rows } = await pool.query(`SELECT email FROM "user" WHERE id = $1 LIMIT 1`, [userId])
+  const email = String(rows[0]?.email || '').trim().toLowerCase()
+  await ensureCredentialAccount(pool, userId, email || userId, pw)
 }
 
 /**
@@ -63,16 +134,29 @@ export async function provisionPortalAuthUser(auth, pool, opts) {
   if (!authUserId) {
     if (!email) return null
     if (!password) return null
-    await trySignUp(auth, {
-      email,
-      password,
-      name,
-      username: username || undefined,
-    })
-    authUserId =
-      (await findAuthUserIdByEmail(email)) ||
-      (username ? (await findAuthUserIdByUsername(username)) : '') ||
-      ''
+    const signupDisabled = process.env.AUTH_DISABLE_SIGNUP !== 'false'
+    if (signupDisabled) {
+      const created = await createInstituteAuthUserDirect(pool, {
+        email,
+        name,
+        username: username || email,
+        password,
+        role,
+      })
+      if (!created.ok) return null
+      authUserId = created.userId
+    } else {
+      await trySignUp(auth, {
+        email,
+        password,
+        name,
+        username: username || undefined,
+      })
+      authUserId =
+        (await findAuthUserIdByEmail(email)) ||
+        (username ? (await findAuthUserIdByUsername(username)) : '') ||
+        ''
+    }
   }
 
   if (!authUserId) return null

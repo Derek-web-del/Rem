@@ -2,8 +2,8 @@ import { getPgPool, isPgConfigured } from '../pgPool.js'
 import { sendSafeServerError } from '../lib/safeApiError.js'
 import { requireAdminSession, auditInstituteRecord } from './state/shared.js'
 import { validatePasswordStrength } from '../lib/security.js'
-import { findAuthUserIdByEmail } from './logs.js'
-import { ensurePortalUserEmailOtpMfa } from '../lib/enrollEmailOtpMfa.js'
+import { findAuthUserIdByEmail, findAuthUserIdByUsername } from './logs.js'
+import { createInstituteAuthUserDirect } from '../lib/provisionPortalAuthUser.js'
 
 export function createRegistrarsRouter(express, auth) {
   const router = express.Router()
@@ -67,58 +67,40 @@ export function createRegistrarsRouter(express, auth) {
       }
 
       const pool = getPgPool()
-      const existingId = await findAuthUserIdByEmail(email)
-      if (existingId) {
+      const existingEmail = await findAuthUserIdByEmail(email)
+      if (existingEmail) {
         res.status(409).json({ error: 'USER_EXISTS', message: 'A user with this email already exists.' })
         return
       }
-
-      if (!auth?.api?.signUpEmail) {
-        res.status(503).json({ error: 'AUTH_UNAVAILABLE', message: 'Authentication is unavailable.' })
+      const existingUsername = await findAuthUserIdByUsername(username)
+      if (existingUsername) {
+        res.status(409).json({ error: 'USER_EXISTS', message: 'A user with this login ID already exists.' })
         return
       }
 
-      try {
-        await auth.api.signUpEmail({
-          body: { email, password, name, username },
-        })
-      } catch (e) {
-        const msg = String(e?.message || e)
-        if (!/already|exists/i.test(msg)) throw e
-        res.status(409).json({ error: 'USER_EXISTS', message: 'A user with this email or username already exists.' })
+      const created = await createInstituteAuthUserDirect(pool, {
+        email,
+        name,
+        username,
+        password,
+        role: 'registrar',
+      })
+      if (!created.ok) {
+        const status = created.code === 'USER_EXISTS' ? 409 : 400
+        res.status(status).json({ error: created.code, message: created.message })
         return
       }
-
-      const userId = await findAuthUserIdByEmail(email)
-      if (!userId) {
-        res.status(500).json({ error: 'CREATE_FAILED', message: 'Could not create registrar account.' })
-        return
-      }
-
-      const now = new Date().toISOString()
-      await pool.query(
-        `UPDATE "user"
-         SET role = 'registrar',
-             username = $1,
-             "displayUsername" = $2,
-             "twoFactorEnabled" = true,
-             "emailVerified" = true,
-             "updatedAt" = $3
-         WHERE id = $4`,
-        [username, username, now, userId],
-      )
-      await ensurePortalUserEmailOtpMfa(pool, userId, { role: 'registrar' })
 
       await auditInstituteRecord(adminSession, 'REGISTRAR_ACCOUNT_CREATED', {
         recordType: 'user',
-        recordId: userId,
+        recordId: created.userId,
         description: `Registrar account created: ${name} (${email})`,
         details: { email, username, role: 'registrar' },
       })
 
       res.status(201).json({
         ok: true,
-        registrar: { id: userId, name, email, username, role: 'registrar' },
+        registrar: { id: created.userId, name, email, username, role: 'registrar' },
       })
     } catch (e) {
       sendSafeServerError(res, e, 'POST /api/v1/admin/registrars')

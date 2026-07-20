@@ -506,7 +506,7 @@ export default function App() {
           )}
 
           {view === 'select' && (
-            <div className="grid w-full grid-cols-2 gap-[9px] sm:grid-cols-4">
+            <div className="grid w-full grid-cols-2 gap-2.5 sm:grid-cols-4 sm:gap-2">
               {ROLES.map(({ id, label, icon }) => (
                 <button
                   key={id}
@@ -516,7 +516,7 @@ export default function App() {
                   aria-label={label}
                 >
                   <i className={`ti ${icon}`} aria-hidden="true" />
-                  {label}
+                  <span className="login-role-btn__label">{label}</span>
                 </button>
               ))}
             </div>
