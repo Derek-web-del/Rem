@@ -48,6 +48,12 @@ const SIDEBAR_GOLD = '#1e4fa3'
 const SIDEBAR_GOLD_DARK = '#15397a'
 const ACTION_BLUE = '#1e4fa3'
 const ADMIN_AVATAR_STORAGE_KEY = 'lenlearn.adminAvatarDataUrl'
+const REGISTRAR_AVATAR_STORAGE_PREFIX = 'lenlearn.registrarAvatarDataUrl'
+
+function registrarAvatarStorageKey(userId) {
+  const id = String(userId || '').trim()
+  return id ? `${REGISTRAR_AVATAR_STORAGE_PREFIX}.${id}` : REGISTRAR_AVATAR_STORAGE_PREFIX
+}
 import { normalizeInstituteAdminDisplayName } from './lib/instituteAdminDisplay.js'
 /** UI-only local preference (not roster data). */
 
@@ -779,12 +785,12 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
   const fileInputRef = useRef(null)
   const curriculumRef = useRef(null)
   const [adminAvatarDataUrl, setAdminAvatarDataUrl] = useState('')
-  const profileAvatarSrc = isRegistrar
-    ? String(adminSession?.user?.image || '').trim()
-    : adminAvatarDataUrl
+  const [registrarAvatarDataUrl, setRegistrarAvatarDataUrl] = useState('')
+  const profileAvatarSrc = isRegistrar ? registrarAvatarDataUrl : adminAvatarDataUrl
   const profileAvatarSeed = isRegistrar
     ? String(adminSession?.user?.email || adminDisplayName || 'registrar')
     : 'admin'
+  const registrarUserId = String(adminSession?.user?.id || '').trim()
   const [activeNav, setActiveNav] = useState(
     () => navIdFromPath(typeof window !== 'undefined' ? window.location.pathname : '') || 'dashboard',
   )
@@ -816,6 +822,53 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
   const postgresSubjectsBootstrapped = useRef(false)
   const postgresAnnouncementsBootstrapped = useRef(false)
   const facultiesRef = useRef([])
+
+  useEffect(() => {
+    if (!isRegistrar) return
+    let cancelled = false
+
+    async function loadRegistrarAvatar() {
+      try {
+        const res = await fetch(apiUrl('/api/v1/registrar/profile-photo'), { credentials: 'include' })
+        const data = await res.json().catch(() => ({}))
+        if (cancelled) return
+        if (res.ok && String(data?.image || '').trim()) {
+          const image = String(data.image).trim()
+          setRegistrarAvatarDataUrl(image)
+          try {
+            if (registrarUserId) {
+              localStorage.setItem(registrarAvatarStorageKey(registrarUserId), image)
+            }
+          } catch {
+            /* ignore */
+          }
+          return
+        }
+      } catch {
+        /* fall through */
+      }
+
+      const sessionImage = String(adminSession?.user?.image || '').trim()
+      if (sessionImage) {
+        setRegistrarAvatarDataUrl(sessionImage)
+        return
+      }
+
+      if (cancelled) return
+      try {
+        const cached =
+          registrarUserId ? localStorage.getItem(registrarAvatarStorageKey(registrarUserId)) || '' : ''
+        if (cached) setRegistrarAvatarDataUrl(cached)
+      } catch {
+        /* ignore */
+      }
+    }
+
+    void loadRegistrarAvatar()
+    return () => {
+      cancelled = true
+    }
+  }, [isRegistrar, registrarUserId, adminSession?.user?.image])
 
   useEffect(() => {
     sectionsRef.current = sections
@@ -1972,7 +2025,15 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
             if (!res.ok) {
               throw new Error(data?.message || 'Could not update profile photo.')
             }
-            await authClient.getSession()
+            const savedImage = String(data?.image || result).trim()
+            setRegistrarAvatarDataUrl(savedImage)
+            try {
+              if (registrarUserId) {
+                localStorage.setItem(registrarAvatarStorageKey(registrarUserId), savedImage)
+              }
+            } catch {
+              /* ignore */
+            }
             toast.success('Profile photo updated.')
           } catch (err) {
             toast.error(err?.message || 'Could not update profile photo.')

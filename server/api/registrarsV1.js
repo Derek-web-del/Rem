@@ -36,6 +36,9 @@ export function createRegistrarsRouter(express, auth) {
     router.post('/v1/admin/registrars', (_req, res) => {
       res.status(503).json({ error: 'DATABASE_NOT_CONFIGURED', message: 'The system database is not available.' })
     })
+    router.get('/v1/registrar/profile-photo', (_req, res) => {
+      res.status(503).json({ error: 'DATABASE_NOT_CONFIGURED', message: 'The system database is not available.' })
+    })
     router.patch('/v1/registrar/profile-photo', (_req, res) => {
       res.status(503).json({ error: 'DATABASE_NOT_CONFIGURED', message: 'The system database is not available.' })
     })
@@ -149,6 +152,21 @@ export function createRegistrarsRouter(express, auth) {
       })
     } catch (e) {
       sendClientSafeError(res, e, 'POST /api/v1/admin/registrars')
+    }
+  })
+
+  router.get('/v1/registrar/profile-photo', async (req, res) => {
+    try {
+      const session = await requireRegistrarSession(req, res, auth)
+      if (!session) return
+
+      const userId = String(session.user?.id || '').trim()
+      const pool = getPgPool()
+      const { rows } = await pool.query(`SELECT image FROM "user" WHERE id = $1 LIMIT 1`, [userId])
+      const image = String(rows?.[0]?.image || '').trim() || null
+      res.json({ ok: true, image })
+    } catch (e) {
+      sendClientSafeError(res, e, 'GET /api/v1/registrar/profile-photo')
     }
   })
 

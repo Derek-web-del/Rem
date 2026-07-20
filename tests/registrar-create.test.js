@@ -46,6 +46,21 @@ describe('registrar create API auth gate', () => {
     }
   })
 
+  it('GET /api/v1/registrar/profile-photo requires registrar session', async () => {
+    process.env.AUTH_MODULE_INSTANCE = `registrar-photo-get-${Date.now()}`
+    const { createApp } = await import('../server/index.js')
+    const { listenTestServer, teardownTestApp } = await import('./helpers/teardown-test-app.js')
+    const app = await createApp()
+    const server = await listenTestServer(app)
+    const port = server.address().port
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/api/v1/registrar/profile-photo`)
+      assert.equal(res.status, 403)
+    } finally {
+      await teardownTestApp(server, app)
+    }
+  })
+
   it('PATCH /api/v1/registrar/profile-photo requires registrar session', async () => {
     process.env.AUTH_MODULE_INSTANCE = `registrar-photo-${Date.now()}`
     const { createApp } = await import('../server/index.js')
