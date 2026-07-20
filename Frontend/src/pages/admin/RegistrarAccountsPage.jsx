@@ -3,7 +3,7 @@ import apiFetch from '../../lib/apiClient.js'
 import { apiUrl } from '../../lib/lmsStateStorage.js'
 import { useNotify } from '../../components/notifications.jsx'
 import PasswordInput from '../../components/PasswordInput.jsx'
-import { PHOTO_MAX_BYTES, PHOTO_UPLOAD_LABEL } from '../../lib/uploadLimits.js'
+import { PROFILE_PHOTO_MAX_BYTES, PHOTO_UPLOAD_LABEL } from '../../lib/uploadLimits.js'
 
 export default function RegistrarAccountsPage() {
   const toast = useNotify()
@@ -40,7 +40,7 @@ export default function RegistrarAccountsPage() {
       toast.error('Please select a PNG or JPG image.')
       return
     }
-    if (file.size > PHOTO_MAX_BYTES) {
+    if (file.size > PROFILE_PHOTO_MAX_BYTES) {
       toast.error('Photo too large. Maximum size is 2MB.')
       return
     }
