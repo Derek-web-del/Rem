@@ -26,6 +26,8 @@ import { createAdminCurriculumGuidesRouter } from './api/adminCurriculumGuides.j
 import { createAdminSubjectCurriculumRouter } from './api/adminSubjectCurriculum.js'
 import { createAdminTurnoverRouter } from './api/adminTurnoverV1.js'
 import { createSecurityIncidentsRouter } from './api/securityIncidentsV1.js'
+import { createSchoolYearRouter } from './api/schoolYearV1.js'
+import { createRegistrarsRouter } from './api/registrarsV1.js'
 import { createFileDownloadRouter, createLegacyUploadsRouter } from './api/fileDownload.js'
 import { getUploadStorageStats } from './lib/uploadStorageStats.js'
 import { ensureUploadDirs, subjectAssetsRoot } from './lib/uploadPaths.js'
@@ -500,6 +502,8 @@ app.all('/api/auth/*', toNodeHandler(auth))
   app.use('/api', createAdminSubjectCurriculumRouter(express, auth))
   app.use('/api', createAdminTurnoverRouter(express, auth))
   app.use('/api', createSecurityIncidentsRouter(express, auth))
+  app.use('/api', createSchoolYearRouter(express, auth))
+  app.use('/api', createRegistrarsRouter(express, auth))
 
   // Audit logs (LMS rows + target user JOIN); bulk clear at /api/logs/audit/*
   const { createLogsApiRouter, createAuditLogsClearRouter } = await import('./api/logs.js')

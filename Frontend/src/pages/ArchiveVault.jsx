@@ -8,49 +8,8 @@ import { useNotify } from '../components/notifications.jsx'
 import { apiUrl } from '../lib/lmsStateStorage.js'
 
 const ACTION_BLUE = '#1e4fa3'
-const RETENTION_DAYS = 365
 const PURGE_VERIFICATION_PHRASE = 'PERMANENTLY PURGE DATA'
 const MASKED_LABEL = 'HIDDEN/ARCHIVED'
-
-function daysSinceArchived(archivedAt) {
-  const archived = new Date(archivedAt)
-  if (Number.isNaN(archived.getTime())) return 0
-  return Math.floor((Date.now() - archived.getTime()) / (1000 * 60 * 60 * 24))
-}
-
-function daysUntilDeletion(row) {
-  if (row?.days_until_deletion != null) return Number(row.days_until_deletion)
-  const archivedAt = row?.archived_at ?? row?.archivedAt
-  return Math.max(0, RETENTION_DAYS - daysSinceArchived(archivedAt))
-}
-
-function retentionBadgeClass(warningLevel, daysLeft) {
-  if (daysLeft <= 0) return 'bg-red-100 text-red-800 ring-1 ring-red-300'
-  if (warningLevel === 'red' || daysLeft === 1) return 'bg-red-50 text-red-700 ring-1 ring-red-200'
-  if (warningLevel === 'amber' || daysLeft <= 7) return 'bg-amber-50 text-amber-800 ring-1 ring-amber-200'
-  return 'bg-neutral-50 text-neutral-700 ring-1 ring-neutral-200'
-}
-
-function RetentionBadge({ row }) {
-  const daysLeft = daysUntilDeletion(row)
-  const warningLevel = row?.warning_level || 'normal'
-  if (daysLeft <= 0) {
-    return (
-      <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${retentionBadgeClass(warningLevel, daysLeft)}`}>
-        Eligible for permanent delete
-      </span>
-    )
-  }
-  const label =
-    daysLeft === 1
-      ? 'Auto-deletes in 1 day'
-      : `Auto-deletes in ${daysLeft} days`
-  return (
-    <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${retentionBadgeClass(warningLevel, daysLeft)}`}>
-      {label}
-    </span>
-  )
-}
 
 function formatArchivedAt(iso) {
   if (!iso) return '—'
@@ -73,6 +32,18 @@ function initials(name) {
   const first = parts[0]?.[0] ?? '?'
   const last = parts.length > 1 ? parts[parts.length - 1][0] : ''
   return String(first + last).toUpperCase()
+}
+
+function vaultArchiveReason(row) {
+  const reason = String(row?.archive_reason ?? row?.archiveReason ?? '').trim()
+  return reason || '—'
+}
+
+function truncateReason(text, max = 80) {
+  const s = String(text || '').trim()
+  if (!s || s === '—') return s
+  if (s.length <= max) return s
+  return `${s.slice(0, max - 1)}…`
 }
 
 function vaultDisplayName(row) {
@@ -179,7 +150,10 @@ export default function ArchiveVault() {
       if (!res.ok) {
         throw new Error(String(data?.message || data?.error || `Could not load record (${res.status}).`))
       }
-      setSelectedRecord(data)
+      setSelectedRecord({
+        ...data,
+        archive_reason: record?.archive_reason ?? record?.archiveReason ?? data?.archive_reason ?? null,
+      })
     } catch (e) {
       setDetailError(String(e?.message || e || 'Could not load archived record.'))
     } finally {
@@ -262,7 +236,7 @@ export default function ArchiveVault() {
       const data = await res.json().catch(() => ({}))
       if (!res.ok) {
         toast.error(String(data?.message || data?.error || `Purge failed (${res.status}).`), {
-          title: res.status === 403 ? 'Retention gate' : 'Purge failed',
+          title: 'Purge failed',
         })
         return
       }
@@ -285,9 +259,6 @@ export default function ArchiveVault() {
 
   function renderActionButtons(type, row) {
     const id = row.id
-    const archivedAt = row.archived_at ?? row.archivedAt
-    const daysLeft = daysUntilDeletion(row)
-    const purgeEligible = row?.purge_eligible === true || daysLeft <= 0
     const key = `${type}:${id}`
     const busy = actionId === key
     const displayName = vaultDisplayName(row)
@@ -307,23 +278,21 @@ export default function ArchiveVault() {
           disabled={busy}
           className="rounded px-3 py-1.5 text-xs font-semibold text-white hover:brightness-110 disabled:opacity-60"
           style={{ backgroundColor: ACTION_BLUE }}
-          onClick={() => setRestoreTarget({ type, id, name: displayName, daysLeft })}
+          onClick={() => setRestoreTarget({ type, id, name: displayName })}
         >
           Restore
         </button>
-        {purgeEligible ? (
-          <button
-            type="button"
-            disabled={busy}
-            className="rounded bg-red-600 px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-white shadow-sm ring-2 ring-red-300 hover:bg-red-700 disabled:opacity-60"
-            onClick={() => {
-              setPurgePhrase('')
-              setPurgeTarget({ type, id, name: displayName })
-            }}
-          >
-            Delete Permanently
-          </button>
-        ) : null}
+        <button
+          type="button"
+          disabled={busy}
+          className="rounded bg-red-600 px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-white shadow-sm ring-2 ring-red-300 hover:bg-red-700 disabled:opacity-60"
+          onClick={() => {
+            setPurgePhrase('')
+            setPurgeTarget({ type, id, name: displayName })
+          }}
+        >
+          Delete Permanently
+        </button>
       </div>
     )
   }
@@ -383,7 +352,7 @@ export default function ArchiveVault() {
                   <th className="px-4 py-3">Section</th>
                   <th className="px-4 py-3">Grade Level</th>
                   <th className="px-4 py-3">Archived Date</th>
-                  <th className="px-4 py-3">Retention</th>
+                  <th className="px-4 py-3">Archive Reason</th>
                   <th className="px-4 py-3 text-right">Action</th>
                 </tr>
               </thead>
@@ -431,8 +400,8 @@ export default function ArchiveVault() {
                           <MaskedCell>{maskVaultField(row.grade_level)}</MaskedCell>
                         </td>
                         <td className="px-4 py-3 font-medium text-neutral-700">{formatArchivedAt(archivedAt)}</td>
-                        <td className="px-4 py-3">
-                          <RetentionBadge row={row} />
+                        <td className="max-w-xs px-4 py-3 text-neutral-700" title={vaultArchiveReason(row)}>
+                          {truncateReason(vaultArchiveReason(row))}
                         </td>
                         <td className="px-4 py-3 text-right">{renderActionButtons('students', row)}</td>
                       </tr>
@@ -451,7 +420,7 @@ export default function ArchiveVault() {
                   <th className="px-4 py-3">Grade Level</th>
                   <th className="px-4 py-3">Sections</th>
                   <th className="px-4 py-3">Archived Date</th>
-                  <th className="px-4 py-3">Retention</th>
+                  <th className="px-4 py-3">Archive Reason</th>
                   <th className="px-4 py-3 text-right">Action</th>
                 </tr>
               </thead>
@@ -493,8 +462,8 @@ export default function ArchiveVault() {
                           <MaskedCell>{maskVaultField(row.sectionsLabel)}</MaskedCell>
                         </td>
                         <td className="px-4 py-3 font-medium text-neutral-700">{formatArchivedAt(archivedAt)}</td>
-                        <td className="px-4 py-3">
-                          <RetentionBadge row={row} />
+                        <td className="max-w-xs px-4 py-3 text-neutral-700" title={vaultArchiveReason(row)}>
+                          {truncateReason(vaultArchiveReason(row))}
                         </td>
                         <td className="px-4 py-3 text-right">{renderActionButtons('faculties', row)}</td>
                       </tr>
@@ -516,13 +485,6 @@ export default function ArchiveVault() {
               profile fields (email, phone, enrollment, sections, and related data) will be visible again in Students
               or Faculties.
             </p>
-            {restoreTarget.daysLeft != null && restoreTarget.daysLeft <= 7 && restoreTarget.daysLeft > 0 ? (
-              <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-                <span className="font-semibold">Warning:</span> This account will be permanently auto-deleted in{' '}
-                {restoreTarget.daysLeft} day{restoreTarget.daysLeft === 1 ? '' : 's'}. Restoring removes it from the
-                Archive Vault and cancels pending auto-deletion. If re-archived later, the 365-day timer starts fresh.
-              </p>
-            ) : null}
             <label className="mt-4 block">
               <span className="text-sm font-semibold text-neutral-800">Confirm with your admin password</span>
               <p className="mt-1 text-xs text-neutral-500">

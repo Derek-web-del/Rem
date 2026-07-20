@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { requireAdminSession, logStatePostgresError, auditInstituteRecord, readStudentField, readStudentOptional, parseFacultySectionIds, mapBodyToFacultiesRow, insertFacultiesRow, updateFacultyWithSections, getFacultiesColumnSet, facultyRowToResponse, FACULTIES_FROM, readFacultyPhotoUrl, hashFacultyPassword, buildFacultyDisplayName, normStr, archiveFacultyRecord, purgeFacultyFromAppStateJson, upsertFacultyInAppStateJson } from './shared.js'
+import { requireRegistrarSession, logStatePostgresError, auditInstituteRecord, readStudentField, readStudentOptional, parseFacultySectionIds, mapBodyToFacultiesRow, insertFacultiesRow, updateFacultyWithSections, getFacultiesColumnSet, facultyRowToResponse, FACULTIES_FROM, readFacultyPhotoUrl, hashFacultyPassword, buildFacultyDisplayName, normStr, archiveFacultyRecord, parseArchiveReason, purgeFacultyFromAppStateJson, upsertFacultyInAppStateJson } from './shared.js'
 import {
   buildFacultyAuditTargetName,
   buildFacultyComparePayload,
@@ -22,7 +22,7 @@ export function registerFacultyRoutes(router, ctx) {
   const { pool, auth } = ctx
 
   const listActiveFaculty = async (req, res) => {
-    if (!(await requireAdminSession(req, res, auth))) return
+    if (!(await requireRegistrarSession(req, res, auth))) return
     try {
       const colSet = await getFacultiesColumnSet(pool)
       const listSql = colSet.has('updated_at')
@@ -40,7 +40,7 @@ export function registerFacultyRoutes(router, ctx) {
   router.get('/v1/faculties', listActiveFaculty)
 
   router.get('/v1/faculty/:id(\\d+)', async (req, res) => {
-    if (!(await requireAdminSession(req, res, auth))) return
+    if (!(await requireRegistrarSession(req, res, auth))) return
     try {
       const id = String(req.params.id || '').trim()
       if (!id) {
@@ -80,7 +80,7 @@ export function registerFacultyRoutes(router, ctx) {
   router.post('/v1/faculty', facultyPhotoUploadMiddleware, async (req, res) => {
     const b = normalizeFacultyMultipartBody(req.body || {})
     try {
-      const adminSession = await requireAdminSession(req, res, auth)
+      const adminSession = await requireRegistrarSession(req, res, auth)
       if (!adminSession) return
       const facultyCode =
         readStudentField(b, 'facultyCodeId', 'faculty_code_id') ||
@@ -235,7 +235,7 @@ export function registerFacultyRoutes(router, ctx) {
   router.put('/v1/faculty/:id', facultyPhotoUploadMiddleware, async (req, res) => {
     const b = normalizeFacultyMultipartBody(req.body || {})
     try {
-      const adminSession = await requireAdminSession(req, res, auth)
+      const adminSession = await requireRegistrarSession(req, res, auth)
       if (!adminSession) return
 
       const id = String(req.params.id || '').trim()
@@ -425,7 +425,7 @@ export function registerFacultyRoutes(router, ctx) {
 
   async function handleArchiveFaculty(req, res) {
     try {
-      const adminSession = await requireAdminSession(req, res, auth)
+      const adminSession = await requireRegistrarSession(req, res, auth)
       if (!adminSession) return
       if (req.method === 'DELETE' && !requireDestructiveConfirm(req, res, 'DELETE')) return
       const id = String(req.params.id || '').trim()
@@ -433,7 +433,12 @@ export function registerFacultyRoutes(router, ctx) {
         res.status(400).json({ success: false, error: 'Invalid faculty id.' })
         return
       }
-      const archived = await archiveFacultyRecord(pool, id)
+      const parsedReason = parseArchiveReason(req.body)
+      if (!parsedReason.ok) {
+        res.status(400).json({ success: false, error: parsedReason.code, message: parsedReason.message })
+        return
+      }
+      const archived = await archiveFacultyRecord(pool, id, parsedReason.reason)
       if (!archived) {
         res.status(404).json({ success: false, message: 'Faculty not found or already archived.' })
         return
@@ -443,6 +448,7 @@ export function registerFacultyRoutes(router, ctx) {
         recordType: 'faculty',
         recordId: id,
         description: `Faculty archived: ${id}`,
+        details: { archive_reason: parsedReason.reason },
       })
       res.json({ ok: true, success: true, id, archived: true })
     } catch (e) {

@@ -2,13 +2,15 @@ export const LOGIN_SELECT_PATH = '/login'
 
 export const ROLE_TO_LOGIN_PATH = {
   INSTITUTE: '/login/institute',
+  REGISTRAR: '/login/registrar',
   FACULTY: '/login/faculty',
   STUDENT: '/login/student',
 }
 
-/** Visible portal codes in login URLs (?id=1|2|3). */
+/** Visible portal codes in login URLs (?id=1|2|3|4). */
 export const PORTAL_URL_IDS = {
   INSTITUTE: '1',
+  REGISTRAR: '4',
   FACULTY: '2',
   STUDENT: '3',
 }
@@ -42,7 +44,7 @@ export function loginViewFromPath(pathname) {
 
 /**
  * Build a portal login path with ?id= portal code.
- * @param {string} portalRoleId INSTITUTE | FACULTY | STUDENT
+ * @param {string} portalRoleId INSTITUTE | REGISTRAR | FACULTY | STUDENT
  * @param {Record<string, string>} [extraParams]
  * @returns {string}
  */

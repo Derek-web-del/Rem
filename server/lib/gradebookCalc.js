@@ -63,10 +63,19 @@ export function groupItemsByComponent(components, items) {
 
   function resolveComponentId(item) {
     const type = String(item.type || '').toLowerCase()
-    if (item.grade_component_id != null) {
-      const id = String(item.grade_component_id)
+    const hasExplicitComponent = Object.prototype.hasOwnProperty.call(item, 'grade_component_id')
+
+    if (hasExplicitComponent) {
+      const raw = item.grade_component_id
+      if (raw == null || raw === '') {
+        if (type === 'quiz' && quizComponent) return String(quizComponent.id)
+        return null
+      }
+      const id = String(raw)
       if (grouped[id]) return id
+      return null
     }
+
     if (type === 'quiz' && quizComponent) return String(quizComponent.id)
     if (type === 'assignment') {
       const written = comps.find((c) => c.maps_to_assignment && !c.maps_to_activity)

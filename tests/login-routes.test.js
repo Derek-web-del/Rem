@@ -18,6 +18,10 @@ describe('loginRoutes portal id URLs', () => {
     assert.equal(loginPathWithPortalId('STUDENT'), '/login/student?id=3')
   })
 
+  it('builds registrar login path with id=4', () => {
+    assert.equal(loginPathWithPortalId('REGISTRAR'), '/login/registrar?id=4')
+  })
+
   it('adds id when missing on portal login path', () => {
     assert.equal(syncLoginPortalSearch('/login/student', ''), '?id=3')
   })

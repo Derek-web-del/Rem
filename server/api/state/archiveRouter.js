@@ -1,4 +1,4 @@
-import { requireAdminSession, logStatePostgresError, parseArchiveEntityType, obfuscateArchivedStudentForVault, obfuscateArchivedFacultyForVault, getFacultiesColumnSet, FACULTIES_FROM, purgeFacultyFromAppStateJson, auditInstituteRecord, omitStudentPassword, facultyRowToResponse, computeArchiveRetention } from './shared.js'
+import { requireRegistrarSession, logStatePostgresError, parseArchiveEntityType, obfuscateArchivedStudentForVault, obfuscateArchivedFacultyForVault, getFacultiesColumnSet, FACULTIES_FROM, purgeFacultyFromAppStateJson, auditInstituteRecord, omitStudentPassword, facultyRowToResponse } from './shared.js'
 import { sendSafeServerError } from '../../lib/safeApiError.js'
 import { requireDestructiveConfirm } from '../../lib/security.js'
 import { resolveArchiveTableSql } from '../../lib/sqlGuards.js'
@@ -24,24 +24,6 @@ async function fetchArchivedFacultySnapshot(pool, id) {
   return rows[0] || null
 }
 
-async function fetchStudentSnapshot(pool, id) {
-  const { rows } = await pool.query(
-    `SELECT id, first_name, middle_name, last_name, archived_at
-     FROM public.students WHERE id = $1 LIMIT 1`,
-    [id],
-  )
-  return rows[0] || null
-}
-
-async function fetchFacultySnapshot(pool, id) {
-  const { rows } = await pool.query(
-    `SELECT id, name, first_name, middle_name, last_name, archived_at ${FACULTIES_FROM}
-     WHERE id = $1 LIMIT 1`,
-    [id],
-  )
-  return rows[0] || null
-}
-
 function facultyDisplayName(row) {
   return String(row?.name || '').trim() || studentDisplayName(row) || `Faculty #${row?.id || ''}`
 }
@@ -50,7 +32,7 @@ function facultyDisplayName(row) {
 export function registerArchiveRoutes(router, ctx) {
   const { pool, auth } = ctx
   router.get('/v1/admin/archive-vault/:type', async (req, res) => {
-    if (!(await requireAdminSession(req, res, auth))) return
+    if (!(await requireRegistrarSession(req, res, auth))) return
     const type = parseArchiveEntityType(req.params.type)
     if (!type) {
       res.status(400).json({ success: false, message: 'Invalid archive vault type.' })
@@ -59,7 +41,7 @@ export function registerArchiveRoutes(router, ctx) {
     try {
       if (type === 'students') {
         const { rows } = await pool.query(`
-          SELECT s.id, s.first_name, s.middle_name, s.last_name, s.archived_at
+          SELECT s.id, s.first_name, s.middle_name, s.last_name, s.archived_at, s.archive_reason
           FROM students s
           WHERE s.archived_at IS NOT NULL
           ORDER BY s.archived_at DESC, s.id DESC
@@ -70,8 +52,8 @@ export function registerArchiveRoutes(router, ctx) {
       }
       const colSet = await getFacultiesColumnSet(pool)
       const vaultSql = colSet.has('updated_at')
-        ? `SELECT id, name, first_name, middle_name, last_name, archived_at ${FACULTIES_FROM} WHERE archived_at IS NOT NULL ORDER BY archived_at DESC NULLS LAST, updated_at DESC NULLS LAST, id DESC`
-        : `SELECT id, name, first_name, middle_name, last_name, archived_at ${FACULTIES_FROM} WHERE archived_at IS NOT NULL ORDER BY archived_at DESC NULLS LAST, id DESC`
+        ? `SELECT id, name, first_name, middle_name, last_name, archived_at, archive_reason ${FACULTIES_FROM} WHERE archived_at IS NOT NULL ORDER BY archived_at DESC NULLS LAST, updated_at DESC NULLS LAST, id DESC`
+        : `SELECT id, name, first_name, middle_name, last_name, archived_at, archive_reason ${FACULTIES_FROM} WHERE archived_at IS NOT NULL ORDER BY archived_at DESC NULLS LAST, id DESC`
       const { rows } = await pool.query(vaultSql)
       const records = rows.map((r) => obfuscateArchivedFacultyForVault(r))
       res.json({ ok: true, type, records, faculty: records })
@@ -82,7 +64,7 @@ export function registerArchiveRoutes(router, ctx) {
   })
 
   router.get('/v1/admin/archived-student/:studentId/work', async (req, res) => {
-    const adminSession = await requireAdminSession(req, res, auth)
+    const adminSession = await requireRegistrarSession(req, res, auth)
     if (!adminSession) return
     const rawId = String(req.params.studentId || '').trim()
     const studentId = Number(rawId)
@@ -116,7 +98,7 @@ export function registerArchiveRoutes(router, ctx) {
   })
 
   router.get('/v1/admin/archived-faculty/:facultyId/work', async (req, res) => {
-    const adminSession = await requireAdminSession(req, res, auth)
+    const adminSession = await requireRegistrarSession(req, res, auth)
     if (!adminSession) return
     const facultyId = String(req.params.facultyId || '').trim()
     if (!facultyId) {
@@ -152,7 +134,7 @@ export function registerArchiveRoutes(router, ctx) {
   })
 
   router.post('/v1/admin/restore/:type/:id', async (req, res) => {
-    const adminSession = await requireAdminSession(req, res, auth)
+    const adminSession = await requireRegistrarSession(req, res, auth)
     if (!adminSession) return
     const type = parseArchiveEntityType(req.params.type)
     if (!type) {
@@ -206,7 +188,7 @@ export function registerArchiveRoutes(router, ctx) {
         }
         const recordName = studentDisplayName(snapshot) || `Student #${id}`
         await pool.query(
-          'UPDATE public.students SET archived_at = NULL WHERE id = $1 AND archived_at IS NOT NULL',
+          'UPDATE public.students SET archived_at = NULL, archive_reason = NULL WHERE id = $1 AND archived_at IS NOT NULL',
           [id],
         )
         await auditInstituteRecord(adminSession, 'STUDENT_RESTORED', {
@@ -237,7 +219,7 @@ export function registerArchiveRoutes(router, ctx) {
       }
       const recordName = facultyDisplayName(snapshot)
       await pool.query(
-        'UPDATE public.faculties SET archived_at = NULL WHERE id = $1 AND archived_at IS NOT NULL',
+        'UPDATE public.faculties SET archived_at = NULL, archive_reason = NULL WHERE id = $1 AND archived_at IS NOT NULL',
         [rawId],
       )
       await auditInstituteRecord(adminSession, 'FACULTY_RESTORED', {
@@ -263,7 +245,7 @@ export function registerArchiveRoutes(router, ctx) {
   })
 
   router.delete('/v1/admin/permanent-purge/:type/:id', async (req, res) => {
-    const adminSession = await requireAdminSession(req, res, auth)
+    const adminSession = await requireRegistrarSession(req, res, auth)
     if (!adminSession) return
     if (!requireDestructiveConfirm(req, res, 'PURGE')) return
     const type = parseArchiveEntityType(req.params.type)
@@ -296,18 +278,6 @@ export function registerArchiveRoutes(router, ctx) {
         return
       }
 
-      const archivedAt = new Date(snapshot.archived_at)
-      const retention = computeArchiveRetention(archivedAt)
-
-      if (!retention.purge_eligible) {
-        res.status(403).json({
-          success: false,
-          message:
-            'Security Restriction: Account must satisfy a 365-day retention hold before purging.',
-        })
-        return
-      }
-
       const recordName =
         type === 'students'
           ? studentDisplayName(snapshot) || `Student #${rawId}`
@@ -335,74 +305,12 @@ export function registerArchiveRoutes(router, ctx) {
     }
   })
 
-  /** Active-roster bypass: hard-delete without archive vault or retention gate (admin only). */
-  router.delete('/v1/admin/immediate-purge/:type/:id', async (req, res) => {
-    const adminSession = await requireAdminSession(req, res, auth)
-    if (!adminSession) return
-    if (!requireDestructiveConfirm(req, res, 'DELETE_IMMEDIATE')) return
-    const type = parseArchiveEntityType(req.params.type)
-    if (!type) {
-      res.status(400).json({ success: false, message: 'Invalid entity type.' })
-      return
-    }
-    const rawId = String(req.params.id || '').trim()
-    if (!rawId) {
-      res.status(400).json({ success: false, message: 'Invalid id.' })
-      return
-    }
-    const idParam = type === 'students' ? Number(rawId) : rawId
-    if (type === 'students' && (!Number.isFinite(idParam) || idParam <= 0)) {
-      res.status(400).json({ success: false, message: 'Invalid student id.' })
-      return
-    }
-    const tableSql = resolveArchiveTableSql(type)
-    if (!tableSql) {
-      res.status(400).json({ success: false, message: 'Invalid entity type.' })
-      return
-    }
-    try {
-      const snapshot =
-        type === 'students'
-          ? await fetchStudentSnapshot(pool, idParam)
-          : await fetchFacultySnapshot(pool, rawId)
-      if (!snapshot) {
-        res.status(404).json({ success: false, message: 'Record not found.' })
-        return
-      }
-
-      const recordName =
-        type === 'students'
-          ? studentDisplayName(snapshot) || `Student #${rawId}`
-          : facultyDisplayName(snapshot)
-      const eventType =
-        type === 'students' ? 'STUDENT_IMMEDIATELY_PURGED' : 'FACULTY_IMMEDIATELY_PURGED'
-
-      const r = await pool.query(`DELETE FROM ${tableSql} WHERE id = $1`, [idParam])
-      if (Number(r?.rowCount ?? 0) === 0) {
-        res.status(404).json({ success: false, message: 'Record not found.' })
-        return
-      }
-      if (type === 'faculties') {
-        await purgeFacultyFromAppStateJson(pool, String(rawId))
-      }
-      await auditInstituteRecord(adminSession, eventType, {
-        recordType: type === 'students' ? 'student' : 'faculty',
-        recordId: String(rawId),
-        description: `${type === 'students' ? 'Student' : 'Faculty'} immediately purged from roster: ${recordName}`,
-        details: {
-          record_type: type === 'students' ? 'student' : 'faculty',
-          record_id: String(rawId),
-          record_name: recordName,
-          archived_at: snapshot.archived_at instanceof Date
-            ? snapshot.archived_at.toISOString()
-            : snapshot.archived_at ?? null,
-          purge_type: 'immediate',
-        },
-      })
-      res.json({ ok: true, success: true, type, id: String(rawId), purged: true, immediate: true })
-    } catch (e) {
-      logStatePostgresError('DELETE /v1/admin/immediate-purge/:type/:id', e)
-      sendSafeServerError(res, e, 'DELETE /v1/admin/immediate-purge/:type/:id')
-    }
+  /** Immediate roster delete disabled — use Archive with reason instead. */
+  router.delete('/v1/admin/immediate-purge/:type/:id', async (_req, res) => {
+    res.status(403).json({
+      success: false,
+      error: 'IMMEDIATE_PURGE_DISABLED',
+      message: 'Immediate delete from active rosters is disabled. Archive the account instead.',
+    })
   })
 }

@@ -207,7 +207,7 @@ export function isLoginModuleAuditEvent(event) {
 export function dashboardModuleForRole(role) {
   const r = normalizeRole(role)
   if (r === 'student') return STUDENT_PORTAL_MODULES.DASHBOARD
-  if (r === 'admin') return ADMIN_PORTAL_MODULES.DASHBOARD
+  if (r === 'admin' || r === 'registrar') return ADMIN_PORTAL_MODULES.DASHBOARD
   return TEACHER_PORTAL_MODULES.DASHBOARD
 }
 

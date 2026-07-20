@@ -3,6 +3,7 @@ import BackButton from './components/BackButton.jsx'
 import StudentDetails from './StudentDetails.jsx'
 import StudentProfile from './StudentProfile.jsx'
 import { useNotify } from './components/notifications.jsx'
+import ArchiveReasonModal from './components/ArchiveReasonModal.jsx'
 
 function initials(name) {
   const parts = String(name || '')
@@ -31,6 +32,7 @@ export default function StudentsInSection({
   const [activeId, setActiveId] = useState('')
   const [profileOpen, setProfileOpen] = useState(false)
   const [archiveTarget, setArchiveTarget] = useState(null)
+  const [archiveSubmitting, setArchiveSubmitting] = useState(false)
 
   const sectionStudents = useMemo(() => {
     const sectionId = section?.id
@@ -217,45 +219,30 @@ export default function StudentsInSection({
 
       {profileOpen ? null : null}
 
-      {archiveTarget ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-          <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-2xl">
-            <h3 className="text-lg font-bold text-neutral-900">Archive Student</h3>
-            <p className="mt-2 text-sm text-neutral-700">
-              Archive <span className="font-semibold">{archiveTarget.name}</span>? They will be moved to the Archive
-              Vault.
-            </p>
-            <div className="mt-4 flex justify-end gap-2">
-              <button
-                type="button"
-                className="rounded bg-neutral-200 px-4 py-2 text-sm font-semibold text-neutral-700"
-                onClick={() => setArchiveTarget(null)}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                className="rounded bg-red-600 px-4 py-2 text-sm font-semibold text-white"
-                onClick={() => {
-                  try {
-                    const res = onArchiveStudent(archiveTarget.id)
-                    if (res?.error) {
-                      toast.error(String(res.error || 'Could not archive student.'))
-                    } else {
-                      toast.updated('Student archived successfully.', { title: 'Archived' })
-                    }
-                  } catch (e) {
-                    toast.error(String(e?.message || e || 'Could not archive student.'))
-                  }
-                  setArchiveTarget(null)
-                }}
-              >
-                Yes, Archive
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
+      <ArchiveReasonModal
+        open={Boolean(archiveTarget)}
+        entityLabel="Student"
+        targetName={archiveTarget?.name || ''}
+        submitting={archiveSubmitting}
+        onClose={() => setArchiveTarget(null)}
+        onConfirm={async (reason) => {
+          if (!archiveTarget) return
+          setArchiveSubmitting(true)
+          try {
+            const res = await Promise.resolve(onArchiveStudent(archiveTarget.id, reason))
+            if (res?.error) {
+              toast.error(String(res.error || 'Could not archive student.'))
+              return
+            }
+            toast.updated('Student archived successfully.', { title: 'Archived' })
+            setArchiveTarget(null)
+          } catch (e) {
+            toast.error(String(e?.message || e || 'Could not archive student.'))
+          } finally {
+            setArchiveSubmitting(false)
+          }
+        }}
+      />
     </div>
   )
 }

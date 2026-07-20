@@ -4,6 +4,7 @@ import AuthenticatedImage from './components/AuthenticatedImage.jsx'
 import FacultyDetails from './FacultyDetails.jsx'
 import FacultyProfile from './FacultyProfile.jsx'
 import { useNotify } from './components/notifications.jsx'
+import ArchiveReasonModal from './components/ArchiveReasonModal.jsx'
 import { facultyPhotoDisplaySrc } from './lib/facultyPhoto.js'
 import { dedupeById } from './lib/dedupeById.js'
 import { TruncatedTableCell } from './lib/tableCellDisplay.jsx'
@@ -91,7 +92,6 @@ export default function FacultiesPage({
   onAddFaculty,
   onUpdateFaculty,
   onArchiveFaculty,
-  onImmediatePurgeFaculty,
   onSendPasswordResetEmail,
   onBack,
 }) {
@@ -106,8 +106,6 @@ export default function FacultiesPage({
   const [activeId, setActiveId] = useState('')
   const [archiveTarget, setArchiveTarget] = useState(null)
   const [archiveSubmitting, setArchiveSubmitting] = useState(false)
-  const [purgeTarget, setPurgeTarget] = useState(null)
-  const [purgeSubmitting, setPurgeSubmitting] = useState(false)
 
   const activeFaculty = useMemo(() => faculties.find((f) => f.id === activeId) || null, [faculties, activeId])
 
@@ -351,13 +349,6 @@ export default function FacultiesPage({
                               {resetBusyId === String(f.id) ? 'Sending…' : 'Send Reset Email'}
                             </button>
                           ) : null}
-                          <button
-                            type="button"
-                            className="rounded bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700"
-                            onClick={() => setPurgeTarget(f)}
-                          >
-                            Delete
-                          </button>
                         </div>
                       </td>
                     </tr>
@@ -369,100 +360,28 @@ export default function FacultiesPage({
         </div>
       </section>
 
-      {purgeTarget ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4">
-          <div
-            className="w-full max-w-lg rounded-xl border border-neutral-200 bg-white p-6 shadow-2xl"
-            role="alertdialog"
-            aria-labelledby="purge-faculty-title"
-          >
-            <div className="flex items-start gap-4">
-              <i className="ti ti-alert-triangle shrink-0 text-3xl text-red-500" aria-hidden="true" />
-              <div className="min-w-0">
-                <h3 id="purge-faculty-title" className="text-lg font-bold text-neutral-900">
-                  Permanently Delete {purgeTarget.name}?
-                </h3>
-                <p className="mt-2 text-sm leading-relaxed text-neutral-700">
-                  This will immediately remove {purgeTarget.name} and all associated data. This action
-                  cannot be undone.
-                </p>
-              </div>
-            </div>
-            <div className="mt-6 flex justify-end gap-2">
-              <button
-                type="button"
-                className="rounded bg-neutral-200 px-4 py-2 text-sm font-semibold text-neutral-800 hover:bg-neutral-300"
-                onClick={() => setPurgeTarget(null)}
-                disabled={purgeSubmitting}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={purgeSubmitting || !onImmediatePurgeFaculty}
-                className="rounded bg-red-600 px-4 py-2 text-sm font-bold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
-                onClick={async () => {
-                  if (!purgeTarget || !onImmediatePurgeFaculty) return
-                  setPurgeSubmitting(true)
-                  try {
-                    const result = await onImmediatePurgeFaculty(purgeTarget.id)
-                    if (result?.error) {
-                      toast.error(result.error, { title: 'Permanent purge failed' })
-                    } else {
-                      const name = String(purgeTarget.name || 'Faculty').trim()
-                      toast.deleted(`Faculty ${name} account deleted.`, { durationMs: 6000 })
-                    }
-                  } finally {
-                    setPurgeSubmitting(false)
-                    setPurgeTarget(null)
-                  }
-                }}
-              >
-                {purgeSubmitting ? 'Deleting…' : 'Delete Permanently'}
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
-      {archiveTarget ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-          <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-2xl">
-            <h3 className="text-lg font-bold text-neutral-900">Archive Faculty</h3>
-            <p className="mt-2 text-sm text-neutral-700">
-              Archive <span className="font-semibold">{archiveTarget.name}</span>? They will be removed from active
-              rosters and moved to the Archive Vault. You can restore them later.
-            </p>
-            <div className="mt-4 flex justify-end gap-2">
-              <button type="button" className="rounded bg-neutral-200 px-4 py-2 text-sm font-semibold text-neutral-700" onClick={() => setArchiveTarget(null)}>
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={archiveSubmitting}
-                className="rounded bg-red-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
-                onClick={async () => {
-                  if (!archiveTarget) return
-                  setArchiveSubmitting(true)
-                  try {
-                    const result = await onArchiveFaculty(archiveTarget.id)
-                    if (result?.error) {
-                      toast.error(result.error, { title: 'Could not archive faculty' })
-                      return
-                    }
-                    toast.updated('Faculty archived successfully.', { title: 'Archived' })
-                    setArchiveTarget(null)
-                  } finally {
-                    setArchiveSubmitting(false)
-                  }
-                }}
-              >
-                {archiveSubmitting ? 'Archiving…' : 'Yes, Archive'}
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
+      <ArchiveReasonModal
+        open={Boolean(archiveTarget)}
+        entityLabel="Faculty"
+        targetName={archiveTarget?.name || ''}
+        submitting={archiveSubmitting}
+        onClose={() => setArchiveTarget(null)}
+        onConfirm={async (reason) => {
+          if (!archiveTarget) return
+          setArchiveSubmitting(true)
+          try {
+            const result = await onArchiveFaculty(archiveTarget.id, reason)
+            if (result?.error) {
+              toast.error(result.error, { title: 'Could not archive faculty' })
+              return
+            }
+            toast.updated('Faculty archived successfully.', { title: 'Archived' })
+            setArchiveTarget(null)
+          } finally {
+            setArchiveSubmitting(false)
+          }
+        }}
+      />
     </div>
   )
 }

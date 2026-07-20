@@ -8,7 +8,7 @@
 import { generateRandomString, symmetricEncrypt } from 'better-auth/crypto'
 import { auth } from '../auth.js'
 
-const PORTAL_ROLES = ['admin', 'teacher', 'student', 'faculty']
+const PORTAL_ROLES = ['admin', 'registrar', 'teacher', 'student', 'faculty']
 
 export function isPortalAuthRole(role) {
   return PORTAL_ROLES.includes(String(role || '').trim().toLowerCase())

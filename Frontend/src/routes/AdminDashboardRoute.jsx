@@ -7,7 +7,7 @@ import { authClient } from '../lib/auth-client.js'
 import { navIdFromPath } from '../lib/adminNavRoutes.js'
 import { INSTITUTE_ADMIN_EMAIL } from '../../../shared/constants.js'
 import { loginPathWithPortalId } from '../lib/loginRoutes.js'
-import { markAccessDenied } from '../lib/roleAccess.js'
+import { homePathForRole, markAccessDenied, normalizeRole } from '../lib/roleAccess.js'
 
 const InstituteDashboard = lazy(() => import('../modules/dashboard/InstituteDashboardModule.jsx'))
 const AdminLayout = lazy(() => import('../layouts/AdminLayout.jsx'))
@@ -17,11 +17,19 @@ const AdminLessonFormPage = lazy(() => import('../pages/admin/AdminLessonFormPag
 const IDLE_MS = 30 * 60 * 1000
 const SESSION_LOST_DEBOUNCE_MS = 3500
 
-function isInstituteAdminUser(user) {
+function isAdminPortalUser(user) {
+  const role = normalizeRole(user?.role)
   return (
-    user?.role === 'admin' ||
+    role === 'admin' ||
+    role === 'registrar' ||
     String(user?.email || '').toLowerCase() === INSTITUTE_ADMIN_EMAIL.toLowerCase()
   )
+}
+
+function loginPortalPathForUser(user) {
+  return normalizeRole(user?.role) === 'registrar'
+    ? loginPathWithPortalId('REGISTRAR')
+    : loginPathWithPortalId('INSTITUTE')
 }
 
 export default function AdminDashboardRoute() {
@@ -67,10 +75,12 @@ export default function AdminDashboardRoute() {
   useEffect(() => {
     const id = navIdFromPath(location.pathname)
     const onLessonForm = /^\/admin\/subjects\/[^/]+\/lessons/.test(location.pathname.replace(/\/+$/, ''))
-    if (!id && !onLessonForm && location.pathname.replace(/\/+$/, '') !== '/admin/terms') {
-      navigate('/admin/institute_dashboard', { replace: true })
+    const pathname = location.pathname.replace(/\/+$/, '') || '/admin'
+    if (!id && !onLessonForm && pathname !== '/admin/terms') {
+      const home = homePathForRole(sessionUser?.role)
+      navigate(home, { replace: true })
     }
-  }, [location.pathname, navigate])
+  }, [location.pathname, navigate, sessionUser?.role])
 
   useEffect(() => {
     if (session) return undefined
@@ -88,14 +98,14 @@ export default function AdminDashboardRoute() {
         return
       }
       if (cancelled) return
-      navigate(loginPathWithPortalId('INSTITUTE'), { replace: true })
+      navigate(loginPortalPathForUser(sessionUser), { replace: true })
     }, SESSION_LOST_DEBOUNCE_MS)
 
     return () => {
       cancelled = true
       window.clearTimeout(id)
     }
-  }, [session, sessionPending, navigate])
+  }, [session, sessionPending, navigate, sessionUser])
 
   useEffect(() => {
     function onVis() {
@@ -112,8 +122,8 @@ export default function AdminDashboardRoute() {
   const onIdleSignOut = useCallback(async () => {
     clearTermsAcceptance()
     await authClient.signOut()
-    window.location.assign(loginPathWithPortalId('INSTITUTE'))
-  }, [])
+    window.location.assign(loginPortalPathForUser(sessionUser))
+  }, [sessionUser])
 
   useIdleSession({
     enabled: !!session,
@@ -124,7 +134,7 @@ export default function AdminDashboardRoute() {
   async function handleDashboardLogout() {
     clearTermsAcceptance()
     await authClient.signOut()
-    window.location.assign(loginPathWithPortalId('INSTITUTE'))
+    window.location.assign(loginPortalPathForUser(sessionUser))
   }
 
   if (sessionPending) {
@@ -135,9 +145,9 @@ export default function AdminDashboardRoute() {
     )
   }
 
-  if (!session || !isInstituteAdminUser(sessionUser)) {
+  if (!session || !isAdminPortalUser(sessionUser)) {
     if (session && sessionUser) {
-      const role = String(sessionUser?.role || '').trim().toLowerCase()
+      const role = normalizeRole(sessionUser?.role)
       if (role === 'student') {
         markAccessDenied()
         return <Navigate to="/student/dashboard" replace />
@@ -146,7 +156,7 @@ export default function AdminDashboardRoute() {
         return <Navigate to="/teacher/dashboard" replace />
       }
     }
-    return <Navigate to={loginPathWithPortalId('INSTITUTE')} replace />
+    return <Navigate to={loginPortalPathForUser(sessionUser)} replace />
   }
 
   const pathname = location.pathname.replace(/\/+$/, '') || '/admin'
@@ -181,6 +191,9 @@ export default function AdminDashboardRoute() {
   }
 
   const onAdminLessonForm = /^\/admin\/subjects\/[^/]+\/lessons/.test(pathname)
+  if (onAdminLessonForm && normalizeRole(sessionUser?.role) === 'registrar') {
+    return <Navigate to={homePathForRole('registrar')} replace />
+  }
   if (onAdminLessonForm) {
     const isEdit = /\/edit$/.test(pathname)
     return (

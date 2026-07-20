@@ -101,28 +101,22 @@ export async function auditSystemEvent(activityType, payload = {}) {
 
 export const ARCHIVE_RETENTION_DAYS = 365
 
+/** Archived records are retained indefinitely; no auto-delete countdown. */
 export function computeArchiveRetention(archivedAt) {
   const archived = archivedAt instanceof Date ? archivedAt : new Date(archivedAt)
   if (Number.isNaN(archived.getTime())) {
     return {
-      days_until_deletion: ARCHIVE_RETENTION_DAYS,
+      days_until_deletion: null,
       auto_delete_at: null,
       warning_level: 'normal',
       purge_eligible: false,
     }
   }
-  const elapsedMs = Date.now() - archived.getTime()
-  const elapsedDays = Math.floor(elapsedMs / (1000 * 60 * 60 * 24))
-  const days_until_deletion = Math.max(0, ARCHIVE_RETENTION_DAYS - elapsedDays)
-  const auto_delete_at = new Date(archived.getTime() + ARCHIVE_RETENTION_DAYS * 24 * 60 * 60 * 1000)
-  let warning_level = 'normal'
-  if (days_until_deletion === 1) warning_level = 'red'
-  else if (days_until_deletion > 0 && days_until_deletion <= 7) warning_level = 'amber'
   return {
-    days_until_deletion,
-    auto_delete_at: auto_delete_at.toISOString(),
-    warning_level,
-    purge_eligible: days_until_deletion <= 0,
+    days_until_deletion: null,
+    auto_delete_at: null,
+    warning_level: 'normal',
+    purge_eligible: false,
   }
 }
 
@@ -1141,6 +1135,46 @@ export async function requireAdminSession(req, res, auth) {
   }
 }
 
+/** Registrar accounts portal — same terms gate as admin (`"user".terms_accepted`). */
+export async function requireRegistrarSession(req, res, auth) {
+  if (!auth?.api?.getSession) {
+    res.status(503).json({ success: false, message: 'Registrar auth is not available.' })
+    return null
+  }
+  try {
+    const session = await auth.api.getSession({ headers: req.headers })
+    const role = String(session?.user?.role || session?.data?.user?.role || '')
+      .trim()
+      .toLowerCase()
+    if (!session?.user?.id || role !== 'registrar') {
+      logUnauthorizedAccessFromRequest(req, {
+        reason: 'Registrar session required',
+        requiredRole: 'registrar',
+      })
+      res.status(403).json({
+        success: false,
+        error: 'FORBIDDEN',
+        message: 'Access denied. Registrar only.',
+      })
+      return null
+    }
+    if (!isTermsExemptRequest(req)) {
+      const pool = getPgPool()
+      if (pool) {
+        const termsRow = await fetchAdminTermsRow(pool, session.user.id)
+        if (!adminTermsAccepted(termsRow)) {
+          sendTermsNotAccepted(res, 'registrar portal')
+          return null
+        }
+      }
+    }
+    return session
+  } catch (e) {
+    sendSafeServerError(res, e, 'requireRegistrarSession')
+    return null
+  }
+}
+
 export function parseArchiveEntityType(raw) {
   const type = String(raw || '')
     .trim()
@@ -1149,18 +1183,44 @@ export function parseArchiveEntityType(raw) {
   return type
 }
 
-export async function archiveStudentRecord(pool, id) {
+export const ARCHIVE_REASON_MIN_LEN = 10
+export const ARCHIVE_REASON_MAX_LEN = 500
+
+/** Validate archive reason from request body. Returns { ok: true, reason } or { ok: false, code, message }. */
+export function parseArchiveReason(body) {
+  const reason = String(body?.reason ?? body?.archive_reason ?? '').trim()
+  if (!reason) {
+    return { ok: false, code: 'ARCHIVE_REASON_REQUIRED', message: 'Archive reason is required.' }
+  }
+  if (reason.length < ARCHIVE_REASON_MIN_LEN) {
+    return {
+      ok: false,
+      code: 'ARCHIVE_REASON_TOO_SHORT',
+      message: `Archive reason must be at least ${ARCHIVE_REASON_MIN_LEN} characters.`,
+    }
+  }
+  if (reason.length > ARCHIVE_REASON_MAX_LEN) {
+    return {
+      ok: false,
+      code: 'ARCHIVE_REASON_TOO_LONG',
+      message: `Archive reason must be at most ${ARCHIVE_REASON_MAX_LEN} characters.`,
+    }
+  }
+  return { ok: true, reason }
+}
+
+export async function archiveStudentRecord(pool, id, reason) {
   const r = await pool.query(
-    'UPDATE students SET archived_at = NOW() WHERE id = $1 AND archived_at IS NULL',
-    [id],
+    'UPDATE students SET archived_at = NOW(), archive_reason = $2 WHERE id = $1 AND archived_at IS NULL',
+    [id, reason],
   )
   return Number(r?.rowCount ?? 0) > 0
 }
 
-export async function archiveFacultyRecord(pool, id) {
+export async function archiveFacultyRecord(pool, id, reason) {
   const r = await pool.query(
-    `UPDATE public.faculties SET archived_at = NOW() WHERE id = $1 AND archived_at IS NULL`,
-    [id],
+    `UPDATE public.faculties SET archived_at = NOW(), archive_reason = $2 WHERE id = $1 AND archived_at IS NULL`,
+    [id, reason],
   )
   return Number(r?.rowCount ?? 0) > 0
 }
@@ -1175,6 +1235,7 @@ export function buildVaultStudentDisplayName(row) {
 export function obfuscateArchivedStudentForVault(row) {
   const decrypted = decryptStudentPiiFields(row)
   const archived_at = decrypted.archived_at
+  const archive_reason = String(decrypted.archive_reason || '').trim() || null
   const retention = computeArchiveRetention(archived_at)
   return {
     id: decrypted.id,
@@ -1184,6 +1245,8 @@ export function obfuscateArchivedStudentForVault(row) {
     last_name: String(decrypted.last_name || '').trim(),
     archived_at,
     archivedAt: archived_at,
+    archive_reason,
+    archiveReason: archive_reason,
     ...retention,
     email: VAULT_OBFUSCATED_LABEL,
     contact_no: VAULT_OBFUSCATED_LABEL,
@@ -1206,6 +1269,7 @@ export function obfuscateArchivedFacultyForVault(row) {
     buildFacultyDisplayName(first_name, middle_name, last_name, '') ||
     VAULT_OBFUSCATED_LABEL
   const archived_at = row.archived_at
+  const archive_reason = String(row.archive_reason || '').trim() || null
   const retention = computeArchiveRetention(archived_at)
   return {
     id: String(row.id),
@@ -1215,6 +1279,8 @@ export function obfuscateArchivedFacultyForVault(row) {
     last_name,
     archived_at,
     archivedAt: archived_at,
+    archive_reason,
+    archiveReason: archive_reason,
     ...retention,
     email: VAULT_OBFUSCATED_LABEL,
     contact_number: VAULT_OBFUSCATED_LABEL,

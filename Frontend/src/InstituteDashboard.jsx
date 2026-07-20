@@ -20,12 +20,14 @@ import OfflineBanner from './components/OfflineBanner.jsx'
 import SystemOfflineBanner from './components/SystemOfflineBanner.jsx'
 import AdminAuditBanner from './components/AdminAuditBanner.jsx'
 import OfflineCacheIndicator from './components/OfflineCacheIndicator.jsx'
+import SchoolYearBadge from './components/SchoolYearBadge.jsx'
 import { resolveSubjectImageFromMap } from './lib/subjectImages.js'
 import MonitoringRecords from './pages/MonitoringRecords.jsx'
 import IncidentResponsePage from './pages/admin/IncidentResponsePage.jsx'
 import BackupPage from './pages/BackupPage.jsx'
 import ArchiveVault from './pages/ArchiveVault.jsx'
 import AdminTurnoverPage from './pages/admin/AdminTurnoverPage.jsx'
+import RegistrarAccountsPage from './pages/admin/RegistrarAccountsPage.jsx'
 import AuditStatisticsSection from './components/AuditStatisticsSection.jsx'
 import AdminLatestAnnouncementsExpanded from './components/admin/AdminLatestAnnouncementsExpanded.jsx'
 import AuthenticatedImage from './components/AuthenticatedImage.jsx'
@@ -38,6 +40,7 @@ import { facultyPhotoAuthImageUrl, facultyPhotoDisplaySrc } from './lib/facultyP
 import { dedupeById } from './lib/dedupeById.js'
 import { stripSecretsFromList } from './lib/stripLocalStorageSecrets.js'
 import { NAV_ID_TO_PATH, navIdFromPath, pathForNavId } from './lib/adminNavRoutes.js'
+import { homePathForRole, isNavAllowedForRole, normalizeRole } from './lib/roleAccess.js'
 
 const SIDEBAR_GOLD = '#1e4fa3'
 const SIDEBAR_GOLD_DARK = '#15397a'
@@ -710,6 +713,7 @@ const NAV = [
   { id: 'monitoring', label: 'Audit Logs', icon: ActivityIcon, to: NAV_ID_TO_PATH.monitoring },
   { id: 'incidents', label: 'Incident Response', icon: ShieldAlertIcon, to: NAV_ID_TO_PATH.incidents },
   { id: 'turnover', label: 'Admin Transfer', icon: UserTieIcon, to: NAV_ID_TO_PATH.turnover },
+  { id: 'registrars', label: 'Registrar Accounts', icon: UserTieIcon, to: NAV_ID_TO_PATH.registrars },
   { id: 'backup', label: 'Data Backup', icon: DatabaseExportIcon, to: NAV_ID_TO_PATH.backup },
   { id: 'archive', label: 'Archive Vault', icon: ArchiveIcon, to: NAV_ID_TO_PATH.archive },
 ]
@@ -752,6 +756,14 @@ function DashboardFacultyThumb({ faculty }) {
 export default function InstituteDashboard({ onLogout, schoolName = 'Glendale School, Inc.' }) {
   const toast = useNotify()
   const { data: adminSession } = authClient.useSession()
+  const portalRole = normalizeRole(adminSession?.user?.role)
+  const isRegistrar = portalRole === 'registrar'
+  const isAdmin = portalRole === 'admin'
+  const visibleNav = useMemo(
+    () => NAV.filter((item) => isNavAllowedForRole(item.id, portalRole)),
+    [portalRole],
+  )
+  const portalLabel = isRegistrar ? 'Registrar' : 'School Admin'
   const adminDisplayName = useMemo(() => {
     const u = adminSession?.user
     return normalizeAdminDisplayName(u?.name, u?.email)
@@ -945,10 +957,18 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
 
   useEffect(() => {
     const id = navIdFromPath(location.pathname)
+    if (!id || isNavAllowedForRole(id, portalRole)) return
+    const fallback = isRegistrar ? homePathForRole('registrar') : homePathForRole('admin')
+    navigate(fallback, { replace: true })
+  }, [location.pathname, navigate, portalRole, isRegistrar])
+
+  useEffect(() => {
+    const id = navIdFromPath(location.pathname)
     if (!id || id === activeNav) return
+    if (!isNavAllowedForRole(id, portalRole)) return
     setActiveNav(id)
     applyNavSideEffects(id)
-  }, [location.pathname, activeNav, applyNavSideEffects])
+  }, [location.pathname, activeNav, applyNavSideEffects, portalRole])
 
   function isAdminCreateUserDuplicateError(status, json) {
     if (status !== 400) return false
@@ -1646,44 +1666,9 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
     return { ok: true }
   }
 
-  async function immediatePurgeFaculty(facultyId) {
+  async function archiveFaculty(facultyId, reason) {
     const id = String(facultyId || '').trim()
-    const current = faculties.find((f) => f.id === id)
-    if (!current) return { error: 'Faculty not found.' }
-
-    if (persistenceMode === 'server') {
-      const facultyKey = String(current.id || current.postgresFacultyId || '').trim()
-      if (facultyKey) {
-        try {
-          const res = await fetch(
-            apiUrl(`/api/v1/admin/immediate-purge/faculties/${encodeURIComponent(facultyKey)}`),
-            {
-              method: 'DELETE',
-              credentials: 'include',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ confirm: 'DELETE_IMMEDIATE' }),
-            },
-          )
-          const data = await res.json().catch(() => ({}))
-          if (!res.ok) {
-            return {
-              error: String(data?.message || data?.error || `Permanent purge failed (${res.status}).`),
-            }
-          }
-        } catch (err) {
-          return { error: String(err?.message || err || 'Network error during permanent purge.') }
-        }
-      }
-      setFaculties((prev) => prev.filter((f) => f.id !== id))
-      await refreshFacultiesFromPostgres()
-    } else {
-      setFaculties((prev) => prev.filter((f) => f.id !== id))
-    }
-    return { ok: true }
-  }
-
-  async function archiveFaculty(facultyId) {
-    const id = String(facultyId || '').trim()
+    const archiveReason = String(reason || '').trim()
     const current = faculties.find((f) => f.id === id)
     if (!current) return { error: 'Faculty not found.' }
 
@@ -1694,6 +1679,8 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
           const res = await fetch(apiUrl(`/api/v1/faculties/${encodeURIComponent(facultyKey)}/archive`), {
             method: 'POST',
             credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ reason: archiveReason }),
           })
           const data = await res.json().catch(() => ({}))
           if (!res.ok) {
@@ -2860,40 +2847,9 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
     return { ok: true }
   }
 
-  async function immediatePurgeStudent(studentId) {
+  async function archiveStudent(studentId, reason) {
     const id = String(studentId || '').trim()
-    const target = students.find((s) => s.id === id)
-    const rawPg = target?.postgresStudentId ?? (Number.isFinite(Number(id)) ? Number(id) : NaN)
-    const pgId = Number.isFinite(rawPg) && rawPg > 0 ? rawPg : null
-
-    if (persistenceMode === 'server' && pgId != null) {
-      try {
-        const res = await fetch(
-          apiUrl(`/api/v1/admin/immediate-purge/students/${encodeURIComponent(String(pgId))}`),
-          {
-            method: 'DELETE',
-            credentials: 'include',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ confirm: 'DELETE_IMMEDIATE' }),
-          },
-        )
-        const data = await res.json().catch(() => ({}))
-        if (!res.ok) {
-          return { error: String(data?.message || data?.error || `Permanent purge failed (${res.status}).`) }
-        }
-      } catch (e) {
-        return { error: String(e?.message || e || 'Network error during permanent purge.') }
-      }
-    }
-
-    const nextStudents = students.filter((s) => s.id !== id)
-    setStudents(nextStudents)
-    recomputeSectionStudentCounts(nextStudents)
-    return { ok: true }
-  }
-
-  async function archiveStudent(studentId) {
-    const id = String(studentId || '').trim()
+    const archiveReason = String(reason || '').trim()
     const target = students.find((s) => s.id === id)
     const rawPg = target?.postgresStudentId ?? (Number.isFinite(Number(id)) ? Number(id) : NaN)
     const pgId = Number.isFinite(rawPg) && rawPg > 0 ? rawPg : null
@@ -2903,6 +2859,8 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
         const res = await fetch(apiUrl(`/api/v1/students/${encodeURIComponent(String(pgId))}/archive`), {
           method: 'POST',
           credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reason: archiveReason }),
         })
         const data = await res.json().catch(() => ({}))
         if (!res.ok && res.status !== 404) {
@@ -2990,7 +2948,6 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
           gradeOptions={GRADE_LEVELS}
           onUpdateStudent={updateStudent}
           onArchiveStudent={archiveStudent}
-          onImmediatePurgeStudent={immediatePurgeStudent}
           onBack={() => {
             setActiveSection(null)
             openSectionManagePage()
@@ -3098,7 +3055,7 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
         onToggle={toggleSidebarCollapsed}
         sidebarGold={SIDEBAR_GOLD}
         sidebarGoldDark={SIDEBAR_GOLD_DARK}
-        header={<Header collapsed={sidebarCollapsed} portalLabel="School Admin" />}
+        header={<Header collapsed={sidebarCollapsed} portalLabel={portalLabel} />}
         footer={
           <div className="shrink-0 border-t border-white/15 px-2 py-4 text-center text-white/85">
             {!sidebarCollapsed ? (
@@ -3141,7 +3098,7 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
         }
       >
         <nav className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2 py-2">
-          {NAV.map(({ id, label, icon: Icon, to }) => (
+          {visibleNav.map(({ id, label, icon: Icon, to }) => (
             <NavLink
               key={id}
               to={to}
@@ -3192,17 +3149,22 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
                                   ? 'Data Backup'
                                   : activeNav === 'archive'
                                     ? 'Archive Vault'
+                                    : activeNav === 'registrars'
+                                      ? 'Registrar Accounts'
                   : 'Dashboard'}
             </h1>
           </div>
-          <button
-            type="button"
-            onClick={onLogout}
-            className="rounded-lg px-5 py-2 text-sm font-semibold text-white shadow-md transition hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
-            style={{ backgroundColor: ACTION_BLUE }}
-          >
-            Logout
-          </button>
+          <div className="flex flex-wrap items-center gap-3">
+            <SchoolYearBadge editable={isAdmin} />
+            <button
+              type="button"
+              onClick={onLogout}
+              className="rounded-lg px-5 py-2 text-sm font-semibold text-white shadow-md transition hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
+              style={{ backgroundColor: ACTION_BLUE }}
+            >
+              Logout
+            </button>
+          </div>
         </header>
 
         <OfflineBanner />
@@ -3236,6 +3198,8 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
             <IncidentResponsePage />
           ) : activeNav === 'turnover' ? (
             <AdminTurnoverPage />
+          ) : activeNav === 'registrars' ? (
+            <RegistrarAccountsPage />
           ) : activeNav === 'backup' ? (
             <BackupPage />
           ) : activeNav === 'archive' ? (
@@ -3246,9 +3210,8 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
               students={students}
               onAddStudent={addStudent}
               onUpdateStudent={updateStudent}
-              onArchiveStudent={archiveStudent}
-          onImmediatePurgeStudent={immediatePurgeStudent}
-              onSendPasswordResetEmail={sendPasswordResetEmail}
+          onArchiveStudent={archiveStudent}
+          onSendPasswordResetEmail={sendPasswordResetEmail}
               onBack={() => navigateToNav('dashboard')}
               initialGrade={studentNavContext.grade}
               initialSectionId={studentNavContext.sectionId}
@@ -3261,7 +3224,6 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
               onAddFaculty={addFaculty}
               onUpdateFaculty={updateFaculty}
               onArchiveFaculty={archiveFaculty}
-              onImmediatePurgeFaculty={immediatePurgeFaculty}
               onSendPasswordResetEmail={sendPasswordResetEmail}
               onBack={() => navigateToNav('dashboard')}
             />
@@ -3301,14 +3263,20 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
                 <div className="min-w-0 text-left">
                   <h2 className="text-xl font-bold text-neutral-900 md:text-2xl">{adminDisplayName}</h2>
                   <p className="mt-1 text-sm text-neutral-600">
-                    Admin |{' '}
-                    <button
-                      type="button"
-                      onClick={handleChooseAvatar}
-                      className="font-medium text-[#3182ce] underline-offset-2 hover:underline"
-                    >
-                      Change Image
-                    </button>
+                    {isRegistrar ? 'Registrar' : 'Admin'}
+                    {!isRegistrar ? (
+                      <>
+                        {' '}
+                        |{' '}
+                        <button
+                          type="button"
+                          onClick={handleChooseAvatar}
+                          className="font-medium text-[#3182ce] underline-offset-2 hover:underline"
+                        >
+                          Change Image
+                        </button>
+                      </>
+                    ) : null}
                   </p>
                   <input
                     ref={fileInputRef}

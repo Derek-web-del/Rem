@@ -152,6 +152,12 @@ export default function ArchivedStudentDetail({ data }) {
           <span>This account is archived. Work history is shown in read-only mode.</span>
         </div>
       ) : null}
+      {data.archive_reason ? (
+        <div className="rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-700">
+          <span className="font-semibold text-neutral-900">Archive reason: </span>
+          {String(data.archive_reason).trim()}
+        </div>
+      ) : null}
 
       <StudentDetailCard student={student} showEditButton={false} showTable />
 

@@ -29,6 +29,7 @@ const TAGLINE_GREEN = 'rgba(80, 220, 130, 1)'
 
 function loginPortalHeader(roleId) {
   if (roleId === 'INSTITUTE') return 'admin'
+  if (roleId === 'REGISTRAR') return 'registrar'
   if (roleId === 'FACULTY') return 'faculty'
   if (roleId === 'STUDENT') return 'student'
   return ''
@@ -73,6 +74,7 @@ function EyeIcon({ off }) {
 
 const ROLES = [
   { id: 'INSTITUTE', label: 'INSTITUTE', icon: 'ti-building' },
+  { id: 'REGISTRAR', label: 'REGISTRAR', icon: 'ti-id-badge' },
   { id: 'FACULTY', label: 'FACULTY', icon: 'ti-notebook' },
   { id: 'STUDENT', label: 'STUDENT', icon: 'ti-school' },
 ]
@@ -239,6 +241,8 @@ export default function App() {
           ? 'STUDENT'
           : resolvedRole === 'teacher' || resolvedRole === 'faculty'
             ? 'FACULTY'
+            : resolvedRole === 'registrar'
+              ? 'REGISTRAR'
             : resolvedRole === 'admin'
               ? 'INSTITUTE'
               : null
@@ -294,6 +298,8 @@ export default function App() {
           ? 'Enter your Faculty Code ID and password.'
           : roleId === 'STUDENT'
             ? 'Enter your Student Login ID and password.'
+            : roleId === 'REGISTRAR'
+              ? 'Enter your Registrar Login ID and password.'
             : roleId === 'INSTITUTE'
               ? 'Enter your Institute Login ID and password.'
               : 'Enter your username and password.',
@@ -500,7 +506,7 @@ export default function App() {
           )}
 
           {view === 'select' && (
-            <div className="grid w-full grid-cols-3 gap-[9px]">
+            <div className="grid w-full grid-cols-2 gap-[9px] sm:grid-cols-4">
               {ROLES.map(({ id, label, icon }) => (
                 <button
                   key={id}
@@ -527,6 +533,8 @@ export default function App() {
                     ? 'Faculty Code ID'
                     : roleId === 'STUDENT'
                       ? 'Student Login ID'
+                      : roleId === 'REGISTRAR'
+                        ? 'Registrar Login ID'
                       : roleId === 'INSTITUTE'
                         ? 'Institute Login ID'
                         : 'Username'}
@@ -541,6 +549,8 @@ export default function App() {
                       ? 'Enter Faculty Code ID'
                       : roleId === 'STUDENT'
                         ? 'Enter Student Login ID'
+                        : roleId === 'REGISTRAR'
+                          ? 'Enter Registrar Login ID'
                         : roleId === 'INSTITUTE'
                           ? 'Enter Institute Login ID'
                           : 'Enter username'

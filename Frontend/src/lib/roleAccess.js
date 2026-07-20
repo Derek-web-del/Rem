@@ -4,10 +4,26 @@ export const ACCESS_DENIED_STORAGE_KEY = 'lenlearn:access-denied'
 
 export const ROLE_HOME = {
   admin: '/admin/institute_dashboard',
+  registrar: '/admin/students',
   faculty: '/teacher/dashboard',
   teacher: '/teacher/dashboard',
   student: '/student/dashboard',
 }
+
+/** Nav ids restricted to the Registrar accounts portal. */
+export const REGISTRAR_ONLY_NAV_IDS = new Set(['section', 'students', 'faculties', 'archive'])
+
+/** Nav ids restricted to Institute Admin (not Registrar). */
+export const ADMIN_ONLY_NAV_IDS = new Set([
+  'curriculum',
+  'subjects',
+  'updates',
+  'monitoring',
+  'incidents',
+  'turnover',
+  'backup',
+  'registrars',
+])
 
 export function normalizeRole(role) {
   return String(role || '').trim().toLowerCase()
@@ -16,12 +32,13 @@ export function normalizeRole(role) {
 export function homePathForRole(role) {
   const r = normalizeRole(role)
   if (r === 'admin') return ROLE_HOME.admin
+  if (r === 'registrar') return ROLE_HOME.registrar
   if (r === 'student') return ROLE_HOME.student
   if (r === 'teacher' || r === 'faculty') return ROLE_HOME.faculty
   return '/login'
 }
 
-/** Login path for a portal tile id (INSTITUTE | FACULTY | STUDENT). */
+/** Login path for a portal tile id (INSTITUTE | REGISTRAR | FACULTY | STUDENT). */
 export function loginPathForPortal(portalRoleId) {
   return loginPathWithPortalId(portalRoleId)
 }
@@ -34,7 +51,7 @@ export function loginPathForPortal(portalRoleId) {
  */
 export function resolveAuthRoleForPortal(user, portalRoleId, instituteAdminEmail = '') {
   const role = normalizeRole(user?.role)
-  if (role === 'admin') return 'admin'
+  if (role === 'admin' || role === 'registrar') return role
   const adminEmail = String(instituteAdminEmail || '').trim().toLowerCase()
   const userEmail = String(user?.email || '').trim().toLowerCase()
   if (portalRoleId === 'INSTITUTE' && adminEmail && userEmail === adminEmail) return 'admin'
@@ -46,6 +63,7 @@ export function portalMatchesUserRole(portalRoleId, resolvedRole) {
   if (!portalRoleId) return false
   const role = normalizeRole(resolvedRole)
   if (portalRoleId === 'INSTITUTE') return role === 'admin'
+  if (portalRoleId === 'REGISTRAR') return role === 'registrar'
   if (portalRoleId === 'FACULTY') return role === 'teacher' || role === 'faculty'
   if (portalRoleId === 'STUDENT') return role === 'student'
   return false
@@ -59,11 +77,17 @@ export function portalMismatchMessage(portalRoleId, resolvedRole) {
   if (role === 'teacher' || role === 'faculty') {
     return 'This account is a Faculty account. Use the Faculty login.'
   }
+  if (role === 'registrar') {
+    return 'This account is a Registrar account. Use the Registrar login.'
+  }
   if (role === 'admin') {
     return 'This account is an Institute admin account. Use the Institute login.'
   }
   if (portalRoleId === 'INSTITUTE') {
     return 'This account is not an Institute admin. Use the correct login portal for your role.'
+  }
+  if (portalRoleId === 'REGISTRAR') {
+    return 'This account is not a Registrar account. Use the correct login portal for your role.'
   }
   if (portalRoleId === 'FACULTY') {
     return 'This account is not a Faculty account. Use the correct login portal for your role.'
@@ -94,21 +118,36 @@ export function consumeAccessDenied() {
   return false
 }
 
+/** Whether a sidebar nav id is allowed for the given staff role. */
+export function isNavAllowedForRole(navId, role) {
+  const id = String(navId || '').trim()
+  const r = normalizeRole(role)
+  if (r === 'registrar') {
+    return id === 'dashboard' || REGISTRAR_ONLY_NAV_IDS.has(id)
+  }
+  if (r === 'admin') {
+    return id === 'dashboard' || ADMIN_ONLY_NAV_IDS.has(id)
+  }
+  return false
+}
+
 export function redirectPathForWrongRole(currentRole, area) {
   const role = normalizeRole(currentRole)
   if (area === 'student') {
     if (role === 'student') return null
     if (role === 'admin') return ROLE_HOME.admin
+    if (role === 'registrar') return ROLE_HOME.registrar
     return ROLE_HOME.faculty
   }
   if (area === 'teacher') {
     if (role === 'teacher' || role === 'faculty') return null
     if (role === 'student') return ROLE_HOME.student
     if (role === 'admin') return ROLE_HOME.admin
+    if (role === 'registrar') return ROLE_HOME.registrar
     return '/login'
   }
   if (area === 'admin') {
-    if (role === 'admin') return null
+    if (role === 'admin' || role === 'registrar') return null
     if (role === 'student') return ROLE_HOME.student
     if (role === 'teacher' || role === 'faculty') return ROLE_HOME.faculty
     return '/login'

@@ -1,4 +1,4 @@
-import { requireAdminSession, logStatePostgresError, auditInstituteRecord, readStudentField, readStudentOptional, parseStudentDob, readStudentContact, readStudentParentContact, readStudentAppPassword, readStudentPhotoUrl, parseStudentSectionId, normStr, omitStudentPassword, hashStudentPassword, archiveStudentRecord, ensureStudentsCatalogColumns } from './shared.js'
+import { requireRegistrarSession, logStatePostgresError, auditInstituteRecord, readStudentField, readStudentOptional, parseStudentDob, readStudentContact, readStudentParentContact, readStudentAppPassword, readStudentPhotoUrl, parseStudentSectionId, normStr, omitStudentPassword, hashStudentPassword, archiveStudentRecord, parseArchiveReason, ensureStudentsCatalogColumns } from './shared.js'
 import { buildStudentAuditTargetName, computeStudentProfileDetailedDiffs } from '../../lib/studentProfileAudit.js'
 import { extendUpdateSetWithIntegrity } from '../../lib/recordIntegrity.js'
 import { customActivityLogger } from '../../services/CustomActivityLogger.js'
@@ -18,7 +18,7 @@ import {
 export function registerStudentsRoutes(router, ctx) {
   const { pool, auth } = ctx
   router.get('/v1/students', async (req, res) => {
-    const adminSession = await requireAdminSession(req, res, auth)
+    const adminSession = await requireRegistrarSession(req, res, auth)
     if (!adminSession) return
     try {
       const { rows } = await pool.query(`
@@ -44,7 +44,7 @@ export function registerStudentsRoutes(router, ctx) {
   })
 
   router.get('/v1/students/:id', async (req, res) => {
-    const adminSession = await requireAdminSession(req, res, auth)
+    const adminSession = await requireRegistrarSession(req, res, auth)
     if (!adminSession) return
     const id = Number(req.params.id)
     if (!Number.isFinite(id) || id <= 0) {
@@ -91,7 +91,7 @@ export function registerStudentsRoutes(router, ctx) {
 
   router.post('/v1/students', async (req, res) => {
     try {
-      const adminSession = await requireAdminSession(req, res, auth)
+      const adminSession = await requireRegistrarSession(req, res, auth)
       if (!adminSession) return
       await ensureStudentsCatalogColumns(pool)
       const b = req.body || {}
@@ -248,7 +248,7 @@ export function registerStudentsRoutes(router, ctx) {
 
   router.put('/v1/students/:id', async (req, res) => {
     try {
-      const adminSession = await requireAdminSession(req, res, auth)
+      const adminSession = await requireRegistrarSession(req, res, auth)
       if (!adminSession) return
 
       const id = Number(req.params.id)
@@ -514,7 +514,7 @@ export function registerStudentsRoutes(router, ctx) {
 
   async function handleArchiveStudent(req, res) {
     try {
-      const adminSession = await requireAdminSession(req, res, auth)
+      const adminSession = await requireRegistrarSession(req, res, auth)
       if (!adminSession) return
       if (req.method === 'DELETE' && !requireDestructiveConfirm(req, res, 'DELETE')) return
       const id = Number(req.params.id)
@@ -522,7 +522,12 @@ export function registerStudentsRoutes(router, ctx) {
         res.status(400).json({ success: false, message: 'Invalid student id.' })
         return
       }
-      const archived = await archiveStudentRecord(pool, id)
+      const parsedReason = parseArchiveReason(req.body)
+      if (!parsedReason.ok) {
+        res.status(400).json({ success: false, error: parsedReason.code, message: parsedReason.message })
+        return
+      }
+      const archived = await archiveStudentRecord(pool, id, parsedReason.reason)
       if (!archived) {
         res.status(404).json({ success: false, message: 'Student not found or already archived.' })
         return
@@ -531,6 +536,7 @@ export function registerStudentsRoutes(router, ctx) {
         recordType: 'student',
         recordId: String(id),
         description: `Student archived: ${id}`,
+        details: { archive_reason: parsedReason.reason },
       })
       res.json({ ok: true, success: true, id, archived: true })
     } catch (e) {

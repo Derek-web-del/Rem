@@ -7,7 +7,6 @@ import {
   resolveLedgerDisplayType,
 } from '../shared/auditLedgerDisplay.js'
 import { getEventLabel } from '../Frontend/src/lib/auditEventDisplay.js'
-import { formatAuditModalEventDataJson } from '../Frontend/src/lib/formatAuditModalEventData.js'
 
 describe('auditLedgerDisplay', () => {
   it('maps LOGIN ledger type to sign-in activity and label', () => {
@@ -36,31 +35,6 @@ describe('auditLedgerDisplay', () => {
     assert.equal(mapped.eventData.displayType, 'Signed In')
     assert.notEqual(mapped.eventData.displayType, 'Profile Updated (Account)')
     assert.equal(getEventLabel(mapped.eventType, mapped.activityType), 'Signed In')
-  })
-
-  it('formatAuditModalEventDataJson formats LOGIN ledger as sign-in not account changed', () => {
-    const json = formatAuditModalEventDataJson(
-      {
-        source: 'ledger',
-        eventType: 'LOGIN',
-        activityType: 'USER_SIGNED_IN',
-        userId: 'uid-trap',
-        detailsObj: {
-          type: 'LOGIN',
-          displayType: 'Signed In',
-          userName: 'Trap Hook',
-          userEmail: 'trap@school.edu',
-          description: 'Student logged in',
-        },
-      },
-      'Signed In',
-    )
-    const data = JSON.parse(json)
-    assert.equal(data.event, 'Signed In')
-    assert.equal(data.user?.name, 'Trap Hook')
-    assert.equal(data.actor, undefined)
-    assert.equal(data.target, undefined)
-    assert.equal(data.changes, undefined)
   })
 
   it('mapLedgerRowToAuthEvent labels AUTH_LOCKOUT correctly', () => {

@@ -7,6 +7,7 @@ export const MAX_LOCKOUT_ATTEMPTS = 5
 
 const PORTAL_LABELS = {
   admin: 'Admin portal',
+  registrar: 'Registrar portal',
   faculty: 'Faculty portal',
   student: 'Student portal',
 }
@@ -18,6 +19,7 @@ const PORTAL_LABELS = {
 export function accountTypeFromRole(role) {
   const r = String(role || '').trim().toLowerCase()
   if (r === 'admin') return 'Admin'
+  if (r === 'registrar') return 'Registrar'
   if (r === 'teacher' || r === 'faculty') return 'Faculty'
   if (r === 'student') return 'Student'
   return 'Unknown'
@@ -31,6 +33,7 @@ export function accountTypeFromRole(role) {
 export function normalizePortalToken(token) {
   const t = String(token || '').trim().toLowerCase()
   if (t === 'admin' || t === 'institute') return 'admin'
+  if (t === 'registrar') return 'registrar'
   if (t === 'faculty' || t === 'teacher') return 'faculty'
   if (t === 'student') return 'student'
   return null
@@ -57,6 +60,7 @@ export function resolveLoginPortal(ctx) {
 
   const referer = String(headers?.get?.('referer') || headers?.get?.('referrer') || '')
   if (referer.includes('/login/institute')) return 'admin'
+  if (referer.includes('/login/registrar')) return 'registrar'
   if (referer.includes('/login/faculty')) return 'faculty'
   if (referer.includes('/login/student')) return 'student'
   return null
@@ -91,6 +95,7 @@ export function resolveUserAgent(ctx) {
 export function roleFromPortal(portal, userRole = '') {
   const p = normalizePortalToken(portal)
   if (p === 'admin') return 'admin'
+  if (p === 'registrar') return 'registrar'
   if (p === 'faculty') return 'teacher'
   if (p === 'student') return 'student'
   return String(userRole || '').trim()

@@ -46,7 +46,7 @@ async function requireFacultyUser(req, res, auth) {
   }
 }
 
-async function requireAdminUser(req, res, auth) {
+async function requireAdminOrRegistrarUser(req, res, auth) {
   if (!auth?.api?.getSession) {
     res.status(503).json({ success: false, error: 'AUTH_UNAVAILABLE', message: 'Authentication is unavailable.' })
     return null
@@ -58,8 +58,8 @@ async function requireAdminUser(req, res, auth) {
       return null
     }
     const role = String(u.role || '').trim().toLowerCase()
-    if (role !== 'admin') {
-      logUnauthorizedAccessFromRequest(req, { reason: 'Admin terms API requires admin role', requiredRole: 'admin' })
+    if (role !== 'admin' && role !== 'registrar') {
+      logUnauthorizedAccessFromRequest(req, { reason: 'Admin/registrar terms API requires admin or registrar role', requiredRole: 'admin|registrar' })
       res.status(403).json({ success: false, error: 'FORBIDDEN', message: 'Access denied.' })
       return null
     }
@@ -138,7 +138,7 @@ export function createTermsV1Router(express, auth) {
 
   router.get('/v1/admin/terms-status', async (req, res) => {
     try {
-      const user = await requireAdminUser(req, res, auth)
+      const user = await requireAdminOrRegistrarUser(req, res, auth)
       if (!user) return
       const pool = getPgPool()
       const row = await fetchAdminTermsRow(pool, user.id)
@@ -158,7 +158,7 @@ export function createTermsV1Router(express, auth) {
 
   router.post('/v1/admin/accept-terms', async (req, res) => {
     try {
-      const user = await requireAdminUser(req, res, auth)
+      const user = await requireAdminOrRegistrarUser(req, res, auth)
       if (!user) return
       const pool = getPgPool()
       const priorRow = await fetchAdminTermsRow(pool, user.id)

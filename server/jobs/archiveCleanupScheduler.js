@@ -299,18 +299,9 @@ export function stopArchiveCleanupScheduler() {
 }
 
 export function startArchiveCleanupScheduler() {
+  // Auto-purge after retention period disabled — archived accounts are kept indefinitely.
   if (started) return
-  if (process.env.NODE_ENV === 'test') return
-  if (!getPgPool()) return
   started = true
-
-  scheduledTasks.push(
-    cron.schedule('0 3 * * *', () => {
-      void runArchiveCleanupJob()
-    }),
-  )
-
-  console.log('[ARCHIVE-CLEANUP] Scheduler started (daily 03:00)')
 }
 
 export default {

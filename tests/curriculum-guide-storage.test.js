@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest'
+import { describe, it } from 'node:test'
+import assert from 'node:assert/strict'
 import { validateCurriculumGuideFile } from '../server/lib/curriculumGuideStorage.js'
 
 describe('curriculumGuideStorage', () => {
@@ -8,7 +9,7 @@ describe('curriculumGuideStorage', () => {
       size: 1024,
       buffer: Buffer.from('%PDF-1.4'),
     })
-    expect(err).toBe('')
+    assert.equal(err, '')
   })
 
   it('rejects DOC and DOCX curriculum guide files', () => {
@@ -18,7 +19,7 @@ describe('curriculumGuideStorage', () => {
         size: 1024,
         buffer: Buffer.from('fake'),
       })
-      expect(err).toBe('File must be PDF.')
+      assert.equal(err, 'File must be PDF.')
     }
   })
 })

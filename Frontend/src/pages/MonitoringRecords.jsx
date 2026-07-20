@@ -12,7 +12,6 @@ import { AUDIT_LOGS_REFRESH_EVENT, dispatchAuditLogsRefresh } from '../lib/audit
 import AuditEventGlyph from '../components/AuditEventGlyph.jsx'
 import ClearAuditLogsModal from '../components/ClearAuditLogsModal.jsx'
 import { useNotify } from '../components/notifications.jsx'
-import { formatAuditModalEventDataJson } from '../lib/formatAuditModalEventData.js'
 import {
   auditEventMetadata,
   formatDescription,
@@ -1079,8 +1078,6 @@ export default function MonitoringRecords() {
   const [unifiedDateOpen, setUnifiedDateOpen] = useState(false)
   const [unifiedDateFrom, setUnifiedDateFrom] = useState('')
   const [unifiedDateTo, setUnifiedDateTo] = useState('')
-  const [eventDetailsOpen, setEventDetailsOpen] = useState(false)
-  const [eventDetailsRow, setEventDetailsRow] = useState(null)
   const [eventsSearch, setEventsSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [clearModalOpen, setClearModalOpen] = useState(false)
@@ -1094,11 +1091,6 @@ export default function MonitoringRecords() {
     setUnifiedPage(0)
     setUnifiedPageInput('1')
   }, [unifiedType, unifiedDateFrom, unifiedDateTo, debouncedSearch])
-
-  const openEventDetails = (row) => {
-    setEventDetailsRow(row || null)
-    setEventDetailsOpen(true)
-  }
 
   const loadUnified = useCallback(async () => {
     const type = String(unifiedType || '')
@@ -1285,19 +1277,18 @@ export default function MonitoringRecords() {
                   <th className="px-4 py-3">Affected</th>
                   <th className="px-4 py-3">By</th>
                   <th className="px-4 py-3">Time</th>
-                  <th className="px-4 py-3 text-right" aria-label="Details" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-100">
                 {unifiedRows.length === 0 ? (
                   <tr>
-                    <td className="px-4 py-6 text-center text-neutral-500" colSpan={6}>
+                    <td className="px-4 py-6 text-center text-neutral-500" colSpan={5}>
                       No events.
                     </td>
                   </tr>
                 ) : displayedUnifiedRows.length === 0 ? (
                   <tr>
-                    <td className="px-4 py-6 text-center text-neutral-500" colSpan={6}>
+                    <td className="px-4 py-6 text-center text-neutral-500" colSpan={5}>
                       No events match your search.
                     </td>
                   </tr>
@@ -1378,7 +1369,7 @@ export default function MonitoringRecords() {
                     return (
                       <tr
                         key={auditEventReactKey(e, idx)}
-                        className={`group hover:bg-neutral-50 ${resolveAuditRowHighlightClass(e)}`}
+                        className={`hover:bg-neutral-50 ${resolveAuditRowHighlightClass(e)}`}
                       >
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2 font-semibold text-neutral-900">
@@ -1419,27 +1410,6 @@ export default function MonitoringRecords() {
                         <td className="px-4 py-3 whitespace-nowrap">
                           <div className="font-semibold text-neutral-900">{fmtRelative(t) || formatAuditTime(t)}</div>
                           <div className="text-xs font-medium text-neutral-500">{formatAuditTime(t)}</div>
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          <button
-                            type="button"
-                            onClick={() => openEventDetails(e)}
-                            className="inline-flex items-center justify-center rounded-lg border border-neutral-200 bg-white p-2 text-neutral-700 opacity-0 shadow-sm transition hover:bg-neutral-50 hover:text-neutral-900 group-hover:opacity-100 focus:opacity-100 focus:outline-none"
-                            aria-label="View details"
-                          >
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
-                              <path
-                                d="M2.1 12.1C3.6 7.7 7.4 5 12 5c4.6 0 8.4 2.7 9.9 7.1-1.5 4.4-5.3 7.1-9.9 7.1-4.6 0-8.4-2.7-9.9-7.1Z"
-                                stroke="currentColor"
-                                strokeWidth="1.6"
-                              />
-                              <path
-                                d="M12 16a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z"
-                                stroke="currentColor"
-                                strokeWidth="1.6"
-                              />
-                            </svg>
-                          </button>
                         </td>
                       </tr>
                     )
@@ -1497,147 +1467,6 @@ export default function MonitoringRecords() {
               </div>
             </div>
           </div>
-
-          {eventDetailsOpen ? (() => {
-            const e = eventDetailsRow || {}
-            const raw = e?.raw || {}
-            const ed = raw?.eventData || e?.detailsObj || {}
-            const t = pickTime(e)
-            const eventTitle = unifiedActivityLabel(e)
-            const isLmsLockoutModal = isAuditLockoutEvent(e)
-            const isAccountChangedModal = isUserAccountChangedEvent(e)
-            const accountModalCtx = isAccountChangedModal ? accountChangeContext(e) : null
-            const isProfileModal = isProfileUpdateEvent(e) && !isAccountChangedModal
-            const dModal = isProfileModal ? profileEventDetails(e) : {}
-            const modalChangedFields = resolveAuditChangedFields(e, {
-              isAccountChanged: isAccountChangedModal,
-              accountCtx: accountModalCtx,
-              isProfileAudit: isProfileModal,
-              dProfile: dModal,
-            })
-            const modalTargetName =
-              accountModalCtx?.targetUser?.name || accountModalCtx?.targetUser?.email || ''
-            const { displayName: modalDisplayName, displayEmail: modalDisplayEmail } = resolveAuditUserDisplay(e, {
-              isLmsLockout: isLmsLockoutModal,
-              isAccountChanged: isAccountChangedModal,
-              isProfileAudit: isProfileModal,
-              accountCtx: accountModalCtx,
-              dProfile: dModal,
-            })
-            const isSessionModal = isSessionAuditEvent(e)
-            const isLmsLoginFailedModal = isAuditLoginFailedEvent(e)
-            const subtitle = isLmsLockoutModal
-              ? [
-                  ed?.reason,
-                  ed?.attempts != null ? `${ed.attempts} failed attempts` : null,
-                  ed?.loginId || ed?.identifier ? `Login ID: ${ed.loginId || ed.identifier}` : null,
-                  ed?.username ? `Username: ${ed.username}` : null,
-                  ed?.targetUserId ? `User ID: ${ed.targetUserId}` : null,
-                  ed?.accountType ? `Account: ${ed.accountType}` : null,
-                  loginSecurityPortalLabel(ed) || null,
-                ]
-                  .filter(Boolean)
-                  .join(' · ')
-              : isLmsLoginFailedModal
-                ? unifiedDetails(e)
-              : isAccountChangedModal
-                ? modalTargetName
-                  ? `Profile updated for ${modalTargetName}`
-                  : 'Profile updated'
-                : isProfileModal
-                  ? isAdminProfileSource(dModal.source)
-                    ? `Updated by admin (${dModal.actorEmail || e?.actorEmail || 'unknown'})`
-                    : 'Self-service account update'
-                  : isSessionModal
-                    ? formatDescription(
-                        String(e?.eventType || ed?.eventType || 'session_created'),
-                        ed?.description,
-                        auditEventMetadata(e),
-                      )
-                    : ed?.userName
-                      ? `Session created for ${normalizeInstituteAdminDisplayName(ed.userName, ed.userEmail)}`
-                      : ed?.userEmail
-                        ? `Session created for ${ed.userEmail}`
-                        : ''
-            const eventDataJson = formatAuditModalEventDataJson(e, eventTitle)
-
-            return (
-              <div
-                className="fixed inset-0 z-50 flex items-start justify-center bg-black/70 p-4 md:items-center"
-                role="dialog"
-                aria-modal="true"
-                onMouseDown={(ev) => {
-                  if (ev.target === ev.currentTarget) setEventDetailsOpen(false)
-                }}
-              >
-                <div className="w-full max-w-3xl overflow-hidden rounded-2xl bg-[#0a0a0a] text-white shadow-2xl ring-1 ring-white/10">
-                  <div className="relative px-6 pb-2 pt-6">
-                    <button
-                      type="button"
-                      className="absolute right-4 top-4 inline-flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 bg-[#0a0a0a] text-white/80 hover:bg-white/5 hover:text-white"
-                      onClick={() => setEventDetailsOpen(false)}
-                      aria-label="Close"
-                    >
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
-                        <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-                      </svg>
-                    </button>
-
-                    <div className="flex items-start gap-3 pr-10">
-                      <span className="mt-1 flex shrink-0 text-white/90" aria-hidden>
-                        <AuditEventGlyph e={e} />
-                      </span>
-                      <div className="min-w-0">
-                        <div className="text-2xl font-bold leading-tight">{eventTitle || 'Event Details'}</div>
-                        {subtitle ? <div className="mt-1 text-sm font-semibold text-white/60">{subtitle}</div> : null}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="px-6 pb-6">
-                    <div className="overflow-hidden rounded-xl border border-white/10">
-                      <div className="divide-y divide-white/10">
-                        <div className="flex items-center justify-between gap-4 px-5 py-4">
-                          <div className="text-sm font-semibold text-white/60">Time</div>
-                          <div className="flex items-baseline gap-3 text-right">
-                            <div className="text-sm font-bold text-white">{fmtRelative(t) || formatAuditTime(t)}</div>
-                            <div className="text-sm font-semibold text-white/60">{formatAuditTime(t)}</div>
-                          </div>
-                        </div>
-                        <div className="flex items-center justify-between gap-4 px-5 py-4">
-                          <div className="text-sm font-semibold text-white/60">User</div>
-                          <div className="text-right">
-                            <div className="text-sm font-bold text-white">{modalDisplayName || '—'}</div>
-                            {modalDisplayEmail ? (
-                              <div className="text-sm font-semibold text-white/60">{modalDisplayEmail}</div>
-                            ) : null}
-                          </div>
-                        </div>
-                        {isProfileModal || isAccountChangedModal ? (
-                          <div className="px-5 py-4">
-                            <div className="text-sm font-semibold text-white/60">Fields changed</div>
-                            <UpdatedFieldsBadges
-                              fields={modalChangedFields}
-                              variant={isStudentProfileUpdateEvent(e) ? 'student' : 'neutral'}
-                              showFieldLabel={isAccountChangedModal}
-                              className="[&_span]:border-blue-400/40 [&_span]:bg-blue-500/20 [&_span]:text-blue-100"
-                            />
-                          </div>
-                        ) : null}
-                      </div>
-                    </div>
-
-                    <div className="mt-6">
-                      <div className="text-xs font-bold uppercase tracking-wider text-white/50">Event Data</div>
-                      <pre className="mt-3 max-h-[360px] overflow-auto rounded-xl border border-white/10 bg-[#0f0f10] p-5 text-xs leading-relaxed text-white/90">
-                        {eventDataJson || '{}'}
-                      </pre>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )
-          })() : null}
         </div>
       </section>
 

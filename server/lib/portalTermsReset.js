@@ -15,7 +15,7 @@ export async function clearPortalTermsOnLogout(pool, user) {
   const role = String(user.role || '').trim().toLowerCase()
 
   try {
-    if (role === 'admin') {
+    if (role === 'admin' || role === 'registrar') {
       await clearAdminTermsAccepted(pool, String(user.id))
     }
 
