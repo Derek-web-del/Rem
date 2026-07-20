@@ -4,17 +4,22 @@ import PortalTermsMain from '../../components/PortalTermsMain.jsx'
 import TermsAndConditions from '../../TermsAndConditions.jsx'
 import { isTermsAccepted, setTermsAccepted } from '../../lib/termsSession.js'
 import { acceptAdminTerms } from '../../lib/adminPortal.js'
+import { authClient } from '../../lib/auth-client.js'
+import { homePathForRole, normalizeRole } from '../../lib/roleAccess.js'
 import AdminMainHeader from './AdminMainHeader.jsx'
 
 const SCHOOL_NAME = import.meta.env.VITE_SCHOOL_DISPLAY_NAME || 'Glendale School, Inc.'
 
 export default function AdminTermsPage() {
   const navigate = useNavigate()
+  const { data: sessionData } = authClient.useSession()
+  const role = normalizeRole(sessionData?.user?.role)
+  const portalLabel = role === 'registrar' ? 'REGISTRAR' : 'SCHOOL ADMIN'
   const gateMode = !isTermsAccepted()
 
   const goDashboard = useCallback(() => {
-    navigate('/admin/institute_dashboard', { replace: true })
-  }, [navigate])
+    navigate(homePathForRole(role), { replace: true })
+  }, [navigate, role])
 
   const handleAccepted = useCallback(async () => {
     setTermsAccepted()
@@ -28,7 +33,7 @@ export default function AdminTermsPage() {
 
   return (
     <>
-      <AdminMainHeader pageTitle="Terms and Policy" />
+      <AdminMainHeader pageTitle="Terms and Policy" portalLabel={portalLabel} />
       <PortalTermsMain>
         <TermsAndConditions
           schoolName={SCHOOL_NAME}

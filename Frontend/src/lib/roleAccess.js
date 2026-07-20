@@ -131,6 +131,21 @@ export function isNavAllowedForRole(navId, role) {
   return false
 }
 
+/** Labels for Archive Vault restore password confirmation modal. */
+export function restorePasswordLabels(role) {
+  const r = normalizeRole(role)
+  if (r === 'registrar') {
+    return {
+      confirmLabel: 'Confirm with your registrar password',
+      placeholder: 'Your registrar password',
+    }
+  }
+  return {
+    confirmLabel: 'Confirm with your admin password',
+    placeholder: 'Your admin password',
+  }
+}
+
 export function redirectPathForWrongRole(currentRole, area) {
   const role = normalizeRole(currentRole)
   if (area === 'student') {

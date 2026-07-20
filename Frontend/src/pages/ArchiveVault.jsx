@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { restorePasswordLabels } from '../lib/roleAccess.js'
 import { useNavigate } from 'react-router-dom'
 import BackButton from '../components/BackButton.jsx'
 import ArchivedStudentDetail from '../components/ArchivedStudentDetail.jsx'
@@ -78,7 +79,8 @@ function MaskedCell({ children }) {
   )
 }
 
-export default function ArchiveVault() {
+export default function ArchiveVault({ portalRole = 'admin' }) {
+  const restoreLabels = useMemo(() => restorePasswordLabels(portalRole), [portalRole])
   const navigate = useNavigate()
   const toast = useNotify()
   const [activeTab, setActiveTab] = useState('students')
@@ -431,7 +433,7 @@ export default function ArchiveVault() {
               or Faculties.
             </p>
             <label className="mt-4 block">
-              <span className="text-sm font-semibold text-neutral-800">Confirm with your admin password</span>
+              <span className="text-sm font-semibold text-neutral-800">{restoreLabels.confirmLabel}</span>
               <p className="mt-1 text-xs text-neutral-500">
                 Re-enter your password to confirm this restore action.
               </p>
@@ -439,7 +441,7 @@ export default function ArchiveVault() {
                 className="mt-2 w-full rounded-lg border border-neutral-300 bg-white py-2 pl-3 pr-10 text-sm"
                 value={restorePassword}
                 onChange={(e) => setRestorePassword(e.target.value)}
-                placeholder="Your admin password"
+                placeholder={restoreLabels.placeholder}
                 autoComplete="current-password"
                 disabled={restoreSubmitting}
               />

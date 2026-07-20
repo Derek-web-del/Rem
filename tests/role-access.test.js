@@ -7,6 +7,7 @@ import {
   portalMatchesUserRole,
   portalMismatchMessage,
   resolveAuthRoleForPortal,
+  restorePasswordLabels,
 } from '../Frontend/src/lib/roleAccess.js'
 
 describe('roleAccess portal RBAC', () => {
@@ -48,5 +49,12 @@ describe('roleAccess portal RBAC', () => {
     assert.match(portalMismatchMessage('INSTITUTE', 'student'), /Student/i)
     assert.match(portalMismatchMessage('STUDENT', 'admin'), /Institute/i)
     assert.match(portalMismatchMessage('INSTITUTE', 'registrar'), /Registrar/i)
+  })
+
+  test('restorePasswordLabels uses role-appropriate copy', () => {
+    assert.match(restorePasswordLabels('registrar').confirmLabel, /registrar password/i)
+    assert.match(restorePasswordLabels('registrar').placeholder, /registrar password/i)
+    assert.match(restorePasswordLabels('admin').confirmLabel, /admin password/i)
+    assert.match(restorePasswordLabels('admin').placeholder, /admin password/i)
   })
 })

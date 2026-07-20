@@ -11,7 +11,6 @@ import { homePathForRole, markAccessDenied, normalizeRole } from '../lib/roleAcc
 
 const InstituteDashboard = lazy(() => import('../modules/dashboard/InstituteDashboardModule.jsx'))
 const AdminLayout = lazy(() => import('../layouts/AdminLayout.jsx'))
-const AdminTermsPage = lazy(() => import('../pages/admin/AdminTermsPage.jsx'))
 const AdminLessonFormPage = lazy(() => import('../pages/admin/AdminLessonFormPage.jsx'))
 
 const IDLE_MS = 30 * 60 * 1000
@@ -171,9 +170,7 @@ export default function AdminDashboardRoute() {
           </div>
         }
       >
-        <AdminLayout onLogout={handleDashboardLogout}>
-          <AdminTermsPage />
-        </AdminLayout>
+        <InstituteDashboard onLogout={handleDashboardLogout} schoolName="Glendale School, Inc." />
       </Suspense>
     )
   }

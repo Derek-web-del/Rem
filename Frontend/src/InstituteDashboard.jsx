@@ -13,6 +13,7 @@ import { mapCurriculumGuideList } from './modules/curriculum/curriculumGuideMapp
 import { useNotify } from './components/notifications.jsx'
 import { authClient } from './lib/auth-client.js'
 import { getLmsStateEndpointUrl, apiUrl } from './lib/lmsStateStorage.js'
+import { PROFILE_PHOTO_MAX_BYTES } from './lib/uploadLimits.js'
 import { saveListSnapshot, getListSnapshot, getListSnapshotWithMeta } from './lib/indexedDB.js'
 import { isOnline } from './lib/offlineSync.js'
 import { warmAdminOfflineCache } from './lib/adminPortalOffline.js'
@@ -28,6 +29,7 @@ import BackupPage from './pages/BackupPage.jsx'
 import ArchiveVault from './pages/ArchiveVault.jsx'
 import AdminTurnoverPage from './pages/admin/AdminTurnoverPage.jsx'
 import RegistrarAccountsPage from './pages/admin/RegistrarAccountsPage.jsx'
+import AdminTermsPage from './pages/admin/AdminTermsPage.jsx'
 import AuditStatisticsSection from './components/AuditStatisticsSection.jsx'
 import AdminLatestAnnouncementsExpanded from './components/admin/AdminLatestAnnouncementsExpanded.jsx'
 import AuthenticatedImage from './components/AuthenticatedImage.jsx'
@@ -770,12 +772,19 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
   }, [adminSession])
   const location = useLocation()
   const navigate = useNavigate()
+  const onTermsPage = location.pathname.replace(/\/+$/, '') === '/admin/terms'
   const { collapsed: sidebarCollapsed, toggleCollapsed: toggleSidebarCollapsed } = useSidebarCollapsed(
     SIDEBAR_COLLAPSED_KEYS.admin,
   )
   const fileInputRef = useRef(null)
   const curriculumRef = useRef(null)
   const [adminAvatarDataUrl, setAdminAvatarDataUrl] = useState('')
+  const profileAvatarSrc = isRegistrar
+    ? String(adminSession?.user?.image || '').trim()
+    : adminAvatarDataUrl
+  const profileAvatarSeed = isRegistrar
+    ? String(adminSession?.user?.email || adminDisplayName || 'registrar')
+    : 'admin'
   const [activeNav, setActiveNav] = useState(
     () => navIdFromPath(typeof window !== 'undefined' ? window.location.pathname : '') || 'dashboard',
   )
@@ -2039,10 +2048,35 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
       window.alert('Please select a PNG, JPG, or JPEG image.')
       return
     }
+    if (file.size > PROFILE_PHOTO_MAX_BYTES) {
+      window.alert('Photo too large. Maximum size is 2MB.')
+      return
+    }
     const reader = new FileReader()
     reader.onload = () => {
       const result = typeof reader.result === 'string' ? reader.result : ''
       if (!result) return
+      if (isRegistrar) {
+        void (async () => {
+          try {
+            const res = await fetch(apiUrl('/api/v1/registrar/profile-photo'), {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              credentials: 'include',
+              body: JSON.stringify({ profileImageDataUrl: result }),
+            })
+            const data = await res.json().catch(() => ({}))
+            if (!res.ok) {
+              throw new Error(data?.message || 'Could not update profile photo.')
+            }
+            await authClient.getSession()
+            toast.success('Profile photo updated.')
+          } catch (err) {
+            toast.error(err?.message || 'Could not update profile photo.')
+          }
+        })()
+        return
+      }
       setAdminAvatarDataUrl(result)
       try {
         localStorage.setItem(ADMIN_AVATAR_STORAGE_KEY, result)
@@ -3190,7 +3224,9 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
             />
           </div>
 
-          {activeNav === 'section' ? (
+          {onTermsPage ? (
+            <AdminTermsPage />
+          ) : activeNav === 'section' ? (
             sectionContent()
           ) : activeNav === 'monitoring' ? (
             <MonitoringRecords />
@@ -3203,7 +3239,7 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
           ) : activeNav === 'backup' ? (
             <BackupPage />
           ) : activeNav === 'archive' ? (
-            <ArchiveVault />
+            <ArchiveVault portalRole={portalRole} />
           ) : activeNav === 'students' ? (
             <StudentsPage
               sections={sections}
@@ -3251,32 +3287,28 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
             <>
             <section className="mb-6 rounded-xl border border-neutral-100 bg-white p-5 shadow-md md:p-6">
               <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:gap-6">
-                {adminAvatarDataUrl ? (
+                {profileAvatarSrc ? (
                   <img
-                    src={adminAvatarDataUrl}
-                    alt="Admin profile"
+                    src={profileAvatarSrc}
+                    alt="Profile"
                     className="h-[72px] w-[72px] rounded-full object-cover ring-2 ring-white shadow-sm"
                   />
                 ) : (
-                  <Avatar seed="admin" size={72} />
+                  <Avatar seed={profileAvatarSeed} size={72} />
                 )}
                 <div className="min-w-0 text-left">
                   <h2 className="text-xl font-bold text-neutral-900 md:text-2xl">{adminDisplayName}</h2>
                   <p className="mt-1 text-sm text-neutral-600">
                     {isRegistrar ? 'Registrar' : 'Admin'}
-                    {!isRegistrar ? (
-                      <>
-                        {' '}
-                        |{' '}
-                        <button
-                          type="button"
-                          onClick={handleChooseAvatar}
-                          className="font-medium text-[#3182ce] underline-offset-2 hover:underline"
-                        >
-                          Change Image
-                        </button>
-                      </>
-                    ) : null}
+                    {' '}
+                    |{' '}
+                    <button
+                      type="button"
+                      onClick={handleChooseAvatar}
+                      className="font-medium text-[#3182ce] underline-offset-2 hover:underline"
+                    >
+                      Change Image
+                    </button>
                   </p>
                   <input
                     ref={fileInputRef}

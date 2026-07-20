@@ -1,4 +1,8 @@
 import { customActivityLogger } from '../services/CustomActivityLogger.js'
+import {
+  PHOTO_MAX_BYTES,
+  estimateDataUrlDecodedBytes,
+} from '../../shared/uploadLimits.js'
 
 /** OWASP A07 — minimum password policy (also enforced in server/auth.js). */
 export const STRONG_PASSWORD_REGEX =
@@ -49,6 +53,29 @@ export function validatePortalUsername(username, label = 'Login ID') {
     throw err
   }
   return normalized
+}
+
+const PROFILE_IMAGE_DATA_URL_REGEX = /^data:image\/(png|jpeg|jpg);base64,/i
+
+/**
+ * Validate optional profile image data URL for portal users.
+ * @returns {string|null} normalized data URL, or null if empty/omitted
+ */
+export function validateProfileImageDataUrl(value, label = 'Profile photo') {
+  const raw = String(value || '').trim()
+  if (!raw) return null
+  if (!PROFILE_IMAGE_DATA_URL_REGEX.test(raw)) {
+    const err = new Error(`${label} must be a PNG or JPG image.`)
+    err.code = 'INVALID_IMAGE'
+    throw err
+  }
+  const bytes = estimateDataUrlDecodedBytes(raw)
+  if (bytes > PHOTO_MAX_BYTES) {
+    const err = new Error(`${label} is too large. Maximum size is 2MB.`)
+    err.code = 'IMAGE_TOO_LARGE'
+    throw err
+  }
+  return raw
 }
 
 /** Fields users must not change on their own account (OWASP A01 privilege escalation). */

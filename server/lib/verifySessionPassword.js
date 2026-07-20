@@ -55,7 +55,7 @@ export async function verifyAdminPassword(pool, userId, password) {
     return { ok: false, code: 'UNAUTHORIZED', message: 'Admin session required.' }
   }
   if (!pwd) {
-    return { ok: false, code: 'PASSWORD_REQUIRED', message: 'Admin password is required to restore.' }
+    return { ok: false, code: 'PASSWORD_REQUIRED', message: 'Password is required to restore.' }
   }
 
   const state = getRestorePasswordFailureState(uid)
