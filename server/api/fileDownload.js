@@ -7,6 +7,8 @@ import { fetchStudentRowForSession, normalizeGradeLevel } from '../lib/studentSe
 import { fetchFacultyRowForSession } from '../lib/facultySession.js'
 import { subjectAssetsRoot, uploadsRoot, normalizeStoredUploadPath } from '../lib/uploadPaths.js'
 import { ensureLocalUploadFile } from '../lib/uploadFileStorage.js'
+import { isInstituteStaffRole, canAccessFacultyPhotoFiles } from '../lib/portalFileAccess.js'
+import { isStoredFacultyPhotoPath } from '../lib/facultyPhotoStorage.js'
 
 const ALLOWED_CATEGORIES = new Set([
   'assignments',
@@ -87,9 +89,32 @@ function uploadPathLookupVariants(category, filePath) {
 function parseDataUrlBuffer(dataUrl) {
   const raw = String(dataUrl || '').trim()
   if (!raw.startsWith('data:')) return null
-  const match = /^data:([^;]+);base64,(.+)$/i.exec(raw)
+  const match = /^data:([^;]+);base64,(.+)$/is.exec(raw)
   if (!match) return null
   return { mime: match[1], buffer: Buffer.from(match[2], 'base64') }
+}
+
+function sendImageFileResponse(res, filePath) {
+  const ext = path.extname(filePath).toLowerCase()
+  if (['.jpg', '.jpeg'].includes(ext)) {
+    res.setHeader('Content-Type', 'image/jpeg')
+  } else if (ext === '.png') {
+    res.setHeader('Content-Type', 'image/png')
+  } else if (ext === '.webp') {
+    res.setHeader('Content-Type', 'image/webp')
+  } else if (ext === '.gif') {
+    res.setHeader('Content-Type', 'image/gif')
+  }
+  res.sendFile(filePath)
+}
+
+async function trySendStoredPhotoFile(res, storedPath) {
+  const normalized = normalizeStoredUploadPath(String(storedPath || '').trim())
+  if (!normalized) return false
+  const hydrated = await ensureLocalUploadFile(normalized)
+  if (!hydrated || !fs.existsSync(hydrated) || !fs.statSync(hydrated).isFile()) return false
+  sendImageFileResponse(res, hydrated)
+  return true
 }
 
 async function tryServeAnnouncementFromDatabase(filePath, res) {
@@ -185,12 +210,21 @@ async function tryServeFacultyPhotoFromDatabase(filePath, res) {
       )
       row = rows2?.[0]
     }
-    const raw = String(row?.photo_data_url || row?.photo_url || '').trim()
-    const parsed = parseDataUrlBuffer(raw)
-    if (!parsed?.buffer?.length) return false
-    res.setHeader('Content-Type', parsed.mime)
-    res.send(parsed.buffer)
-    return true
+    const photoDataUrl = String(row?.photo_data_url || '').trim()
+    const photoPath = String(row?.photo_url || '').trim()
+
+    const parsed = parseDataUrlBuffer(photoDataUrl || photoPath)
+    if (parsed?.buffer?.length) {
+      res.setHeader('Content-Type', parsed.mime)
+      res.send(parsed.buffer)
+      return true
+    }
+
+    if (photoPath && (isStoredFacultyPhotoPath(photoPath) || photoPath.includes('/faculties/'))) {
+      if (await trySendStoredPhotoFile(res, photoPath)) return true
+    }
+
+    return false
   } catch {
     return false
   }
@@ -308,7 +342,7 @@ async function canAccessCategoryFile(req, auth, category, relativePath) {
 
   const filePath = storedUploadPath(category, relativePath)
 
-  if (role === 'admin') return { ok: true }
+  if (isInstituteStaffRole(role)) return { ok: true }
 
   const facultyRow = isFacultyRole(role) ? await fetchFacultyRowForSession(pool, user) : null
   const studentRow = role === 'student' ? await fetchStudentRowForSession(pool, user) : null
@@ -325,7 +359,7 @@ async function canAccessCategoryFile(req, auth, category, relativePath) {
       return { ok: true }
 
     case 'photos':
-      if (isFacultyRole(role) || role === 'student' || role === 'admin') return { ok: true }
+      if (canAccessFacultyPhotoFiles(role)) return { ok: true }
       return { ok: false, status: 403 }
 
     case 'announcements':

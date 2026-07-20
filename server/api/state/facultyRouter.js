@@ -11,7 +11,7 @@ import { customActivityLogger } from '../../services/CustomActivityLogger.js'
 import { GENERIC_SERVER_ERROR, sendSafeServerError } from '../../lib/safeApiError.js'
 import { requireDestructiveConfirm } from '../../lib/security.js'
 import { facultyPhotoUploadMiddleware, getFacultyUploadFile, normalizeFacultyMultipartBody } from '../../lib/facultyMultipart.js'
-import { resolveFacultyPhotoForDb } from '../../lib/facultyPhotoStorage.js'
+import { resolveFacultyPhotoForDb, syncFacultyAuthUserProfileImage } from '../../lib/facultyPhotoStorage.js'
 import {
   rosterAuthSyncErrorResponse,
   syncRosterPortalAuthUser,
@@ -199,6 +199,15 @@ export function registerFacultyRoutes(router, ctx) {
         throw new Error('Faculty insert did not return a row.')
       }
       console.log(`[faculty] POST /v1/faculty - saved id=${inserted.id}`)
+
+      const savedPhotoUrl = String(inserted.photo_url || inserted.photo_data_url || b.photo_url || '').trim()
+      if (savedPhotoUrl && auth_user_id) {
+        try {
+          await syncFacultyAuthUserProfileImage(pool, auth_user_id, savedPhotoUrl)
+        } catch (syncPhotoErr) {
+          console.warn('[POST /v1/faculty] auth profile image sync failed:', syncPhotoErr?.message || syncPhotoErr)
+        }
+      }
 
       await upsertFacultyInAppStateJson(pool, inserted)
 
@@ -439,6 +448,16 @@ export function registerFacultyRoutes(router, ctx) {
       }
 
       await upsertFacultyInAppStateJson(pool, updated)
+
+      const resolvedAuthUserId = String(updated.auth_user_id || syncedAuthUserId || '').trim()
+      const savedPhotoUrl = String(updated.photo_url || updated.photo_data_url || photoResolve.photoUrl || '').trim()
+      if (savedPhotoUrl && resolvedAuthUserId && photoResolve.photoSent) {
+        try {
+          await syncFacultyAuthUserProfileImage(pool, resolvedAuthUserId, savedPhotoUrl)
+        } catch (syncPhotoErr) {
+          console.warn('[PUT /v1/faculty/:id] auth profile image sync failed:', syncPhotoErr?.message || syncPhotoErr)
+        }
+      }
 
       console.log('[Diagnostic] Sending 200 response to client')
       res.json({ ok: true, success: true, faculty: facultyRowToResponse(updated) })

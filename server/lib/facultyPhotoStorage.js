@@ -129,3 +129,12 @@ export async function resolveFacultyPhotoForDb({ file, body, facultyId, isUpdate
   body.photoDataUrl = nextPath
   return { photoSent: true, photoUrl: nextPath }
 }
+
+/** Keep Better Auth user.image in sync with roster photo path for teacher session fallbacks. */
+export async function syncFacultyAuthUserProfileImage(pool, authUserId, photoUrl) {
+  const uid = String(authUserId || '').trim()
+  const image = String(photoUrl || '').trim()
+  if (!uid || !image) return
+  const now = new Date().toISOString()
+  await pool.query(`UPDATE "user" SET image = $1, "updatedAt" = $2 WHERE id = $3`, [image, now, uid])
+}
