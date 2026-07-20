@@ -33,10 +33,15 @@ export default function RegistrarAccountsPage() {
     e.preventDefault()
     setSubmitting(true)
     try {
+      const payload = {
+        ...form,
+        username: String(form.username || '').trim().toLowerCase(),
+        email: String(form.email || '').trim().toLowerCase(),
+      }
       const res = await apiFetch(apiUrl('/api/v1/admin/registrars'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form),
+        body: JSON.stringify(payload),
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) {
@@ -85,10 +90,16 @@ export default function RegistrarAccountsPage() {
             <input
               type="text"
               required
+              minLength={3}
+              pattern="[A-Za-z0-9_.]+"
+              title="Letters, numbers, dots, and underscores only (min 3 characters)"
               value={form.username}
               onChange={(e) => setForm((p) => ({ ...p, username: e.target.value }))}
               className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm"
             />
+            <p className="mt-1 text-xs text-neutral-500">
+              Use letters, numbers, dots, and underscores only (e.g. registrar.office). Do not use your email address.
+            </p>
           </div>
           <div>
             <label className="mb-1 block text-sm font-medium text-neutral-700">Temporary password</label>

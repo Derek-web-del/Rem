@@ -1,7 +1,7 @@
 import { getPgPool, isPgConfigured } from '../pgPool.js'
-import { sendSafeServerError } from '../lib/safeApiError.js'
+import { sendClientSafeError, sendSafeServerError } from '../lib/safeApiError.js'
 import { requireAdminSession, auditInstituteRecord } from './state/shared.js'
-import { validatePasswordStrength } from '../lib/security.js'
+import { validatePasswordStrength, validatePortalUsername } from '../lib/security.js'
 import { findAuthUserIdByEmail, findAuthUserIdByUsername } from './logs.js'
 import { createInstituteAuthUserDirect } from '../lib/provisionPortalAuthUser.js'
 
@@ -52,17 +52,18 @@ export function createRegistrarsRouter(express, auth) {
 
       const name = String(req.body?.name || '').trim()
       const email = String(req.body?.email || '').trim().toLowerCase()
-      const username = String(req.body?.username || req.body?.loginId || email || '').trim().toLowerCase()
       const password = String(req.body?.password || '').trim()
 
-      if (!name || !email || !username) {
-        res.status(400).json({ error: 'BAD_REQUEST', message: 'Name, email, and username are required.' })
+      if (!name || !email) {
+        res.status(400).json({ error: 'BAD_REQUEST', message: 'Name and email are required.' })
         return
       }
+      let username = ''
       try {
+        username = validatePortalUsername(req.body?.username || req.body?.loginId, 'Login ID')
         validatePasswordStrength(password, 'Password')
       } catch (e) {
-        res.status(400).json({ error: e.code || 'WEAK_PASSWORD', message: e.message })
+        res.status(400).json({ error: e.code || 'BAD_REQUEST', message: e.message })
         return
       }
 
@@ -103,7 +104,7 @@ export function createRegistrarsRouter(express, auth) {
         registrar: { id: created.userId, name, email, username, role: 'registrar' },
       })
     } catch (e) {
-      sendSafeServerError(res, e, 'POST /api/v1/admin/registrars')
+      sendClientSafeError(res, e, 'POST /api/v1/admin/registrars')
     }
   })
 

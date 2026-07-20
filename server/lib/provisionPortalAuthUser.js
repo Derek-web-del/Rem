@@ -65,19 +65,48 @@ export async function createInstituteAuthUserDirect(pool, opts) {
 
   const userId = randomUUID()
   const now = new Date().toISOString()
-  await pool.query(
-    `
-      INSERT INTO "user" (
-        id, name, email, "emailVerified", role, username, "displayUsername",
-        "twoFactorEnabled", "failedLoginAttempts", "lockedUntil", "createdAt", "updatedAt"
-      )
-      VALUES ($1, $2, $3, true, $4, $5, $5, true, 0, NULL, $6, $6)
-    `,
-    [userId, name, email, role, username, now],
-  )
-  await ensureCredentialAccount(pool, userId, email, password)
-  await ensurePortalUserEmailOtpMfa(pool, userId, { role })
-  return { ok: true, userId }
+
+  async function rollbackPartialUser() {
+    try {
+      await pool.query('DELETE FROM account WHERE "userId" = $1', [userId])
+      await pool.query('DELETE FROM "twoFactor" WHERE "userId" = $1', [userId])
+      await pool.query('DELETE FROM "user" WHERE id = $1', [userId])
+    } catch {
+      /* best-effort cleanup */
+    }
+  }
+
+  try {
+    await pool.query(
+      `
+        INSERT INTO "user" (
+          id, name, email, "emailVerified", role, username, "displayUsername",
+          "twoFactorEnabled", "failedLoginAttempts", "lockedUntil", "createdAt", "updatedAt"
+        )
+        VALUES ($1, $2, $3, true, $4, $5, $5, true, 0, NULL, $6, $6)
+      `,
+      [userId, name, email, role, username, now],
+    )
+    await ensureCredentialAccount(pool, userId, email, password)
+    await ensurePortalUserEmailOtpMfa(pool, userId, { role })
+    return { ok: true, userId }
+  } catch (e) {
+    await rollbackPartialUser()
+    const pgCode = String(e?.code || '')
+    if (pgCode === '23505') {
+      return {
+        ok: false,
+        code: 'USER_EXISTS',
+        message: 'A user with this email or login ID already exists.',
+      }
+    }
+    console.error('[auth] createInstituteAuthUserDirect failed:', e?.message || e)
+    return {
+      ok: false,
+      code: 'CREATE_FAILED',
+      message: 'Could not create the account. Check the login ID format and try again.',
+    }
+  }
 }
 
 async function trySignUp(auth, body) {

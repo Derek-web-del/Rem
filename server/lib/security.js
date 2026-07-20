@@ -15,6 +15,42 @@ export function validatePasswordStrength(password, label = 'Password') {
   }
 }
 
+/** Matches Better Auth username plugin defaults (letters, digits, underscore, dot). */
+export const PORTAL_USERNAME_REGEX = /^[a-zA-Z0-9_.]+$/
+export const PORTAL_USERNAME_MIN_LENGTH = 3
+export const PORTAL_USERNAME_MAX_LENGTH = 255
+
+/**
+ * Validate portal login IDs before provisioning auth users.
+ * @returns {string} normalized lowercase username
+ */
+export function validatePortalUsername(username, label = 'Login ID') {
+  const normalized = String(username || '').trim().toLowerCase()
+  if (!normalized) {
+    const err = new Error(`${label} is required.`)
+    err.code = 'BAD_REQUEST'
+    throw err
+  }
+  if (normalized.length < PORTAL_USERNAME_MIN_LENGTH) {
+    const err = new Error(`${label} must be at least ${PORTAL_USERNAME_MIN_LENGTH} characters.`)
+    err.code = 'INVALID_USERNAME'
+    throw err
+  }
+  if (normalized.length > PORTAL_USERNAME_MAX_LENGTH) {
+    const err = new Error(`${label} must be at most ${PORTAL_USERNAME_MAX_LENGTH} characters.`)
+    err.code = 'INVALID_USERNAME'
+    throw err
+  }
+  if (!PORTAL_USERNAME_REGEX.test(normalized)) {
+    const err = new Error(
+      `${label} may only contain letters, numbers, dots, and underscores (no @, spaces, or hyphens).`,
+    )
+    err.code = 'INVALID_USERNAME'
+    throw err
+  }
+  return normalized
+}
+
 /** Fields users must not change on their own account (OWASP A01 privilege escalation). */
 export const FORBIDDEN_SELF_UPDATE_FIELDS = [
   'role',
