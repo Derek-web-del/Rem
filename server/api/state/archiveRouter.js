@@ -244,65 +244,12 @@ export function registerArchiveRoutes(router, ctx) {
     }
   })
 
-  router.delete('/v1/admin/permanent-purge/:type/:id', async (req, res) => {
-    const adminSession = await requireRegistrarSession(req, res, auth)
-    if (!adminSession) return
-    if (!requireDestructiveConfirm(req, res, 'PURGE')) return
-    const type = parseArchiveEntityType(req.params.type)
-    if (!type) {
-      res.status(400).json({ success: false, message: 'Invalid archive type.' })
-      return
-    }
-    const rawId = String(req.params.id || '').trim()
-    if (!rawId) {
-      res.status(400).json({ success: false, message: 'Invalid id.' })
-      return
-    }
-    const idParam = type === 'students' ? Number(rawId) : rawId
-    if (type === 'students' && (!Number.isFinite(idParam) || idParam <= 0)) {
-      res.status(400).json({ success: false, message: 'Invalid student id.' })
-      return
-    }
-    const tableSql = resolveArchiveTableSql(type)
-    if (!tableSql) {
-      res.status(400).json({ success: false, message: 'Invalid archive type.' })
-      return
-    }
-    try {
-      const snapshot =
-        type === 'students'
-          ? await fetchArchivedStudentSnapshot(pool, idParam)
-          : await fetchArchivedFacultySnapshot(pool, rawId)
-      if (!snapshot?.archived_at) {
-        res.status(404).json({ success: false, message: 'Record is not in archive.' })
-        return
-      }
-
-      const recordName =
-        type === 'students'
-          ? studentDisplayName(snapshot) || `Student #${rawId}`
-          : facultyDisplayName(snapshot)
-      const eventType =
-        type === 'students' ? 'STUDENT_PERMANENTLY_PURGED' : 'FACULTY_PERMANENTLY_PURGED'
-
-      await pool.query(`DELETE FROM ${tableSql} WHERE id = $1`, [idParam])
-      await auditInstituteRecord(adminSession, eventType, {
-        recordType: type === 'students' ? 'student' : 'faculty',
-        recordId: String(rawId),
-        description: `${type === 'students' ? 'Student' : 'Faculty'} permanently purged from archive: ${recordName}`,
-        details: {
-          record_type: type === 'students' ? 'student' : 'faculty',
-          record_id: String(rawId),
-          record_name: recordName,
-          archived_at: archivedAt.toISOString(),
-          purge_type: 'permanent',
-        },
-      })
-      res.json({ ok: true, success: true, type, id: String(rawId), purged: true })
-    } catch (e) {
-      logStatePostgresError('DELETE /v1/admin/permanent-purge/:type/:id', e)
-      sendSafeServerError(res, e, 'DELETE /v1/admin/permanent-purge/:type/:id')
-    }
+  router.delete('/v1/admin/permanent-purge/:type/:id', async (_req, res) => {
+    res.status(403).json({
+      success: false,
+      error: 'PERMANENT_PURGE_DISABLED',
+      message: 'Permanent delete from archive is disabled. Records are retained for data privacy.',
+    })
   })
 
   /** Immediate roster delete disabled — use Archive with reason instead. */

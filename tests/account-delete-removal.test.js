@@ -30,3 +30,15 @@ describe('immediate-purge disabled contract', () => {
     assert.match(body.message, /Archive/i)
   })
 })
+
+describe('permanent-purge disabled contract', () => {
+  it('documents expected API response shape', () => {
+    const body = {
+      success: false,
+      error: 'PERMANENT_PURGE_DISABLED',
+      message: 'Permanent delete from archive is disabled. Records are retained for data privacy.',
+    }
+    assert.equal(body.error, 'PERMANENT_PURGE_DISABLED')
+    assert.match(body.message, /data privacy/i)
+  })
+})

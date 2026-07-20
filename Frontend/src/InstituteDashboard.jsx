@@ -3353,12 +3353,16 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
               </div>
             </div>
 
-            <AdminLatestAnnouncementsExpanded
-              announcements={recentAnnouncements}
-              onViewAll={() => navigateToNav('updates')}
-            />
+            {!isRegistrar ? (
+              <>
+                <AdminLatestAnnouncementsExpanded
+                  announcements={recentAnnouncements}
+                  onViewAll={() => navigateToNav('updates')}
+                />
 
-            <AuditStatisticsSection variant="dashboard" enabled />
+                <AuditStatisticsSection variant="dashboard" enabled />
+              </>
+            ) : null}
             </>
           ) : null}
           </>

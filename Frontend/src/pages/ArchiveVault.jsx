@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import BackButton from '../components/BackButton.jsx'
 import ArchivedStudentDetail from '../components/ArchivedStudentDetail.jsx'
@@ -8,7 +8,6 @@ import { useNotify } from '../components/notifications.jsx'
 import { apiUrl } from '../lib/lmsStateStorage.js'
 
 const ACTION_BLUE = '#1e4fa3'
-const PURGE_VERIFICATION_PHRASE = 'PERMANENTLY PURGE DATA'
 const MASKED_LABEL = 'HIDDEN/ARCHIVED'
 
 function formatArchivedAt(iso) {
@@ -90,9 +89,6 @@ export default function ArchiveVault() {
   const [restoreTarget, setRestoreTarget] = useState(null)
   const [restorePassword, setRestorePassword] = useState('')
   const [restoreSubmitting, setRestoreSubmitting] = useState(false)
-  const [purgeTarget, setPurgeTarget] = useState(null)
-  const [purgePhrase, setPurgePhrase] = useState('')
-  const [purgeSubmitting, setPurgeSubmitting] = useState(false)
   const [actionId, setActionId] = useState('')
   const [selectedRecord, setSelectedRecord] = useState(null)
   const [recordType, setRecordType] = useState('')
@@ -168,11 +164,6 @@ export default function ArchiveVault() {
     setDetailError('')
   }, [])
 
-  const purgeUnlocked = useMemo(
-    () => purgePhrase.trim() === PURGE_VERIFICATION_PHRASE,
-    [purgePhrase],
-  )
-
   async function executeRestore(type, id, password) {
     const key = `${type}:${id}`
     setActionId(key)
@@ -222,41 +213,6 @@ export default function ArchiveVault() {
     }
   }
 
-  async function handlePermanentPurge() {
-    if (!purgeTarget || !purgeUnlocked) return
-    setPurgeSubmitting(true)
-    const { type, id } = purgeTarget
-    try {
-      const res = await fetch(
-        apiUrl(
-          `/api/v1/admin/permanent-purge/${encodeURIComponent(type)}/${encodeURIComponent(String(id))}`,
-        ),
-        { method: 'DELETE', credentials: 'include' },
-      )
-      const data = await res.json().catch(() => ({}))
-      if (!res.ok) {
-        toast.error(String(data?.message || data?.error || `Purge failed (${res.status}).`), {
-          title: 'Purge failed',
-        })
-        return
-      }
-      if (type === 'students') {
-        setArchivedStudents((prev) => prev.filter((r) => String(r.id) !== String(id)))
-      } else {
-        setArchivedFaculties((prev) => prev.filter((r) => String(r.id) !== String(id)))
-      }
-      setPurgeTarget(null)
-      setPurgePhrase('')
-      const name = String(purgeTarget.name || 'Account').trim()
-      const label = purgeTarget.type === 'faculties' ? 'Faculty' : 'Student'
-      toast.deleted(`${label} ${name} account deleted.`, { durationMs: 6000 })
-    } catch (e) {
-      toast.error(String(e?.message || e || 'Network error during purge.'), { title: 'Purge failed' })
-    } finally {
-      setPurgeSubmitting(false)
-    }
-  }
-
   function renderActionButtons(type, row) {
     const id = row.id
     const key = `${type}:${id}`
@@ -281,17 +237,6 @@ export default function ArchiveVault() {
           onClick={() => setRestoreTarget({ type, id, name: displayName })}
         >
           Restore
-        </button>
-        <button
-          type="button"
-          disabled={busy}
-          className="rounded bg-red-600 px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-white shadow-sm ring-2 ring-red-300 hover:bg-red-700 disabled:opacity-60"
-          onClick={() => {
-            setPurgePhrase('')
-            setPurgeTarget({ type, id, name: displayName })
-          }}
-        >
-          Delete Permanently
         </button>
       </div>
     )
@@ -519,58 +464,6 @@ export default function ArchiveVault() {
                 onClick={confirmRestore}
               >
                 {restoreSubmitting ? 'Restoring…' : 'Yes, Restore'}
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
-      {purgeTarget ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-          <div
-            className="w-full max-w-lg rounded-xl border-2 border-red-500 bg-white p-6 shadow-2xl"
-            role="alertdialog"
-            aria-labelledby="purge-modal-title"
-            aria-describedby="purge-modal-desc"
-          >
-            <h3 id="purge-modal-title" className="text-lg font-bold text-red-700">
-              Permanent data purge
-            </h3>
-            <p id="purge-modal-desc" className="mt-2 text-sm text-neutral-700">
-              This action cannot be undone. You are about to permanently delete{' '}
-              <span className="font-semibold text-neutral-900">{purgeTarget.name}</span> from the database.
-            </p>
-            <p className="mt-3 text-sm font-medium text-neutral-800">
-              Type <span className="font-mono text-red-700">{PURGE_VERIFICATION_PHRASE}</span> to confirm:
-            </p>
-            <input
-              type="text"
-              className="mt-2 w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm font-mono uppercase focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-200"
-              value={purgePhrase}
-              onChange={(e) => setPurgePhrase(e.target.value)}
-              autoComplete="off"
-              spellCheck={false}
-              aria-label="Verification phrase"
-            />
-            <div className="mt-5 flex justify-end gap-2">
-              <button
-                type="button"
-                className="rounded bg-neutral-200 px-4 py-2 text-sm font-semibold text-neutral-800"
-                onClick={() => {
-                  setPurgeTarget(null)
-                  setPurgePhrase('')
-                }}
-                disabled={purgeSubmitting}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={!purgeUnlocked || purgeSubmitting}
-                className="rounded bg-red-600 px-4 py-2 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
-                onClick={handlePermanentPurge}
-              >
-                {purgeSubmitting ? 'Purging…' : 'Permanently purge'}
               </button>
             </div>
           </div>
