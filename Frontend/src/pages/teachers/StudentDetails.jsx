@@ -68,7 +68,7 @@ export default function TeacherStudentDetails() {
         ) : (
           <>
             <StudentDetailCard student={student} showHero showTable={false} showEditButton={false} facultyView />
-            <StudentGradesCard studentId={student.id} student={student} readonly />
+            <StudentGradesCard studentId={student.id} student={student} readonly canAllowLateSubmission />
           </>
         )}
       </main>

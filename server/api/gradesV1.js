@@ -165,7 +165,7 @@ export function createGradesV1Router(express, auth) {
           res.status(403).json({ success: false, error: 'FORBIDDEN', message: 'Student is not in your assigned sections.' })
           return
         }
-        gradeOptions = { facultyId: facultyRow.id }
+        gradeOptions = { facultyId: facultyRow.id, includeUnsubmittedLocked: true }
       } else if (gate.kind === 'admin') {
         gradeOptions = { includeUnsubmittedLocked: true }
       }

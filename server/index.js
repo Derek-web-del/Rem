@@ -22,6 +22,7 @@ import { createGradesV1Router } from './api/gradesV1.js'
 import { createTeacherGradebookV1Router } from './api/teacherGradebookV1.js'
 import { createGradeOverrideV1Router } from './api/gradeOverrideV1.js'
 import { createSubmissionExtensionV1Router } from './api/submissionExtensionV1.js'
+import { createTeacherSubmissionExtensionV1Router } from './api/teacherSubmissionExtensionV1.js'
 import { createAdminCurriculumGuidesRouter } from './api/adminCurriculumGuides.js'
 import { createAdminSubjectCurriculumRouter } from './api/adminSubjectCurriculum.js'
 import { createAdminTurnoverRouter } from './api/adminTurnoverV1.js'
@@ -496,6 +497,7 @@ app.all('/api/auth/*', toNodeHandler(auth))
   app.use('/api', createTeacherGradebookV1Router(express, auth))
   app.use('/api/v1/admin', createGradeOverrideV1Router(express, auth))
   app.use('/api/v1/admin', createSubmissionExtensionV1Router(express, auth))
+  app.use('/api/v1/teacher', createTeacherSubmissionExtensionV1Router(express, auth))
   const { createAdminPasswordResetV1Router } = await import('./api/adminPasswordResetV1.js')
   app.use('/api/v1/admin', createAdminPasswordResetV1Router(express, auth))
   app.use('/api', createAdminCurriculumGuidesRouter(express, auth))

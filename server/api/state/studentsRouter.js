@@ -6,8 +6,11 @@ import { GENERIC_SERVER_ERROR, sendSafeServerError } from '../../lib/safeApiErro
 import { requireDestructiveConfirm } from '../../lib/security.js'
 import { validateProfilePhotoPayload } from '../../../shared/uploadLimits.js'
 import { findAuthUserIdByEmail } from '../logs.js'
-import { provisionPortalAuthUser } from '../../lib/provisionPortalAuthUser.js'
 import { ensurePortalUserEmailOtpMfa } from '../../lib/enrollEmailOtpMfa.js'
+import {
+  rosterAuthSyncErrorResponse,
+  syncRosterPortalAuthUser,
+} from '../../lib/syncRosterPortalAuthUser.js'
 import {
   decryptStudentPiiFields,
   decryptStudentRows,
@@ -146,27 +149,24 @@ export function registerStudentsRoutes(router, ctx) {
       const section_id = parseStudentSectionId(b)
       const displayName = [first_name, middle_name, last_name].filter(Boolean).join(' ').trim() || email
 
-      let authUserId =
-        readStudentField(b, 'authUserId', 'auth_user_id') ||
-        (await findAuthUserIdByEmail(email)) ||
-        ''
-      if (!authUserId) {
-        authUserId =
-          (await provisionPortalAuthUser(auth, pool, {
-            email,
-            name: displayName,
-            password,
-            username: login_id,
-            role: 'student',
-          })) || ''
-      }
-      if (!authUserId) {
-        console.error('[POST /v1/students] auth user provisioning failed — no auth_user_id')
-        res.status(500).json({
-          error: 'AUTH_USER_CREATE_FAILED',
-          message: 'Could not create or link the student login account.',
+      let authUserId = readStudentField(b, 'authUserId', 'auth_user_id') || ''
+      try {
+        const synced = await syncRosterPortalAuthUser(auth, pool, {
+          email,
+          name: displayName,
+          username: login_id,
+          password,
+          role: 'student',
+          existingAuthUserId: authUserId,
         })
-        return
+        authUserId = synced.authUserId
+      } catch (syncErr) {
+        const mapped = rosterAuthSyncErrorResponse(syncErr)
+        if (mapped) {
+          res.status(mapped.status).json(mapped.body)
+          return
+        }
+        throw syncErr
       }
 
       try {
@@ -331,6 +331,29 @@ export function registerStudentsRoutes(router, ctx) {
       }
       const oldRow = decryptStudentPiiFields(existing.rows[0])
       const incomingAuthUserId = readStudentField(b, 'authUserId', 'auth_user_id')
+      const displayName =
+        [first_name, middle_name, last_name].filter(Boolean).join(' ').trim() || email
+
+      let syncedAuthUserId = String(oldRow.auth_user_id || incomingAuthUserId || '').trim()
+      try {
+        const synced = await syncRosterPortalAuthUser(auth, pool, {
+          email,
+          name: displayName,
+          username: login_id,
+          password: newPassword || undefined,
+          role: 'student',
+          existingAuthUserId: syncedAuthUserId,
+        })
+        syncedAuthUserId = synced.authUserId
+      } catch (syncErr) {
+        const mapped = rosterAuthSyncErrorResponse(syncErr)
+        if (mapped) {
+          res.status(mapped.status).json(mapped.body)
+          return
+        }
+        throw syncErr
+      }
+
       const photo_url =
         photoSent && photoFromBody ? photoFromBody : oldRow.photo_url || photoFromBody || null
 
@@ -382,6 +405,9 @@ export function registerStudentsRoutes(router, ctx) {
         app_password_gmail = appPwRaw
       }
       const actorId = String(adminSession.user?.id || adminSession.data?.user?.id || '')
+      const actorRole = String(adminSession.user?.role || adminSession.data?.user?.role || 'registrar')
+        .trim()
+        .toLowerCase()
       const piiUpdate = encryptStudentPiiValues({
         first_name,
         last_name,
@@ -437,7 +463,12 @@ export function registerStudentsRoutes(router, ctx) {
       }
 
       const oldAuthUserId = String(oldRow.auth_user_id || '').trim()
-      if (incomingAuthUserId && !oldAuthUserId) {
+      if (syncedAuthUserId && syncedAuthUserId !== oldAuthUserId) {
+        await pool.query(
+          `UPDATE students SET auth_user_id = $1 WHERE id = $2 AND archived_at IS NULL`,
+          [syncedAuthUserId, id],
+        )
+      } else if (incomingAuthUserId && !oldAuthUserId) {
         await pool.query(
           `UPDATE students SET auth_user_id = $1 WHERE id = $2 AND archived_at IS NULL`,
           [incomingAuthUserId, id],
@@ -455,19 +486,19 @@ export function registerStudentsRoutes(router, ctx) {
           const actor = adminSession.user || adminSession.data?.user || {}
           const actorId = String(actor.id || '').trim()
           const targetEmail = email.toLowerCase()
-          const authUserId = (await findAuthUserIdByEmail(targetEmail)) || `student-record:${id}`
+          const authUserId = syncedAuthUserId || (await findAuthUserIdByEmail(targetEmail)) || `student-record:${id}`
           await customActivityLogger.logUserAccountChanged(authUserId, {
             actorUserId: actorId,
             actorName: String(actor.name || '').trim(),
             actorEmail: String(actor.email || '').trim(),
-            actorRole: String(actor.role || 'admin').trim(),
-            triggerContext: 'admin',
+            actorRole,
+            triggerContext: 'registrar',
             userName: buildStudentAuditTargetName({ ...oldRow, first_name, middle_name, last_name, email }),
             userEmail: targetEmail,
             targetRole: 'student',
             updatedFields,
             detailedDiffs,
-            source: 'admin',
+            source: 'registrar',
             studentRecordId: id,
           })
         } catch (logErr) {

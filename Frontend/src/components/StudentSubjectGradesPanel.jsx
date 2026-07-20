@@ -68,6 +68,7 @@ export default function StudentSubjectGradesPanel({
   emptyMessage = 'No grades recorded yet.',
   noSubjectsMessage = 'No subjects available for your grade level.',
   isAdmin = false,
+  canAllowLateSubmission = false,
   studentId,
   studentName,
   onGradesRefresh,
@@ -109,7 +110,8 @@ export default function StudentSubjectGradesPanel({
   return (
     <>
       <div className="space-y-3">
-        {!grades.has_any_scores && !(isAdmin && grades.has_any_gradable_items) ? (
+        {!grades.has_any_scores &&
+        !((isAdmin || canAllowLateSubmission) && grades.has_any_gradable_items) ? (
           <p className="text-sm text-neutral-500">{emptyMessage}</p>
         ) : null}
         {subjects.map((subject) => (
@@ -126,6 +128,7 @@ export default function StudentSubjectGradesPanel({
           subject={selectedSubject}
           onClose={() => setSelectedSubjectId(null)}
           isAdmin={isAdmin}
+          canAllowLateSubmission={canAllowLateSubmission}
           studentId={studentId}
           studentName={studentName}
           onGradesRefresh={onGradesRefresh}

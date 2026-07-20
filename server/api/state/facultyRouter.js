@@ -12,7 +12,10 @@ import { GENERIC_SERVER_ERROR, sendSafeServerError } from '../../lib/safeApiErro
 import { requireDestructiveConfirm } from '../../lib/security.js'
 import { facultyPhotoUploadMiddleware, getFacultyUploadFile, normalizeFacultyMultipartBody } from '../../lib/facultyMultipart.js'
 import { resolveFacultyPhotoForDb } from '../../lib/facultyPhotoStorage.js'
-import { provisionPortalAuthUser } from '../../lib/provisionPortalAuthUser.js'
+import {
+  rosterAuthSyncErrorResponse,
+  syncRosterPortalAuthUser,
+} from '../../lib/syncRosterPortalAuthUser.js'
 import { ensurePortalUserEmailOtpMfa } from '../../lib/enrollEmailOtpMfa.js'
 import { findAuthUserIdByEmail } from '../logs.js'
 import { validateProfilePhotoPayload } from '../../../shared/uploadLimits.js'
@@ -114,34 +117,34 @@ export function registerFacultyRoutes(router, ctx) {
         return
       }
 
-      if (!auth_user_id) {
-        auth_user_id =
-          (await findAuthUserIdByEmail(email)) ||
-          (await provisionPortalAuthUser(auth, pool, {
-            email,
-            name: buildFacultyDisplayName(
-              first_name,
-              readStudentOptional(b, 'middleName', 'middle_name'),
-              last_name,
-              readStudentField(b, 'name', 'name'),
-            ),
-            password,
-            username:
-              readStudentField(b, 'facultyCodeId', 'faculty_code_id') ||
-              readStudentField(b, 'facultyUsername', 'faculty_username') ||
-              readStudentField(b, 'facultyCode', 'faculty_code'),
-            role: 'teacher',
-          })) ||
-          ''
-      }
-      if (!auth_user_id) {
-        console.error('[POST /v1/faculty] auth user provisioning failed — no auth_user_id')
-        res.status(500).json({
-          success: false,
-          error: 'AUTH_USER_CREATE_FAILED',
-          message: 'Could not create or link the faculty login account.',
+      const facultyUsername =
+        readStudentField(b, 'facultyCodeId', 'faculty_code_id') ||
+        readStudentField(b, 'facultyUsername', 'faculty_username') ||
+        readStudentField(b, 'facultyCode', 'faculty_code')
+      const displayName = buildFacultyDisplayName(
+        first_name,
+        readStudentOptional(b, 'middleName', 'middle_name'),
+        last_name,
+        readStudentField(b, 'name', 'name'),
+      )
+
+      try {
+        const synced = await syncRosterPortalAuthUser(auth, pool, {
+          email,
+          name: displayName,
+          username: facultyUsername,
+          password,
+          role: 'teacher',
+          existingAuthUserId: auth_user_id,
         })
-        return
+        auth_user_id = synced.authUserId
+      } catch (syncErr) {
+        const mapped = rosterAuthSyncErrorResponse(syncErr)
+        if (mapped) {
+          res.status(mapped.status).json({ success: false, error: mapped.body.message, message: mapped.body.message })
+          return
+        }
+        throw syncErr
       }
 
       try {
@@ -288,6 +291,37 @@ export function registerFacultyRoutes(router, ctx) {
         return
       }
 
+      const facultyUsername =
+        readStudentField(b, 'facultyCodeId', 'faculty_code_id') ||
+        readStudentField(b, 'facultyUsername', 'faculty_username') ||
+        readStudentField(b, 'facultyCode', 'faculty_code')
+      const displayName = buildFacultyDisplayName(
+        first_name,
+        readStudentOptional(b, 'middleName', 'middle_name'),
+        last_name,
+        readStudentField(b, 'name', 'name'),
+      )
+      const updatePassword = readStudentField(b, 'password', 'password')
+      let syncedAuthUserId = String(oldData.auth_user_id || '').trim()
+      try {
+        const synced = await syncRosterPortalAuthUser(auth, pool, {
+          email,
+          name: displayName,
+          username: facultyUsername,
+          password: updatePassword || undefined,
+          role: 'teacher',
+          existingAuthUserId: syncedAuthUserId || readStudentField(b, 'authUserId', 'auth_user_id'),
+        })
+        syncedAuthUserId = synced.authUserId
+      } catch (syncErr) {
+        const mapped = rosterAuthSyncErrorResponse(syncErr)
+        if (mapped) {
+          res.status(mapped.status).json({ success: false, error: mapped.body.message, message: mapped.body.message })
+          return
+        }
+        throw syncErr
+      }
+
       const { row, colSet } = await mapBodyToFacultiesRow(pool, b, {
         sectionIds,
         includeSecrets: true,
@@ -324,7 +358,13 @@ export function registerFacultyRoutes(router, ctx) {
 
       const incomingAuthUserId = readStudentField(b, 'authUserId', 'auth_user_id')
       const oldAuthUserId = String(oldData.auth_user_id || '').trim()
-      if (incomingAuthUserId && !oldAuthUserId) {
+      if (syncedAuthUserId && syncedAuthUserId !== oldAuthUserId) {
+        await pool.query(
+          `UPDATE faculties SET auth_user_id = $1 WHERE id = $2 AND archived_at IS NULL`,
+          [syncedAuthUserId, id],
+        )
+        updated.auth_user_id = syncedAuthUserId
+      } else if (incomingAuthUserId && !oldAuthUserId) {
         await pool.query(
           `UPDATE faculties SET auth_user_id = $1 WHERE id = $2 AND archived_at IS NULL`,
           [incomingAuthUserId, id],

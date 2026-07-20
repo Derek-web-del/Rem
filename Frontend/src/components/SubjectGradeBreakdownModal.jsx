@@ -7,6 +7,7 @@ export default function SubjectGradeBreakdownModal({
   subject,
   onClose,
   isAdmin = false,
+  canAllowLateSubmission = false,
   studentId,
   studentName,
   onGradesRefresh,
@@ -14,6 +15,9 @@ export default function SubjectGradeBreakdownModal({
   const [overrideItem, setOverrideItem] = useState(null)
   const [lateSubmissionItem, setLateSubmissionItem] = useState(null)
   const [overrideSuccess, setOverrideSuccess] = useState('')
+
+  const allowLateSubmission = isAdmin || canAllowLateSubmission
+  const lateSubmissionActorRole = isAdmin ? 'admin' : 'teacher'
 
   if (!subject) return null
 
@@ -61,6 +65,7 @@ export default function SubjectGradeBreakdownModal({
               subject={subject}
               showWorkItems={showWorkItems}
               isAdmin={isAdmin}
+              canAllowLateSubmission={canAllowLateSubmission}
               onOverrideClick={setOverrideItem}
               onLateSubmissionClick={setLateSubmissionItem}
             />
@@ -92,11 +97,12 @@ export default function SubjectGradeBreakdownModal({
         />
       ) : null}
 
-      {isAdmin && lateSubmissionItem ? (
+      {allowLateSubmission && lateSubmissionItem ? (
         <LateSubmissionModal
           item={lateSubmissionItem}
           studentId={studentId}
           studentName={studentName}
+          actorRole={lateSubmissionActorRole}
           onClose={() => setLateSubmissionItem(null)}
           onSuccess={() => {
             setOverrideSuccess('Late submission allowed and logged.')

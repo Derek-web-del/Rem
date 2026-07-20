@@ -9,10 +9,11 @@ function componentMapsTo(comp) {
   return labels.length ? labels.join(', ') : '—'
 }
 
-function WorkItemRow({ item, isAdmin, onOverrideClick, onLateSubmissionClick }) {
+function WorkItemRow({ item, isAdmin, canAllowLateSubmission, onOverrideClick, onLateSubmissionClick }) {
   const scoreLabel =
     item.score != null && item.max_score != null ? `${item.score}/${item.max_score}` : '—'
   const typeLabel = entityTypeLabel(item.entity_type)
+  const showLateSubmission = (isAdmin || canAllowLateSubmission) && item.is_locked
 
   return (
     <div className="flex flex-col gap-2 py-2 sm:flex-row sm:items-center sm:justify-between">
@@ -46,9 +47,9 @@ function WorkItemRow({ item, isAdmin, onOverrideClick, onLateSubmissionClick }) 
           </span>
         ) : null}
       </p>
-      {isAdmin && item.entity_id ? (
+      {(isAdmin || canAllowLateSubmission) && item.entity_id ? (
         <div className="flex shrink-0 flex-wrap gap-2 self-start sm:self-center">
-          {item.is_locked ? (
+          {showLateSubmission ? (
             <>
               <button
                 type="button"
@@ -57,13 +58,15 @@ function WorkItemRow({ item, isAdmin, onOverrideClick, onLateSubmissionClick }) 
               >
                 Allow Late Submission
               </button>
-              <button
-                type="button"
-                onClick={() => onOverrideClick?.(item)}
-                className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700"
-              >
-                Overwrite Score
-              </button>
+              {isAdmin ? (
+                <button
+                  type="button"
+                  onClick={() => onOverrideClick?.(item)}
+                  className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700"
+                >
+                  Overwrite Score
+                </button>
+              ) : null}
             </>
           ) : null}
         </div>
@@ -72,7 +75,7 @@ function WorkItemRow({ item, isAdmin, onOverrideClick, onLateSubmissionClick }) 
   )
 }
 
-function ComponentWorkSection({ comp, items, isAdmin, onOverrideClick, onLateSubmissionClick }) {
+function ComponentWorkSection({ comp, items, isAdmin, canAllowLateSubmission, onOverrideClick, onLateSubmissionClick }) {
   const weight =
     comp.percentage != null && Number.isFinite(Number(comp.percentage))
       ? ` (${Number(comp.percentage)}%)`
@@ -94,6 +97,7 @@ function ComponentWorkSection({ comp, items, isAdmin, onOverrideClick, onLateSub
             key={`${comp.id}-${item.entity_type}-${item.submission_id ?? item.entity_id ?? item.title}`}
             item={item}
             isAdmin={isAdmin}
+            canAllowLateSubmission={canAllowLateSubmission}
             onOverrideClick={onOverrideClick}
             onLateSubmissionClick={onLateSubmissionClick}
           />
@@ -107,6 +111,7 @@ export default function SubjectGradesBreakdown({
   subject,
   showWorkItems = true,
   isAdmin = false,
+  canAllowLateSubmission = false,
   onOverrideClick,
   onLateSubmissionClick,
 }) {
@@ -202,6 +207,7 @@ export default function SubjectGradesBreakdown({
               comp={comp}
               items={items}
               isAdmin={isAdmin}
+            canAllowLateSubmission={canAllowLateSubmission}
               onOverrideClick={onOverrideClick}
               onLateSubmissionClick={onLateSubmissionClick}
             />

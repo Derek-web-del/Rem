@@ -22,6 +22,7 @@ export default function StudentGradesCard({
   student,
   readonly = true,
   isAdmin = false,
+  canAllowLateSubmission = false,
 }) {
   const resolvedId = useMemo(() => {
     const fromProp = String(studentId ?? '').trim()
@@ -81,9 +82,10 @@ export default function StudentGradesCard({
     }
   }, [resolvedId, isAdmin])
 
-  const emptyMessage = isAdmin
-    ? 'No gradable work items past deadline yet.'
-    : teacherNoSubjectsMessage
+  const emptyMessage =
+    isAdmin || canAllowLateSubmission
+      ? 'No gradable work items past deadline yet.'
+      : teacherNoSubjectsMessage
   const noSubjectsMessage = isAdmin
     ? 'No subjects available for your grade level.'
     : teacherNoSubjectsMessage
@@ -122,6 +124,7 @@ export default function StudentGradesCard({
         emptyMessage={emptyMessage}
         noSubjectsMessage={noSubjectsMessage}
         isAdmin={isAdmin}
+        canAllowLateSubmission={canAllowLateSubmission}
         studentId={resolvedId}
         studentName={studentName}
         onGradesRefresh={loadGrades}

@@ -270,7 +270,7 @@ export function resolveInstituteActivityModule(activityType) {
     activity === 'LATE_SUBMISSION_REVOKED' ||
     activity === 'LATE_SUBMISSION_UPLOAD'
   ) {
-    return ADMIN_PORTAL_MODULES.STUDENTS
+    return role === 'teacher' ? TEACHER_PORTAL_MODULES.GRADES : ADMIN_PORTAL_MODULES.STUDENTS
   }
   if (
     activity === 'SCORE_OVERWRITE_REQUESTED' ||
@@ -403,6 +403,13 @@ function moduleFromLedgerType(event) {
   if (ledgerType === 'ASSIGNMENT_SUBMITTED') return STUDENT_PORTAL_MODULES.ASSIGNMENTS
   if (ledgerType === 'ACTIVITY_SUBMITTED') return STUDENT_PORTAL_MODULES.ACTIVITIES
   if (ledgerType === 'TERMS_ACCEPTED') return TERMS_AND_CONDITIONS_MODULE
+  if (
+    ledgerType === 'LATE_SUBMISSION_GRANTED' ||
+    ledgerType === 'LATE_SUBMISSION_REVOKED' ||
+    ledgerType === 'LATE_SUBMISSION_UPLOAD'
+  ) {
+    return role === 'teacher' ? TEACHER_PORTAL_MODULES.GRADES : ADMIN_PORTAL_MODULES.STUDENTS
+  }
   return null
 }
 

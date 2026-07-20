@@ -1,5 +1,10 @@
 import { useMemo, useState } from 'react'
-import { adminGrantSubmissionExtension, adminUploadSubmissionOnBehalf } from '../lib/gradesApi.js'
+import {
+  adminGrantSubmissionExtension,
+  adminUploadSubmissionOnBehalf,
+  teacherGrantSubmissionExtension,
+  teacherUploadSubmissionOnBehalf,
+} from '../lib/gradesApi.js'
 
 function defaultUntilLocal() {
   const d = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000)
@@ -7,7 +12,14 @@ function defaultUntilLocal() {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
-export default function LateSubmissionModal({ item, studentId, studentName, onClose, onSuccess }) {
+export default function LateSubmissionModal({
+  item,
+  studentId,
+  studentName,
+  onClose,
+  onSuccess,
+  actorRole = 'admin',
+}) {
   const [until, setUntil] = useState(defaultUntilLocal)
   const [reason, setReason] = useState('')
   const [file, setFile] = useState(null)
@@ -22,6 +34,10 @@ export default function LateSubmissionModal({ item, studentId, studentName, onCl
     if (t === 'activity') return 'Activity'
     return 'Assignment'
   }, [item?.entity_type])
+
+  const isTeacher = actorRole === 'teacher'
+  const grantExtension = isTeacher ? teacherGrantSubmissionExtension : adminGrantSubmissionExtension
+  const uploadOnBehalf = isTeacher ? teacherUploadSubmissionOnBehalf : adminUploadSubmissionOnBehalf
 
   async function handleSave() {
     const trimmed = String(reason).trim()
@@ -41,7 +57,7 @@ export default function LateSubmissionModal({ item, studentId, studentName, onCl
     setSaving(true)
     setError('')
     try {
-      await adminGrantSubmissionExtension({
+      await grantExtension({
         entity_type: item.entity_type,
         entity_id: item.entity_id,
         student_id: Number(studentId),
@@ -50,7 +66,7 @@ export default function LateSubmissionModal({ item, studentId, studentName, onCl
       })
 
       if (file && canUpload) {
-        await adminUploadSubmissionOnBehalf({
+        await uploadOnBehalf({
           entity_type: item.entity_type,
           entity_id: item.entity_id,
           student_id: Number(studentId),

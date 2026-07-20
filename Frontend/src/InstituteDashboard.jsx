@@ -1344,21 +1344,6 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
 
     const photoFile = payload.photoFile instanceof File ? payload.photoFile : null
 
-    const authSync = await ensureFacultyAuthUser({
-      email,
-      name: String(payload.name || '').trim() || 'Faculty',
-      facultyUsername: facultyCodeId,
-      password,
-      existingAuthUserId: '',
-      facultyQualification: payload.qualification,
-      facultyContactNumber: payload.contactNumber,
-      photoDataUrl: '',
-    })
-    if (authSync?.error) {
-      toast.error(authSync.error, { title: 'Faculty login error' })
-      return { error: authSync.error }
-    }
-
     if (persistenceMode === 'server') {
       const sectionIds = await resolveFacultySectionIds(payload, sections)
       if (!sectionIds.length) {
@@ -1368,7 +1353,7 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
         const saveReq = buildFacultySaveRequest(
           { ...payload, email, password },
           sectionIds,
-          authSync.authUserId,
+          '',
           { photoFile },
         )
         const res = await fetchStateApi(apiUrl('/api/v1/faculty'), {
@@ -1395,26 +1380,6 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
         if (data?.faculty) {
           upsertFacultyInState(data.faculty, sectionsRef.current)
         }
-        if (photoFile && data?.faculty) {
-          const savedPath = String(data.faculty.photo_url ?? data.faculty.photoDataUrl ?? '').trim()
-          if (savedPath) {
-            const imgSync = await ensureFacultyAuthUser({
-              email,
-              name: String(payload.name || '').trim() || 'Faculty',
-              facultyUsername: facultyCodeId,
-              password,
-              existingAuthUserId: authSync.authUserId,
-              previousFacultyUsername: facultyCodeId,
-              facultyQualification: payload.qualification,
-              facultyContactNumber: payload.contactNumber,
-              photoDataUrl: savedPath,
-              setCredentialPassword: false,
-            })
-            if (imgSync?.error) {
-              toast.error(imgSync.error, { title: 'Faculty photo sync' })
-            }
-          }
-        }
         const refreshed = await refreshFacultiesFromPostgres()
         if (!refreshed.ok && !data?.faculty) {
           return {
@@ -1427,6 +1392,21 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
         toast.error(msg, { title: 'Faculty not saved' })
         return { error: msg }
       }
+    }
+
+    const authSync = await ensureFacultyAuthUser({
+      email,
+      name: String(payload.name || '').trim() || 'Faculty',
+      facultyUsername: facultyCodeId,
+      password,
+      existingAuthUserId: '',
+      facultyQualification: payload.qualification,
+      facultyContactNumber: payload.contactNumber,
+      photoDataUrl: '',
+    })
+    if (authSync?.error) {
+      toast.error(authSync.error, { title: 'Faculty login error' })
+      return { error: authSync.error }
     }
 
     const next = [
@@ -1543,84 +1523,7 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
           return { error: msg }
         }
 
-        const savedPhoto = String(data?.faculty?.photo_url ?? data?.faculty?.photoDataUrl ?? '').trim()
-        const authSync = await ensureFacultyAuthUser({
-          email,
-          name: String(patch.name || current.name || '').trim() || 'Faculty',
-          facultyUsername: facultyCodeId,
-          password,
-          existingAuthUserId,
-          previousFacultyUsername,
-          facultyQualification: qualification,
-          facultyContactNumber: contactForAuth,
-          photoDataUrl: photoChanged ? savedPhoto || patchPhoto : '',
-          setCredentialPassword: passwordInPatch,
-        })
-        if (authSync?.error) {
-          toast.error(authSync.error, { title: 'Faculty login error' })
-          return { error: authSync.error }
-        }
-
-        const resolvedAuthUserId = String(authSync.authUserId || existingAuthUserId).trim()
-        const needsAuthUserIdPersist = !existingAuthUserId && Boolean(resolvedAuthUserId)
-        if (needsAuthUserIdPersist) {
-          const linkReq = buildFacultySaveRequest(
-            {
-              ...current,
-              ...patch,
-              email,
-              facultyUsername: facultyCodeId,
-              facultyCode: facultyCodeId,
-              qualification,
-              contactNumber: contactForAuth,
-            },
-            sectionIds,
-            resolvedAuthUserId,
-            { forUpdate: true, persistAuthUserId: true },
-          )
-          const linkRes = await fetchStateApi(apiUrl(`/api/v1/faculty/${encodeURIComponent(facultyKey)}`), {
-            method: 'PUT',
-            credentials: 'include',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(linkReq.body),
-          })
-          const linkData = await linkRes.json().catch(() => ({}))
-          if (!linkRes.ok) {
-            const msg = String(
-              linkData?.error ||
-                linkData?.message ||
-                (linkData?.success === false ? linkData?.error : '') ||
-                `Could not link faculty login (${linkRes.status}).`,
-            )
-            toast.error(msg, { title: 'Faculty login link' })
-            return { error: msg }
-          }
-          if (linkData?.faculty) upsertFacultyInState(linkData.faculty, sectionsRef.current)
-        }
-
         if (data?.faculty) upsertFacultyInState(data.faculty, sectionsRef.current)
-        if (resolvedAuthUserId) {
-          setFaculties((prev) =>
-            prev.map((f) => (f.id === id ? { ...f, authUserId: resolvedAuthUserId } : f)),
-          )
-        }
-        if (photoChanged && savedPhoto) {
-          const imgResync = await ensureFacultyAuthUser({
-            email,
-            name: String(patch.name || current.name || '').trim() || 'Faculty',
-            facultyUsername: facultyCodeId,
-            password,
-            existingAuthUserId: resolvedAuthUserId,
-            previousFacultyUsername,
-            facultyQualification: qualification,
-            facultyContactNumber: contactForAuth,
-            photoDataUrl: savedPhoto,
-            setCredentialPassword: false,
-          })
-          if (imgResync?.error) {
-            toast.error(imgResync.error, { title: 'Faculty photo sync' })
-          }
-        }
         const refreshed = await refreshFacultiesFromPostgres()
         if (!refreshed.ok && !data?.faculty) {
           return {
@@ -2606,15 +2509,6 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
     const dupRoll = students.some((s) => s.sectionId === section.id && String(s.rollNo) === String(nextRoll))
     if (dupRoll) return { error: 'Roll number already exists in this section.' }
 
-    const authSync = await ensureStudentAuthUser({
-      email,
-      name,
-      loginId,
-      password,
-      existingAuthUserId: '',
-    })
-    if (authSync?.error) return { error: authSync.error }
-
     if (persistenceMode === 'server') {
       const pgSid = await fetchPostgresSectionIdForSection(section)
       if (!pgSid) {
@@ -2647,8 +2541,6 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
             loginId,
             password,
             photoDataUrl,
-            authUserId: String(authSync.authUserId || '').trim(),
-            auth_user_id: String(authSync.authUserId || '').trim(),
           }),
         })
         const data = await res.json().catch(() => ({}))
@@ -2656,19 +2548,20 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
           return { error: String(data?.message || data?.error || 'Could not save. Please try again.') }
         }
         await refreshStudentsFromPostgres()
-        const aid = String(authSync.authUserId || '').trim()
-        if (aid) {
-          setStudents((prev) =>
-            prev.map((s) =>
-              String(s.email || '').trim().toLowerCase() === email ? { ...s, authUserId: aid } : s,
-            ),
-          )
-        }
         return { ok: true, enrollmentNo, registeredPostgres: true }
       } catch (e) {
         return { error: String(e?.message || e || 'Could not save. Check your connection and try again.') }
       }
     }
+
+    const authSync = await ensureStudentAuthUser({
+      email,
+      name,
+      loginId,
+      password,
+      existingAuthUserId: '',
+    })
+    if (authSync?.error) return { error: authSync.error }
 
     const newStudent = {
       id: crypto.randomUUID(),
@@ -2769,22 +2662,6 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
 
     const name = `${firstName}${middleName ? ` ${middleName}` : ''} ${lastName}`.trim()
 
-    const existingAuthUserId = String(current.authUserId || '').trim()
-    const previousLoginId = String(current.loginId || '').trim()
-    const authSync = await ensureStudentAuthUser({
-      email,
-      name,
-      loginId,
-      password,
-      existingAuthUserId,
-      previousLoginId,
-      setCredentialPassword: passwordInPatch,
-    })
-    if (authSync?.error) return { error: authSync.error }
-
-    const resolvedAuthUserId = String(authSync.authUserId || existingAuthUserId).trim()
-    const needsAuthUserIdPersist = !existingAuthUserId && Boolean(resolvedAuthUserId)
-
     if (persistenceMode === 'server') {
       const rawPid = current.postgresStudentId ?? (Number.isFinite(Number(id)) ? Number(id) : NaN)
       const pgStudentId = Number.isFinite(rawPid) && rawPid > 0 ? rawPid : NaN
@@ -2814,10 +2691,6 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
         }
         if (passwordInPatch) putBody.password = trimmedPatchPw
         if (appPasswordInPatch) putBody.appPasswordGmail = appPassword
-        if (needsAuthUserIdPersist) {
-          putBody.authUserId = resolvedAuthUserId
-          putBody.auth_user_id = resolvedAuthUserId
-        }
         try {
           const res = await fetch(apiUrl(`/api/v1/students/${encodeURIComponent(String(pgStudentId))}`), {
             method: 'PUT',
@@ -2830,15 +2703,6 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
             return { error: String(data?.message || data?.error || `Update failed (${res.status}).`) }
           }
           await refreshStudentsFromPostgres()
-          if (resolvedAuthUserId) {
-            setStudents((prev) =>
-              prev.map((s) =>
-                String(s.enrollmentNo || '').trim() === enrollmentNo
-                  ? { ...s, authUserId: resolvedAuthUserId }
-                  : s,
-              ),
-            )
-          }
           dispatchAuditLogsRefresh({ type: 'student', id: pgStudentId })
           return { ok: true, updatedPostgres: true }
         } catch (e) {
@@ -2846,6 +2710,21 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
         }
       }
     }
+
+    const existingAuthUserId = String(current.authUserId || '').trim()
+    const previousLoginId = String(current.loginId || '').trim()
+    const authSync = await ensureStudentAuthUser({
+      email,
+      name,
+      loginId,
+      password,
+      existingAuthUserId,
+      previousLoginId,
+      setCredentialPassword: passwordInPatch,
+    })
+    if (authSync?.error) return { error: authSync.error }
+
+    const resolvedAuthUserId = String(authSync.authUserId || existingAuthUserId).trim()
 
     const nextStudents = students.map((s) =>
       s.id === id

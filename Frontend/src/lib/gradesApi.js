@@ -164,3 +164,48 @@ export async function adminUploadSubmissionOnBehalf({
   }
   return data
 }
+
+export async function teacherGrantSubmissionExtension({
+  entity_type,
+  entity_id,
+  student_id,
+  until,
+  reason,
+}) {
+  const res = await apiFetch(apiUrl('/api/v1/teacher/submission-extension'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ entity_type, entity_id, student_id, until, reason }),
+    softAuth: true,
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error(String(data?.message || data?.error || `Request failed (${res.status})`))
+  }
+  return data
+}
+
+export async function teacherUploadSubmissionOnBehalf({
+  entity_type,
+  entity_id,
+  student_id,
+  reason,
+  file,
+}) {
+  const form = new FormData()
+  form.append('entity_type', entity_type)
+  form.append('entity_id', String(entity_id))
+  form.append('student_id', String(student_id))
+  form.append('reason', reason)
+  form.append('file', file)
+  const res = await fetch(apiUrl('/api/v1/teacher/submission-extension/upload'), {
+    method: 'POST',
+    credentials: 'include',
+    body: form,
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error(String(data?.message || data?.error || `Request failed (${res.status})`))
+  }
+  return data
+}
