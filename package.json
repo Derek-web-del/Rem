@@ -20,7 +20,7 @@
     "test:auth": "node --test tests/auth-*.test.js tests/portal-terms-reset.test.js",
     "lint": "eslint .",
     "preview": "vite preview",
-    "migrate": "npx auth@latest migrate --yes --config server/auth.js",
+    "migrate": "npx @better-auth/cli migrate --yes --config server/auth.js",
     "migrate:cli": "npx @better-auth/cli migrate --yes --config server/auth.js",
     "pg:ping": "node scripts/pg-ping.mjs",
     "smtp:test": "node --env-file=.env scripts/smtp-verify.mjs",
