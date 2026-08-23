@@ -77,23 +77,24 @@ async function requireStudentSession(req, res, auth) {
   }
 }
 
-async function tryGetAdminSession(req, auth) {
+/** Admin and Registrar both need read access to a student's grading report card. */
+async function tryGetInstituteStaffSession(req, auth) {
   if (!auth?.api?.getSession) return null
   try {
     const session = await auth.api.getSession({ headers: req.headers })
     const role = String(session?.user?.role || session?.data?.user?.role || '')
       .trim()
       .toLowerCase()
-    if (!session?.user?.id || role !== 'admin') return null
-    return session
+    if (!session?.user?.id || (role !== 'admin' && role !== 'registrar')) return null
+    return { session, role }
   } catch {
     return null
   }
 }
 
 async function requireAdminOrFacultySession(req, res, auth) {
-  const adminSession = await tryGetAdminSession(req, auth)
-  if (adminSession) return { kind: 'admin', session: adminSession }
+  const staff = await tryGetInstituteStaffSession(req, auth)
+  if (staff) return { kind: staff.role, session: staff.session }
 
   const facultySession = await requireFacultyOrTeacherSession(req, res, auth)
   if (facultySession) {
@@ -166,7 +167,7 @@ export function createGradesV1Router(express, auth) {
           return
         }
         gradeOptions = { facultyId: facultyRow.id, includeUnsubmittedLocked: true }
-      } else if (gate.kind === 'admin') {
+      } else if (gate.kind === 'admin' || gate.kind === 'registrar') {
         gradeOptions = { includeUnsubmittedLocked: true }
       }
 
@@ -262,7 +263,7 @@ export function createGradesV1Router(express, auth) {
     try {
       const gate = await requireAdminOrFacultySession(req, res, auth)
       if (!gate) return
-      if (gate.kind === 'admin') {
+      if (gate.kind === 'admin' || gate.kind === 'registrar') {
         res.status(403).json({
           success: false,
           error: 'FORBIDDEN',

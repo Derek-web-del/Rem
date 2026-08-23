@@ -1,19 +1,13 @@
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import BackButton from './components/BackButton.jsx'
 import { useNotify } from './components/notifications.jsx'
 import StudentDetailCard from './components/StudentDetailCard.jsx'
-import StudentGradesCard from './components/StudentGradesCard.jsx'
-import { authClient } from './lib/auth-client.js'
+import StudentGradingReportCard from './components/StudentGradingReportCard.jsx'
 
 export default function StudentProfile({ student, onBack, onEdit, onSendPasswordResetEmail }) {
   const toast = useNotify()
   const [resetBusy, setResetBusy] = useState(false)
   const [activeTab, setActiveTab] = useState('basic')
-  const { data: session } = authClient.useSession()
-  const isAdmin = useMemo(() => {
-    const role = String(session?.user?.role || '').trim().toLowerCase()
-    return role === 'admin'
-  }, [session?.user?.role])
 
   if (!student) {
     return (
@@ -130,7 +124,7 @@ export default function StudentProfile({ student, onBack, onEdit, onSendPassword
       {activeTab === 'basic' ? (
         <StudentDetailCard student={student} showHero={false} showEditButton={!!onEdit} onEdit={onEdit} />
       ) : activeTab === 'grades' ? (
-        <StudentGradesCard student={student} readonly isAdmin={isAdmin} />
+        <StudentGradingReportCard student={student} />
       ) : null}
     </div>
   )
