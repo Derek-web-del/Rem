@@ -290,13 +290,11 @@ const TABLES_WITH_SERIAL_ID = new Set([
   'curriculum',
   'sections',
   'subjects',
-  'subject_grade_criteria',
   'subject_grade_components',
   'subject_modules',
   'subject_topics',
   'subject_module_subtopics',
   'students',
-  'subject_student_final_grades',
   'faculty_study_materials',
   'score_overwrite_requests',
   'google_oauth_tokens',
@@ -2488,7 +2486,14 @@ async function resetSerialSequences(client, pool, tableOrder = LNBAK_TABLE_ORDER
     if (!fromSql || !(await tableExists(pool, key))) continue
     const bare = tableNameFromKey(key)
     if (!bare) continue
+    // SAVEPOINT-guarded: an unsavepointed failure here (e.g. a table wrongly
+    // assumed to have a serial `id`) would abort the whole restore
+    // transaction — COMMIT then silently no-ops instead of throwing, so the
+    // restore reports success while writing nothing. See git history for
+    // the 2026-08-23 incident where this exact gap masked a full restore
+    // no-op for subject_grade_criteria / subject_student_final_grades.
     try {
+      await client.query('SAVEPOINT reset_seq')
       await client.query(
         `SELECT setval(
           pg_get_serial_sequence('public.' || $1::text, 'id'),
@@ -2497,8 +2502,10 @@ async function resetSerialSequences(client, pool, tableOrder = LNBAK_TABLE_ORDER
         )`,
         [bare],
       )
-    } catch {
-      /* table may lack serial id column */
+      await client.query('RELEASE SAVEPOINT reset_seq')
+    } catch (e) {
+      await client.query('ROLLBACK TO SAVEPOINT reset_seq').catch(() => {})
+      console.warn(`[BACKUP] resetSerialSequences skipped for ${key}:`, e?.message || e)
     }
   }
 }
