@@ -1,4 +1,4 @@
-import { requireRegistrarSession, logStatePostgresError, auditInstituteRecord, readStudentField, readStudentOptional, parseStudentDob, readStudentContact, readStudentParentContact, readStudentAppPassword, readStudentPhotoUrl, parseStudentSectionId, normStr, omitStudentPassword, hashStudentPassword, archiveStudentRecord, parseArchiveReason, ensureStudentsCatalogColumns } from './shared.js'
+import { requireRegistrarSession, requireAdminOrRegistrarSession, logStatePostgresError, auditInstituteRecord, readStudentField, readStudentOptional, parseStudentDob, readStudentContact, readStudentParentContact, readStudentAppPassword, readStudentPhotoUrl, parseStudentSectionId, normStr, omitStudentPassword, hashStudentPassword, archiveStudentRecord, parseArchiveReason, ensureStudentsCatalogColumns } from './shared.js'
 import { buildStudentAuditTargetName, computeStudentProfileDetailedDiffs } from '../../lib/studentProfileAudit.js'
 import { extendUpdateSetWithIntegrity } from '../../lib/recordIntegrity.js'
 import { customActivityLogger } from '../../services/CustomActivityLogger.js'
@@ -21,7 +21,7 @@ import {
 export function registerStudentsRoutes(router, ctx) {
   const { pool, auth } = ctx
   router.get('/v1/students', async (req, res) => {
-    const adminSession = await requireRegistrarSession(req, res, auth)
+    const adminSession = await requireAdminOrRegistrarSession(req, res, auth)
     if (!adminSession) return
     try {
       const { rows } = await pool.query(`
@@ -47,7 +47,7 @@ export function registerStudentsRoutes(router, ctx) {
   })
 
   router.get('/v1/students/:id', async (req, res) => {
-    const adminSession = await requireRegistrarSession(req, res, auth)
+    const adminSession = await requireAdminOrRegistrarSession(req, res, auth)
     if (!adminSession) return
     const id = Number(req.params.id)
     if (!Number.isFinite(id) || id <= 0) {
@@ -248,7 +248,7 @@ export function registerStudentsRoutes(router, ctx) {
 
   router.put('/v1/students/:id', async (req, res) => {
     try {
-      const adminSession = await requireRegistrarSession(req, res, auth)
+      const adminSession = await requireAdminOrRegistrarSession(req, res, auth)
       if (!adminSession) return
 
       const id = Number(req.params.id)

@@ -37,13 +37,24 @@ describe('registrar role access helpers', () => {
   })
 
   it('isNavAllowedForRole splits admin vs registrar nav', () => {
+    // students/faculties are intentionally shared: Registrar gets full account management there,
+    // Admin gets a view/edit-details-only module (see limitedMode on StudentsPage/StudentDetails).
+    const SHARED_NAV_IDS = new Set(['students', 'faculties'])
     for (const id of REGISTRAR_ONLY_NAV_IDS) {
       assert.equal(isNavAllowedForRole(id, 'registrar'), true, `registrar should access ${id}`)
-      assert.equal(isNavAllowedForRole(id, 'admin'), false, `admin should not access ${id}`)
+      if (SHARED_NAV_IDS.has(id)) {
+        assert.equal(isNavAllowedForRole(id, 'admin'), true, `admin should access shared nav ${id}`)
+      } else {
+        assert.equal(isNavAllowedForRole(id, 'admin'), false, `admin should not access ${id}`)
+      }
     }
     for (const id of ADMIN_ONLY_NAV_IDS) {
       assert.equal(isNavAllowedForRole(id, 'admin'), true, `admin should access ${id}`)
-      assert.equal(isNavAllowedForRole(id, 'registrar'), false, `registrar should not access ${id}`)
+      if (SHARED_NAV_IDS.has(id)) {
+        assert.equal(isNavAllowedForRole(id, 'registrar'), true, `registrar should access shared nav ${id}`)
+      } else {
+        assert.equal(isNavAllowedForRole(id, 'registrar'), false, `registrar should not access ${id}`)
+      }
     }
     assert.equal(isNavAllowedForRole('dashboard', 'admin'), true)
     assert.equal(isNavAllowedForRole('dashboard', 'registrar'), true)

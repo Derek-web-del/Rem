@@ -103,6 +103,10 @@ export default function StudentDetails({
   onBack,
   onSave,
   savingLabel = 'Save Changes',
+  /** Admin's view/edit-details module — hides Login ID and Password entirely. The existing
+   * (unchanged) values still flow through in the save payload from `initial`/`form` state, so the
+   * shared PUT endpoint's required-field validation still passes without ever showing them here. */
+  limitedMode = false,
 }) {
   const fileInputRef = useRef(null)
   /** Edit-mode baseline so unchanged password is omitted from the save payload. */
@@ -414,6 +418,7 @@ export default function StudentDetails({
             </SelectField>
           </div>
 
+          {!limitedMode ? (
           <div className="grid gap-4 md:grid-cols-2">
             <div className="rounded-xl border border-neutral-200 bg-white p-4">
               <div className="text-sm font-semibold text-neutral-900">Student Login ID</div>
@@ -484,6 +489,7 @@ export default function StudentDetails({
               ) : null}
             </div>
           </div>
+          ) : null}
 
           <div className="flex justify-start">
             <button

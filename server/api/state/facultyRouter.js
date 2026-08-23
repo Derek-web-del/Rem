@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { requireRegistrarSession, logStatePostgresError, auditInstituteRecord, readStudentField, readStudentOptional, parseFacultySectionIds, mapBodyToFacultiesRow, insertFacultiesRow, updateFacultyWithSections, getFacultiesColumnSet, facultyRowToResponse, FACULTIES_FROM, readFacultyPhotoUrl, hashFacultyPassword, buildFacultyDisplayName, normStr, archiveFacultyRecord, parseArchiveReason, purgeFacultyFromAppStateJson, upsertFacultyInAppStateJson } from './shared.js'
+import { requireRegistrarSession, requireAdminOrRegistrarSession, logStatePostgresError, auditInstituteRecord, readStudentField, readStudentOptional, parseFacultySectionIds, mapBodyToFacultiesRow, insertFacultiesRow, updateFacultyWithSections, getFacultiesColumnSet, facultyRowToResponse, FACULTIES_FROM, readFacultyPhotoUrl, hashFacultyPassword, buildFacultyDisplayName, normStr, archiveFacultyRecord, parseArchiveReason, purgeFacultyFromAppStateJson, upsertFacultyInAppStateJson } from './shared.js'
 import {
   buildFacultyAuditTargetName,
   buildFacultyComparePayload,
@@ -25,7 +25,7 @@ export function registerFacultyRoutes(router, ctx) {
   const { pool, auth } = ctx
 
   const listActiveFaculty = async (req, res) => {
-    if (!(await requireRegistrarSession(req, res, auth))) return
+    if (!(await requireAdminOrRegistrarSession(req, res, auth))) return
     try {
       const colSet = await getFacultiesColumnSet(pool)
       const listSql = colSet.has('updated_at')
@@ -43,7 +43,7 @@ export function registerFacultyRoutes(router, ctx) {
   router.get('/v1/faculties', listActiveFaculty)
 
   router.get('/v1/faculty/:id(\\d+)', async (req, res) => {
-    if (!(await requireRegistrarSession(req, res, auth))) return
+    if (!(await requireAdminOrRegistrarSession(req, res, auth))) return
     try {
       const id = String(req.params.id || '').trim()
       if (!id) {
@@ -247,7 +247,7 @@ export function registerFacultyRoutes(router, ctx) {
   router.put('/v1/faculty/:id', facultyPhotoUploadMiddleware, async (req, res) => {
     const b = normalizeFacultyMultipartBody(req.body || {})
     try {
-      const adminSession = await requireRegistrarSession(req, res, auth)
+      const adminSession = await requireAdminOrRegistrarSession(req, res, auth)
       if (!adminSession) return
 
       const id = String(req.params.id || '').trim()

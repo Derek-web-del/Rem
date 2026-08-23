@@ -42,7 +42,10 @@ describe('roleAccess portal RBAC', () => {
     assert.equal(isNavAllowedForRole('registrars', 'admin'), true)
     assert.equal(isNavAllowedForRole('registrars', 'registrar'), false)
     assert.equal(isNavAllowedForRole('students', 'registrar'), true)
-    assert.equal(isNavAllowedForRole('students', 'admin'), false)
+    // Admin also gets a view/edit-details module for students/faculties (no account
+    // creation/credentials — see limitedMode on StudentsPage/StudentDetails).
+    assert.equal(isNavAllowedForRole('students', 'admin'), true)
+    assert.equal(isNavAllowedForRole('faculties', 'admin'), true)
   })
 
   test('portalMismatchMessage guides user to correct portal', () => {

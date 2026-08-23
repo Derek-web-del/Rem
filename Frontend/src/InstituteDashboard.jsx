@@ -3191,12 +3191,14 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
               onBack={() => navigateToNav('dashboard')}
               initialGrade={studentNavContext.grade}
               initialSectionId={studentNavContext.sectionId}
+              limitedMode={isAdmin}
             />
           ) : activeNav === 'faculties' ? (
             <FacultiesPage
               sections={sections}
               gradeOptions={GRADE_LEVELS}
               faculties={faculties}
+              limitedMode={isAdmin}
               onAddFaculty={addFaculty}
               onUpdateFaculty={updateFaculty}
               onArchiveFaculty={archiveFaculty}

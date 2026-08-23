@@ -94,7 +94,11 @@ export default function FacultiesPage({
   onArchiveFaculty,
   onSendPasswordResetEmail,
   onBack,
+  /** Admin's view/edit-details module — no Add, Archive, or password-reset; View and Edit only,
+   * and Edit hides credential fields (see FacultyDetails' own limitedMode). */
+  limitedMode = false,
 }) {
+  const resetEmailHandler = limitedMode ? undefined : onSendPasswordResetEmail
   const toast = useNotify()
   const [resetBusyId, setResetBusyId] = useState('')
   const [filterGrade, setFilterGrade] = useState('')
@@ -196,6 +200,7 @@ export default function FacultiesPage({
         initial={initial}
         onBack={() => setScreen('list')}
         submitLabel={mode === 'edit' ? 'Save Changes' : 'Add Faculty'}
+        limitedMode={limitedMode}
         onSave={(payload) => {
           if (mode === 'edit' && activeFaculty) return onUpdateFaculty(activeFaculty.id, payload)
           return onAddFaculty(payload)
@@ -209,7 +214,7 @@ export default function FacultiesPage({
       <FacultyProfile
         faculty={activeFaculty}
         onBack={() => setScreen('list')}
-        onSendPasswordResetEmail={onSendPasswordResetEmail}
+        onSendPasswordResetEmail={resetEmailHandler}
       />
     )
   }
@@ -221,9 +226,11 @@ export default function FacultiesPage({
           <BackButton onClick={onBack} />
           <h2 className="mt-1 text-3xl font-bold text-neutral-900">Faculty List</h2>
         </div>
+        {!limitedMode ? (
         <button type="button" className="rounded bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:brightness-110" onClick={openAdd}>
           Add Faculty
         </button>
+        ) : null}
       </div>
 
       <section className="rounded-xl border border-neutral-200 bg-white p-5 shadow-md md:p-6">
@@ -318,6 +325,7 @@ export default function FacultiesPage({
                       </td>
                       <td className="whitespace-nowrap px-4 py-3 text-right">
                         <div className="inline-flex shrink-0 flex-nowrap items-center justify-end gap-2">
+                          {!limitedMode ? (
                           <button
                             type="button"
                             className="rounded bg-slate-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-600"
@@ -325,6 +333,7 @@ export default function FacultiesPage({
                           >
                             Archive
                           </button>
+                          ) : null}
                           <button
                             type="button"
                             className="rounded bg-amber-400 px-3 py-1.5 text-xs font-semibold text-neutral-900 hover:brightness-110"
@@ -339,7 +348,7 @@ export default function FacultiesPage({
                           >
                             View
                           </button>
-                          {onSendPasswordResetEmail ? (
+                          {resetEmailHandler ? (
                             <button
                               type="button"
                               className="rounded bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"

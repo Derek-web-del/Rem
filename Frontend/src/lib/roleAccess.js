@@ -13,7 +13,9 @@ export const ROLE_HOME = {
 /** Nav ids restricted to the Registrar accounts portal. */
 export const REGISTRAR_ONLY_NAV_IDS = new Set(['section', 'students', 'faculties', 'archive'])
 
-/** Nav ids restricted to Institute Admin (not Registrar). */
+/** Nav ids Institute Admin can reach. `students`/`faculties` are shared with Registrar (also in
+ * REGISTRAR_ONLY_NAV_IDS) but Admin only gets a view/edit-details module there — no account
+ * creation, credentials, or archiving; see the `limitedMode` prop on those pages/forms. */
 export const ADMIN_ONLY_NAV_IDS = new Set([
   'curriculum',
   'subjects',
@@ -23,6 +25,8 @@ export const ADMIN_ONLY_NAV_IDS = new Set([
   'turnover',
   'backup',
   'registrars',
+  'students',
+  'faculties',
 ])
 
 export function normalizeRole(role) {

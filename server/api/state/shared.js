@@ -1135,6 +1135,50 @@ export async function requireAdminSession(req, res, auth) {
   }
 }
 
+/**
+ * View/edit-details routes shared by Admin and Registrar (e.g. student/faculty profile fields) —
+ * account creation, credential changes, and archiving stay on requireRegistrarSession only.
+ * Same terms gate as both single-role guards.
+ */
+export async function requireAdminOrRegistrarSession(req, res, auth) {
+  if (!auth?.api?.getSession) {
+    res.status(503).json({ success: false, message: 'Admin auth is not available.' })
+    return null
+  }
+  try {
+    const session = await auth.api.getSession({ headers: req.headers })
+    const role = String(session?.user?.role || session?.data?.user?.role || '')
+      .trim()
+      .toLowerCase()
+    if (!session?.user?.id || (role !== 'admin' && role !== 'registrar')) {
+      logUnauthorizedAccessFromRequest(req, {
+        reason: 'Admin or registrar session required',
+        requiredRole: 'admin|registrar',
+      })
+      res.status(403).json({
+        success: false,
+        error: 'FORBIDDEN',
+        message: 'Access denied. Admin or registrar only.',
+      })
+      return null
+    }
+    if (!isTermsExemptRequest(req)) {
+      const pool = getPgPool()
+      if (pool) {
+        const termsRow = await fetchAdminTermsRow(pool, session.user.id)
+        if (!adminTermsAccepted(termsRow)) {
+          sendTermsNotAccepted(res, role === 'admin' ? 'admin portal' : 'registrar portal')
+          return null
+        }
+      }
+    }
+    return session
+  } catch (e) {
+    sendSafeServerError(res, e, 'requireAdminOrRegistrarSession')
+    return null
+  }
+}
+
 /** Registrar accounts portal — same terms gate as admin (`"user".terms_accepted`). */
 export async function requireRegistrarSession(req, res, auth) {
   if (!auth?.api?.getSession) {

@@ -190,6 +190,10 @@ export default function FacultyDetails({
   onBack,
   onSave,
   submitLabel = 'Add Faculty',
+  /** Admin's view/edit-details module — hides Faculty Code ID (login username) and Password
+   * entirely. The existing (unchanged) values still flow through in the save payload from
+   * `initial`/`form` state, so the shared PUT endpoint's required-field validation still passes. */
+  limitedMode = false,
 }) {
   const toast = useNotify()
   const fileInputRef = useRef(null)
@@ -664,6 +668,7 @@ export default function FacultyDetails({
               value={form.qualification}
               onChange={(e) => setForm((p) => ({ ...p, qualification: e.target.value }))}
             />
+            {!limitedMode ? (
             <div className="rounded-xl border border-neutral-200 bg-white p-4">
               <div className="text-sm font-semibold text-neutral-900">Faculty Code ID</div>
               <div className="mt-2 flex items-center gap-2">
@@ -680,8 +685,10 @@ export default function FacultyDetails({
                 access to faculty resources.
               </div>
             </div>
+            ) : null}
           </div>
 
+          {!limitedMode ? (
           <div className="rounded-xl border border-neutral-200 bg-white p-4">
             <div className="flex items-start justify-between gap-2">
               <div>
@@ -725,6 +732,7 @@ export default function FacultyDetails({
               </ul>
             ) : null}
           </div>
+          ) : null}
 
           <div className="flex justify-end">
             <button
