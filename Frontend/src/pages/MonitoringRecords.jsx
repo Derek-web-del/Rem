@@ -11,6 +11,7 @@ import {
 import { AUDIT_LOGS_REFRESH_EVENT, dispatchAuditLogsRefresh } from '../lib/auditLogRefresh.js'
 import AuditEventGlyph from '../components/AuditEventGlyph.jsx'
 import ClearAuditLogsModal from '../components/ClearAuditLogsModal.jsx'
+import ComplianceExport from '../components/ComplianceExport.jsx'
 import { useNotify } from '../components/notifications.jsx'
 import {
   auditEventMetadata,
@@ -1076,6 +1077,7 @@ export default function MonitoringRecords() {
   const [unifiedPageInput, setUnifiedPageInput] = useState('1')
   const [unifiedErr, setUnifiedErr] = useState('')
   const [unifiedDateOpen, setUnifiedDateOpen] = useState(false)
+  const [exportOpen, setExportOpen] = useState(false)
   const [unifiedDateFrom, setUnifiedDateFrom] = useState('')
   const [unifiedDateTo, setUnifiedDateTo] = useState('')
   const [eventsSearch, setEventsSearch] = useState('')
@@ -1258,6 +1260,23 @@ export default function MonitoringRecords() {
                       </button>
                     </div>
                   </div>
+                </div>
+              ) : null}
+            </div>
+            <div className="relative shrink-0">
+              <button
+                type="button"
+                onClick={() => setExportOpen((v) => !v)}
+                className="inline-flex h-[42px] items-center gap-2 rounded-lg border border-neutral-200 bg-white px-4 text-sm font-semibold text-neutral-800 shadow-sm hover:bg-neutral-50"
+              >
+                <span className="text-base leading-none" aria-hidden>
+                  📤
+                </span>
+                Export
+              </button>
+              {exportOpen ? (
+                <div className="absolute right-0 z-20 mt-2 w-[320px]">
+                  <ComplianceExport onClose={() => setExportOpen(false)} />
                 </div>
               ) : null}
             </div>

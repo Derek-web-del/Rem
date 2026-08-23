@@ -1,6 +1,5 @@
 import { cleanAuditLogEvents } from '../lib/cleanAuditLogText.js'
 import {
-  enrichAuthAuditEvents,
   fetchFilteredAuthAuditLogs,
   parseAuditLogQuery,
   pickAuditEventTime,
@@ -9,7 +8,6 @@ import {
 } from '../api/logs.js'
 import { fetchAuthAuditLogPage, logAuditInfraError } from '../lib/fetchAuthAuditLogs.js'
 import { queryLocalAuditLogsPage, AUDIT_LOGS_CLEARED_TYPE } from '../lib/auditLogsLedger.js'
-import { customActivityLogger } from '../services/CustomActivityLogger.js'
 import { getInstituteAuditStatistics } from '../lib/auditStatisticsService.js'
 import { pickAuditEventDate } from '../../shared/auditTime.js'
 import { sendSafeServerError } from '../lib/safeApiError.js'
@@ -83,13 +81,6 @@ function csvEscape(v) {
 
 function toCsv(rows) {
   return rows.map((r) => r.map(csvEscape).join(',')).join('\n')
-}
-
-function isBetween(ms, fromMs, toMs) {
-  if (!Number.isFinite(ms)) return true
-  if (Number.isFinite(fromMs) && ms < fromMs) return false
-  if (Number.isFinite(toMs) && ms > toMs) return false
-  return true
 }
 
 function classifyAuthEventType(eventType) {
@@ -437,67 +428,86 @@ export function createMonitoringRouter(express, auth) {
       const reportType = String(req.query.reportType || 'all')
       const dateFromIso = toAuditIsoDate(req.query.dateFrom ?? req.query.startDate, false)
       const dateToIso = toAuditIsoDate(req.query.dateTo ?? req.query.endDate, true)
-      const fromMs = dateFromIso ? new Date(dateFromIso).getTime() : NaN
-      const toMs = dateToIso ? new Date(dateToIso).getTime() : NaN
 
-      // ---- Fetch auth audit logs (page until we fall outside range or hit cap) ----
-      const authEvents = []
       const pageLimit = 200
-      const maxPages = 10 // up to 2000 auth events
-      for (let page = 0; page < maxPages; page++) {
-        const dash = await auth.api.getAuditLogs({
-          headers: req.headers,
-          query: { limit: pageLimit, offset: page * pageLimit },
-        })
-        const batch = Array.isArray(dash?.events)
-          ? dash.events
-          : Array.isArray(dash?.data?.events)
-            ? dash.data.events
-            : []
-        if (batch.length === 0) break
+      const maxPages = 10 // up to 2000 events per source
 
-        for (const e of batch) {
-          const ts = pickTime(e)
-          const ms = ts ? new Date(ts).getTime() : NaN
-          if (!isBetween(ms, fromMs, toMs)) continue
-          authEvents.push(e)
-        }
-
-        // stop if the oldest item is already older than dateFrom (assuming descending order)
-        const last = batch[batch.length - 1]
-        const lastMs = pickTime(last) ? new Date(pickTime(last)).getTime() : NaN
-        if (Number.isFinite(fromMs) && Number.isFinite(lastMs) && lastMs < fromMs) break
+      // ---- Auth events: same resilient path as /monitoring/unified — falls back to the
+      // local audit ledger internally if the auth plugin's own audit-log API is unavailable,
+      // instead of letting that call's rejection crash the whole export. ----
+      let authEvents = []
+      try {
+        const authResult = await fetchFilteredAuthAuditLogs(
+          ({ limit, offset }) =>
+            fetchAuthAuditLogPage({
+              auth,
+              headers: req.headers,
+              limit,
+              offset,
+              dateFrom: dateFromIso,
+              dateTo: dateToIso,
+            }),
+          { limit: pageLimit * maxPages, offset: 0, dateFrom: dateFromIso, dateTo: dateToIso },
+          { maxPages, pageSize: pageLimit },
+        )
+        authEvents = (authResult.events || []).map(normalizeDashEvent)
+      } catch (authErr) {
+        logAuditInfraError(authErr, 'monitoring/compliance-report')
       }
 
-      // ---- Fetch LMS activity logs ----
-      const lmsCollected = []
-      const lmsPageLimit = 500
-      const lmsMaxPages = 10 // up to 5000 events
-      for (let page = 0; page < lmsMaxPages; page++) {
-        const out = await customActivityLogger.queryLogs({
-          limit: lmsPageLimit,
-          offset: page * lmsPageLimit,
-          dateFrom: dateFromIso || undefined,
-          dateTo: dateToIso || undefined,
-        })
-        const batch = Array.isArray(out?.events) ? out.events : []
-        if (batch.length === 0) break
-        lmsCollected.push(...batch.map(normalizeLmsEvent))
-        if (batch.length < lmsPageLimit) break
-      }
+      // ---- LMS activity logs ----
+      const lms = await queryLmsAuditLogsWithTargets({
+        limit: pageLimit * maxPages,
+        offset: 0,
+        dateFrom: dateFromIso || undefined,
+        dateTo: dateToIso || undefined,
+      })
+      const lmsEvents = (lms.events || []).map(normalizeLmsEvent)
 
-      const authEventsEnriched = (await enrichAuthAuditEvents(authEvents)).map(normalizeDashEvent)
+      // ---- Local audit ledger (institute-side events: student/faculty CRUD, lockouts, etc.) ----
+      const ledger = await queryLocalAuditLogsPage({
+        limit: pageLimit * maxPages,
+        offset: 0,
+        dateFrom: dateFromIso || undefined,
+        dateTo: dateToIso || undefined,
+      })
+      const ledgerEvents = (ledger.events || []).map(normalizeLedgerEvent)
+
+      const seen = new Set()
+      const allEvents = []
+      for (const e of [...lmsEvents, ...ledgerEvents, ...authEvents]) {
+        const key = unifiedEventDedupeKey(e)
+        if (seen.has(key)) continue
+        seen.add(key)
+        allEvents.push(e)
+      }
+      allEvents.sort((a, b) => eventSortMs(b) - eventSortMs(a))
 
       // ---- Filter + normalize rows for CSV ----
       const rows = [
         ['Timestamp', 'Admin Email', 'Action', 'Target User', 'Resource', 'Details'],
       ]
 
-      const allEvents = [...authEventsEnriched, ...lmsCollected].sort(
-        (a, b) => new Date(pickTime(b) || 0) - new Date(pickTime(a) || 0),
-      )
-
       for (const e of allEvents) {
+        if (e.source === 'ledger') {
+          const action = String(e.eventType || e.type || 'AUDIT_EVENT')
+          const classification = classifyLmsActivityType(action)
+          if (!reportTypeMatches(classification, reportType)) continue
+
+          const actorEmail = e.userEmail || e.performed_by_name || e.performed_by || ''
+          const targetUser = e.targetName || e.target_label || e.targetEmail || ''
+          const resource = e.target_id || ''
+
+          rows.push([
+            String(pickTime(e) || ''),
+            String(actorEmail || ''),
+            action,
+            String(targetUser || ''),
+            String(resource || ''),
+            JSON.stringify(e.new_values || e.old_values || e || {}),
+          ])
+          continue
+        }
         if (e.source === 'auth') {
           const action = String(e.eventType || e.type || e.event || 'AUTH_EVENT')
           const classification = classifyAuthEventType(action)
