@@ -10,6 +10,7 @@ import {
   updateActivitySubmissionScore,
 } from '../../lib/teacherActivities.js'
 import { fetchTeacherActivityView } from '../../lib/teacherPortalOffline.js'
+import { checkSubmissionPlagiarism } from '../../lib/originalityChecker.js'
 import OfflineCacheIndicator from '../../components/OfflineCacheIndicator.jsx'
 import PdfViewerModal from '../../components/PdfViewerModal.jsx'
 import {
@@ -47,6 +48,7 @@ const valueStyle = {
 const BTN_EDIT = { background: '#F59E0B' }
 const BTN_VIEW = { background: SIDEBAR_GOLD_DARK }
 const BTN_DOWNLOAD = { background: '#16a34a' }
+const BTN_PLAGIARISM = { background: '#7c3aed' }
 
 function SortHeader({ label, active, direction, onClick }) {
   return (
@@ -110,6 +112,7 @@ export default function TeacherActivityView() {
   const [savingScore, setSavingScore] = useState(false)
   const [pdfViewer, setPdfViewer] = useState(null)
   const [fromCache, setFromCache] = useState(false)
+  const [checkingPlagiarismId, setCheckingPlagiarismId] = useState('')
 
   useEffect(() => {
     setSidebarNavLocked?.(false)
@@ -245,6 +248,22 @@ export default function TeacherActivityView() {
     const url = resolveActivityFileUrl(filePath)
     if (!url) return
     setPdfViewer({ url, fileName: String(name || 'file.pdf').trim() || 'file.pdf' })
+  }
+
+  async function handleCheckPlagiarism(sub) {
+    if (!id || !sub?.id || checkingPlagiarismId) return
+    setCheckingPlagiarismId(sub.id)
+    try {
+      const report = await checkSubmissionPlagiarism({ kind: 'activity', itemId: id, submissionId: sub.id })
+      toastRef.current.success('Plagiarism check complete.')
+      navigate(`/teacher/originality-checker/reports/${report.id}`)
+    } catch (e) {
+      toastRef.current.error(String(e?.message || 'Could not check plagiarism.'), {
+        durationMs: FACULTY_ANNOUNCEMENT_TOAST_MS,
+      })
+    } finally {
+      setCheckingPlagiarismId('')
+    }
   }
 
   return (
@@ -425,6 +444,12 @@ export default function TeacherActivityView() {
                                 dimHover
                                 disabled={!sub.file_path}
                                 onClick={() => void downloadActivitySubmissionFile(sub)}
+                              />
+                              <ActionBtn
+                                label={checkingPlagiarismId === sub.id ? 'Checking…' : 'Check Plagiarism'}
+                                style={BTN_PLAGIARISM}
+                                disabled={!sub.file_path || Boolean(checkingPlagiarismId)}
+                                onClick={() => void handleCheckPlagiarism(sub)}
                               />
                             </div>
                           </td>

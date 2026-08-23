@@ -151,6 +151,26 @@ export async function createPlagiarismReport(payload) {
   return submitForAnalysis({ content: payload?.content, file: payload?.file })
 }
 
+/** Run plagiarism analysis directly on an already-submitted assignment/activity file.
+ * @param {{ kind: 'assignment'|'activity', itemId: string|number, submissionId: string|number }} params */
+export async function checkSubmissionPlagiarism({ kind, itemId, submissionId }) {
+  const res = await apiFetch('/api/v1/plagiarism-reports/from-submission', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      kind,
+      item_id: itemId,
+      submission_id: submissionId,
+      run_ai_detection: true,
+    }),
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok || !data?.success) {
+    throw new Error(data?.message || `Could not check plagiarism (HTTP ${res.status}).`)
+  }
+  return mapReportRow(data.report)
+}
+
 export async function deletePlagiarismReport(id) {
   await apiFetch(`/api/v1/plagiarism-reports/${encodeURIComponent(String(id))}`, {
     method: 'DELETE',

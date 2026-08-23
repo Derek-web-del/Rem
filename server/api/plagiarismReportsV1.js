@@ -10,13 +10,17 @@ import {
   mergePlagiarismResults,
 } from '../lib/plagiarismAiEngine.js'
 import { getWebSources } from '../lib/webSourceFetcher.js'
-import { parseFile } from '../lib/documentParser.js'
+import { parseFile, extractPdfTextKeepFile } from '../lib/documentParser.js'
 import { detectAiContent } from '../lib/aiContentDetector.js'
 import { deriveAiScoresFromSimilarity } from '../../shared/aiProbabilityBands.js'
 import {
   getOriginalityUploadFile,
   originalityUploadMiddleware,
 } from '../lib/originalityStorage.js'
+import { ensureLocalUploadFile } from '../lib/uploadFileStorage.js'
+import { resolvePublicUploadPath } from '../lib/uploadPaths.js'
+import { fetchAssignmentById } from '../lib/assignmentsDb.js'
+import { fetchActivityById } from '../lib/activitiesDb.js'
 import {
   createPlagiarismReport,
   deletePlagiarismReport,
@@ -80,6 +84,47 @@ function parseRunAiDetection(raw) {
   if (raw === true || raw === 1 || raw === '1') return true
   if (typeof raw === 'string') return raw.trim().toLowerCase() === 'true'
   return false
+}
+
+/** Shared lexical + semantic + optional AI-detection pipeline, used by both the
+ * standalone checker and the per-submission "Check Plagiarism" action. */
+async function runPlagiarismPipeline(submittedText, { runAiDetection = false } = {}) {
+  const webSources = await getWebSources(submittedText)
+  const lexicalAnalysis = analyzeText(submittedText, webSources)
+  const aiProvider = getAiProvider()
+  let semanticAnalysis = null
+  if (aiProvider !== 'none') {
+    try {
+      semanticAnalysis = await analyzeTextSemantic(submittedText, webSources)
+    } catch (semanticErr) {
+      console.error('[plagiarism] Semantic analysis failed — using lexical only:', semanticErr?.message || semanticErr)
+    }
+  }
+  const analysis = mergePlagiarismResults(lexicalAnalysis, semanticAnalysis, aiProvider)
+
+  let aiDetectionResult = null
+  if (runAiDetection) {
+    const rawAi = detectAiContent(submittedText)
+    const derived = deriveAiScoresFromSimilarity(analysis.similarity_score)
+    aiDetectionResult = derived
+      ? {
+          ...rawAi,
+          probability: derived.probability,
+          lexical_score: derived.lexical_score,
+          semantic_score: derived.semantic_score,
+          verdict: derived.verdict,
+        }
+      : rawAi
+  }
+
+  return { analysis, aiDetectionResult, webSources }
+}
+
+async function resolveSubmissionFileAbsPath(filePath) {
+  const stored = String(filePath || '').trim()
+  if (!stored) return ''
+  const normalized = stored.startsWith('/uploads/') ? stored : `/uploads/${stored.replace(/^uploads\//, '')}`
+  return (await ensureLocalUploadFile(normalized)) || resolvePublicUploadPath(normalized)
 }
 
 export function createPlagiarismReportsV1Router(express, auth) {
@@ -184,34 +229,10 @@ export function createPlagiarismReportsV1Router(express, auth) {
         }
       }
 
-      const webSources = await getWebSources(submittedText)
-      const lexicalAnalysis = analyzeText(submittedText, webSources)
-      const aiProvider = getAiProvider()
-      let semanticAnalysis = null
-      if (aiProvider !== 'none') {
-        try {
-          semanticAnalysis = await analyzeTextSemantic(submittedText, webSources)
-        } catch (semanticErr) {
-          console.error('[plagiarism] Semantic analysis failed — using lexical only:', semanticErr?.message || semanticErr)
-        }
-      }
-      const analysis = mergePlagiarismResults(lexicalAnalysis, semanticAnalysis, aiProvider)
-
       const runAiDetection = parseRunAiDetection(req.body?.run_ai_detection)
-      let aiDetectionResult = null
-      if (runAiDetection) {
-        const rawAi = detectAiContent(submittedText)
-        const derived = deriveAiScoresFromSimilarity(analysis.similarity_score)
-        aiDetectionResult = derived
-          ? {
-              ...rawAi,
-              probability: derived.probability,
-              lexical_score: derived.lexical_score,
-              semantic_score: derived.semantic_score,
-              verdict: derived.verdict,
-            }
-          : rawAi
-      }
+      const { analysis, aiDetectionResult, webSources } = await runPlagiarismPipeline(submittedText, {
+        runAiDetection,
+      })
 
       const processingTimeMs = Date.now() - startTime
 
@@ -281,6 +302,122 @@ export function createPlagiarismReportsV1Router(express, auth) {
       })
     } catch (e) {
       sendSafeServerError(res, e, 'POST /api/v1/plagiarism-reports')
+    }
+  })
+
+  router.post('/v1/plagiarism-reports/from-submission', async (req, res) => {
+    try {
+      const gate = await requireFacultySession(req, res, auth)
+      if (!gate) return
+
+      const pool = getPgPool()
+      const facultyRow = await fetchFacultyRowForSession(pool, gate.user)
+      if (!facultyRow?.id) {
+        res.status(404).json({ success: false, error: 'FACULTY_NOT_FOUND', message: 'Faculty profile not linked.' })
+        return
+      }
+
+      const kind = String(req.body?.kind || '').trim().toLowerCase()
+      const itemId = parseIdParam(req.body?.item_id)
+      const submissionId = parseIdParam(req.body?.submission_id)
+      if ((kind !== 'assignment' && kind !== 'activity') || !itemId || !submissionId) {
+        res.status(400).json({ success: false, error: 'BAD_REQUEST', message: 'kind, item_id, and submission_id are required.' })
+        return
+      }
+
+      await ensurePlagiarismReportsSchema(pool)
+
+      const item =
+        kind === 'assignment'
+          ? await fetchAssignmentById(pool, itemId, facultyRow.id)
+          : await fetchActivityById(pool, itemId, facultyRow.id)
+      if (!item) {
+        res.status(404).json({ success: false, error: 'NOT_FOUND', message: 'Assignment/activity not found.' })
+        return
+      }
+
+      const table = kind === 'assignment' ? 'assignment_submissions' : 'activity_submissions'
+      const itemCol = kind === 'assignment' ? 'assignment_id' : 'activity_id'
+      const { rows: subRows } = await pool.query(
+        `SELECT id, student_id, file_path, file_name FROM ${table} WHERE id = $1 AND ${itemCol} = $2 LIMIT 1`,
+        [submissionId, itemId],
+      )
+      const submission = subRows?.[0]
+      if (!submission?.file_path) {
+        res.status(404).json({ success: false, error: 'NOT_FOUND', message: 'Submission file not found.' })
+        return
+      }
+
+      const startTime = Date.now()
+      const absPath = await resolveSubmissionFileAbsPath(submission.file_path)
+      if (!absPath) {
+        res.status(404).json({ success: false, error: 'NOT_FOUND', message: 'Submission file missing on disk.' })
+        return
+      }
+
+      const parsed = await extractPdfTextKeepFile(absPath)
+      if (!parsed.text) {
+        res.status(400).json({
+          success: false,
+          error: 'BAD_REQUEST',
+          message: parsed.error || 'Could not extract text from this submission.',
+        })
+        return
+      }
+
+      const runAiDetection = parseRunAiDetection(req.body?.run_ai_detection ?? true)
+      const { analysis, aiDetectionResult, webSources } = await runPlagiarismPipeline(parsed.text, {
+        runAiDetection,
+      })
+      const processingTimeMs = Date.now() - startTime
+      const fileName = submission.file_name || 'submission.pdf'
+
+      const report = await createPlagiarismReport(pool, facultyRow.id, {
+        content: parsed.text,
+        inputType: 'file',
+        fileName,
+        similarityScore: analysis.similarity_score,
+        riskLevel: analysis.risk_level,
+        flaggedSentences: analysis.flagged_sentences,
+        webSources: analysis.web_sources,
+        sourcesChecked: webSources.length,
+        processingTimeMs,
+        analysisMethod: analysis.analysis_method,
+        aiProvider: analysis.ai_provider,
+        lexicalScore: analysis.lexical_score,
+        semanticScore: analysis.semantic_score,
+        aiDetectionEnabled: runAiDetection,
+        aiProbability: aiDetectionResult?.probability ?? null,
+        aiLexicalScore: aiDetectionResult?.lexical_score ?? null,
+        aiSemanticScore: aiDetectionResult?.semantic_score ?? null,
+        aiVerdict: aiDetectionResult?.verdict ?? null,
+        aiSentenceResults: aiDetectionResult?.sentences ?? null,
+        submissionId,
+        studentId: submission.student_id,
+        assignmentId: kind === 'assignment' ? itemId : null,
+        activityId: kind === 'activity' ? itemId : null,
+      })
+
+      await logTeacherAuditEvent(req, {
+        event_type: 'plagiarism_check_submitted',
+        module: TEACHER_AUDIT_MODULES.PLAGIARISM,
+        action: TEACHER_AUDIT_ACTIONS.CREATE,
+        user: gate.user,
+        facultyRow,
+        target_id: report?.id,
+        target_label: buildTargetLabel(fileName),
+        new_values: {
+          document_name: fileName,
+          similarity_score: analysis.similarity_score,
+          risk_level: analysis.risk_level,
+          submission_id: submissionId,
+          [itemCol]: itemId,
+        },
+      })
+
+      res.status(201).json({ success: true, report_id: report.id, report })
+    } catch (e) {
+      sendSafeServerError(res, e, 'POST /api/v1/plagiarism-reports/from-submission')
     }
   })
 

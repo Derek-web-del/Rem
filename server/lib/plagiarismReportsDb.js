@@ -3,7 +3,7 @@ const REPORT_COLUMNS = `
   flagged_sentences, web_sources, sources_checked, processing_time_ms,
   analysis_method, ai_provider, lexical_score, semantic_score,
   ai_probability, ai_lexical_score, ai_semantic_score, ai_verdict, ai_sentence_results,
-  ai_detection_enabled, created_at
+  ai_detection_enabled, submission_id, student_id, assignment_id, activity_id, created_at
 `
 
 export async function ensurePlagiarismReportsSchema(pool) {
@@ -69,11 +69,18 @@ export async function ensurePlagiarismReportsSchema(pool) {
     ALTER TABLE plagiarism_reports
       ADD COLUMN IF NOT EXISTS ai_semantic_score NUMERIC(5, 2) DEFAULT NULL
   `)
+  await pool.query(`ALTER TABLE plagiarism_reports ADD COLUMN IF NOT EXISTS submission_id BIGINT`)
+  await pool.query(`ALTER TABLE plagiarism_reports ADD COLUMN IF NOT EXISTS student_id VARCHAR(64)`)
+  await pool.query(`ALTER TABLE plagiarism_reports ADD COLUMN IF NOT EXISTS assignment_id BIGINT`)
+  await pool.query(`ALTER TABLE plagiarism_reports ADD COLUMN IF NOT EXISTS activity_id BIGINT`)
   await pool.query(
     `CREATE INDEX IF NOT EXISTS idx_plagiarism_reports_faculty_id ON plagiarism_reports (faculty_id)`,
   )
   await pool.query(
     `CREATE INDEX IF NOT EXISTS idx_plagiarism_reports_created_at ON plagiarism_reports (created_at DESC)`,
+  )
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS idx_plagiarism_reports_submission ON plagiarism_reports (submission_id) WHERE submission_id IS NOT NULL`,
   )
 }
 
@@ -179,6 +186,10 @@ export function mapPlagiarismReportRow(row) {
     aiDetectionEnabled: Boolean(row.ai_detection_enabled),
     aiDetectionRan: Boolean(row.ai_detection_enabled),
     ai_detection_ran: Boolean(row.ai_detection_enabled),
+    submissionId: row.submission_id != null ? String(row.submission_id) : null,
+    studentId: row.student_id != null ? String(row.student_id).trim() || null : null,
+    assignmentId: row.assignment_id != null ? String(row.assignment_id) : null,
+    activityId: row.activity_id != null ? String(row.activity_id) : null,
     createdAt:
       row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at ?? null,
   }
@@ -322,8 +333,9 @@ export async function createPlagiarismReport(pool, facultyId, analysis) {
         faculty_id, content, input_type, file_name, similarity_score, risk_level,
         flagged_sentences, web_sources, sources_checked, processing_time_ms,
         analysis_method, ai_provider, lexical_score, semantic_score,
-        ai_probability, ai_lexical_score, ai_semantic_score, ai_verdict, ai_sentence_results, ai_detection_enabled
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19::jsonb, $20)
+        ai_probability, ai_lexical_score, ai_semantic_score, ai_verdict, ai_sentence_results, ai_detection_enabled,
+        submission_id, student_id, assignment_id, activity_id
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19::jsonb, $20, $21, $22, $23, $24)
       RETURNING ${REPORT_COLUMNS}
     `,
     [
@@ -349,6 +361,10 @@ export async function createPlagiarismReport(pool, facultyId, analysis) {
         ? JSON.stringify(analysis.aiSentenceResults)
         : null,
       aiDetectionEnabled,
+      analysis.submissionId != null ? Number(analysis.submissionId) : null,
+      analysis.studentId != null ? String(analysis.studentId) : null,
+      analysis.assignmentId != null ? Number(analysis.assignmentId) : null,
+      analysis.activityId != null ? Number(analysis.activityId) : null,
     ],
   )
   return mapPlagiarismReportRow(rows?.[0])

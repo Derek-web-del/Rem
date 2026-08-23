@@ -52,3 +52,29 @@ export async function parseFile(filePath, mimeType, originalName) {
     }
   }
 }
+
+/**
+ * Same PDF text extraction as parseFile, but never deletes the source file —
+ * for reading an already-persisted submission, not a one-off upload.
+ * @param {string} filePath
+ * @returns {Promise<{ text: string | null, error: string | null }>}
+ */
+export async function extractPdfTextKeepFile(filePath) {
+  const abs = String(filePath || '').trim()
+  try {
+    const buffer = fsSync.readFileSync(abs)
+    const result = await pdfParse(buffer)
+    let text = String(result?.text || '').replace(/\s+/g, ' ').trim()
+
+    if (text.length < MIN_TEXT_LENGTH) {
+      return {
+        text: null,
+        error: `Could not extract enough text (minimum ${MIN_TEXT_LENGTH} characters required).`,
+      }
+    }
+
+    return { text, error: null }
+  } catch (e) {
+    return { text: null, error: String(e?.message || 'Failed to parse file.') }
+  }
+}
