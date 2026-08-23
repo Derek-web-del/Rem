@@ -9,7 +9,6 @@ import {
   deleteQuiz,
   ensureQuizzesSchema,
   fetchQuizById,
-  fetchStudentQuizById,
   grantQuizAccess,
   hasQuizAccess,
   listQuizzes,
@@ -20,9 +19,16 @@ import {
   normalizeMaxAttempts,
 } from '../lib/quizzesDb.js'
 import { fetchFacultyRowForSession } from '../lib/facultySession.js'
+import { fetchStudentRowForSession, resolveStudentGradeLevel } from '../lib/studentSession.js'
 import { enforceFacultyTermsAccepted } from '../lib/facultyTerms.js'
 import { customActivityLogger } from '../services/CustomActivityLogger.js'
-import { ensureQuizSubmissionsSchema, fetchQuizRosterScores } from '../lib/quizSubmissionsDb.js'
+import {
+  assertStudentQuizAccess,
+  ensureQuizSubmissionsSchema,
+  fetchQuizRosterScores,
+  fetchSubmissionForStudent,
+  stripQuizForTaking,
+} from '../lib/quizSubmissionsDb.js'
 import { isDeadlinePassed } from '../lib/studentWorkPortal.js'
 import { isTeacherSubmissionScoreLocked } from '../lib/submissionExtensionDb.js'
 import {
@@ -206,14 +212,18 @@ async function attachQuizPassword(payload, mode) {
     next.quiz_password = next.quiz_password_plain
       ? await hashPasswordBcrypt(next.quiz_password_plain)
       : null
+    // quiz_password_plain is kept (not deleted) — stored alongside the hash purely so the
+    // owning teacher can look the code back up later; verification always uses the hash.
+    delete next.password_touched
     return next
   }
   if (next.password_touched) {
     next.quiz_password = next.quiz_password_plain
       ? await hashPasswordBcrypt(next.quiz_password_plain)
       : null
+  } else {
+    delete next.quiz_password_plain
   }
-  delete next.quiz_password_plain
   delete next.password_touched
   return next
 }
@@ -325,7 +335,17 @@ export function createQuizzesV1Router(express, auth) {
       await ensureQuizzesSchema(pool)
 
       if (gate.role === 'student') {
-        const quizzes = await listStudentQuizzes(pool)
+        const studentRow = await fetchStudentRowForSession(pool, gate.user)
+        if (!studentRow) {
+          res.status(404).json({
+            success: false,
+            error: 'STUDENT_NOT_FOUND',
+            message: 'Student profile not linked to this account.',
+          })
+          return
+        }
+        const gradeLevel = await resolveStudentGradeLevel(pool, studentRow)
+        const quizzes = await listStudentQuizzes(pool, gradeLevel)
         res.json({ success: true, quizzes, data: quizzes })
         return
       }
@@ -552,7 +572,17 @@ export function createQuizzesV1Router(express, auth) {
       await ensureQuizzesSchema(pool)
 
       if (gate.role === 'student') {
-        const quiz = await fetchStudentQuizById(pool, id)
+        const studentRow = await fetchStudentRowForSession(pool, gate.user)
+        if (!studentRow) {
+          res.status(404).json({
+            success: false,
+            error: 'STUDENT_NOT_FOUND',
+            message: 'Student profile not linked to this account.',
+          })
+          return
+        }
+        await ensureQuizSubmissionsSchema(pool)
+        const quiz = await assertStudentQuizAccess(pool, studentRow, id)
         if (!quiz) {
           res.status(404).json({ success: false, error: 'NOT_FOUND', message: 'Quiz not found.' })
           return
@@ -566,7 +596,9 @@ export function createQuizzesV1Router(express, auth) {
           })
           return
         }
-        res.json({ success: true, quiz })
+        const submission = await fetchSubmissionForStudent(pool, id, studentRow.id)
+        const responseQuiz = submission?.status === 'completed' ? quiz : stripQuizForTaking(quiz)
+        res.json({ success: true, quiz: responseQuiz })
         return
       }
 
@@ -614,7 +646,6 @@ export function createQuizzesV1Router(express, auth) {
         return
       }
       const payload = await attachQuizPassword(linked.payload, 'create')
-      delete payload.quiz_password_plain
       delete payload.password_touched
       const quiz = await createQuiz(pool, facultyRow.id, payload)
       try {

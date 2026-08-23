@@ -92,6 +92,7 @@ export default function TeacherQuizView() {
   const [scoreValue, setScoreValue] = useState('')
   const [savingScore, setSavingScore] = useState(false)
   const [fromCache, setFromCache] = useState(false)
+  const [passcodeVisible, setPasscodeVisible] = useState(false)
 
   const totalPoints = quiz?.total_points ?? roster?.summary?.max_points ?? 100
   const deadlineIso = quiz?.deadline
@@ -276,7 +277,42 @@ export default function TeacherQuizView() {
                 </div>
                 <div>
                   <dt className="text-xs font-semibold uppercase text-neutral-500">Pass code</dt>
-                  <dd className="text-neutral-800">{quiz.has_password ? 'Required' : 'None'}</dd>
+                  <dd className="flex items-center gap-2 text-neutral-800">
+                    {!quiz.has_password ? (
+                      'None'
+                    ) : quiz.quiz_password_plain ? (
+                      <>
+                        <span className="font-mono">
+                          {passcodeVisible ? quiz.quiz_password_plain : '••••••'}
+                        </span>
+                        <button
+                          type="button"
+                          className="text-sky-700 hover:underline"
+                          onClick={() => setPasscodeVisible((v) => !v)}
+                        >
+                          {passcodeVisible ? 'Hide' : 'Reveal'}
+                        </button>
+                        {passcodeVisible && (
+                          <button
+                            type="button"
+                            className="text-sky-700 hover:underline"
+                            onClick={async () => {
+                              try {
+                                await navigator.clipboard.writeText(quiz.quiz_password_plain)
+                                toastRef.current.success('Pass code copied.')
+                              } catch {
+                                /* ignore clipboard errors */
+                              }
+                            }}
+                          >
+                            Copy
+                          </button>
+                        )}
+                      </>
+                    ) : (
+                      'Required'
+                    )}
+                  </dd>
                 </div>
                 <div>
                   <dt className="text-xs font-semibold uppercase text-neutral-500">Total points</dt>

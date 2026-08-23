@@ -1,6 +1,8 @@
+import { normalizeGradeLevel } from './studentSession.js'
+
 const QUIZ_COLUMNS = `
   id, title, description, instructions, activity_type, subject, grade_level,
-  branch, semester, duration_mins, deadline, total_points, quiz_password, is_hidden,
+  branch, semester, duration_mins, deadline, total_points, quiz_password, quiz_password_plain, is_hidden,
   max_attempts, created_by, created_at, updated_at
 `
 
@@ -119,6 +121,7 @@ export async function ensureQuizzesSchema(pool) {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_quiz_parts_quiz_id ON quiz_parts (quiz_id)`)
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_quiz_questions_quiz_id ON quiz_questions (quiz_id)`)
   await pool.query(`ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS quiz_password VARCHAR(255)`)
+  await pool.query(`ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS quiz_password_plain VARCHAR(64)`)
   await pool.query(`ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS is_hidden BOOLEAN NOT NULL DEFAULT FALSE`)
   await pool.query(
     `ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS max_attempts INTEGER NOT NULL DEFAULT 1`,
@@ -267,7 +270,15 @@ export async function listQuizzes(pool, facultyId) {
     .filter(Boolean)
 }
 
-export async function listStudentQuizzes(pool) {
+/**
+ * List quizzes visible to a student. Mirrors the grade-level scoping rule
+ * used by assertStudentQuizAccess (server/lib/quizSubmissionsDb.js): a quiz
+ * with no grade_level set is visible to everyone, otherwise the student's
+ * resolved grade must match. Pass '' / null / undefined for gradeLevel when
+ * it cannot be resolved, which — matching assertStudentQuizAccess — leaves
+ * the list unfiltered rather than hiding everything.
+ */
+export async function listStudentQuizzes(pool, gradeLevel) {
   const { rows } = await pool.query(
     `
     SELECT
@@ -284,6 +295,7 @@ export async function listStudentQuizzes(pool) {
     ORDER BY q.created_at DESC, q.id DESC
     `,
   )
+  const grade = normalizeGradeLevel(gradeLevel)
   return (rows || [])
     .map((row) =>
       mapQuizRow(row, {
@@ -291,6 +303,11 @@ export async function listStudentQuizzes(pool) {
       }),
     )
     .filter(Boolean)
+    .filter((quiz) => {
+      if (!grade) return true
+      const qg = normalizeGradeLevel(quiz.grade_level)
+      return !qg || qg === grade
+    })
 }
 
 async function loadQuizNested(pool, quizId) {
@@ -367,7 +384,12 @@ export async function fetchQuizById(pool, id, facultyId) {
     `,
     [id, String(facultyId)],
   )
-  const quiz = mapQuizRow(rows?.[0])
+  // Plaintext passcode is only ever attached here — the owning-teacher-scoped single-quiz
+  // fetch — never in listQuizzes/listStudentQuizzes/fetchStudentQuizById, which share
+  // mapQuizRow's base shape (has_password boolean only).
+  const quiz = mapQuizRow(rows?.[0], {
+    quiz_password_plain: String(rows?.[0]?.quiz_password_plain ?? '').trim() || null,
+  })
   if (!quiz) return null
   quiz.parts = await loadQuizNested(pool, id)
   return quiz
@@ -516,9 +538,9 @@ export async function createQuiz(pool, facultyId, payload) {
       `
       INSERT INTO quizzes (
         title, description, instructions, activity_type, subject, grade_level,
-        semester, duration_mins, deadline, total_points, quiz_password, is_hidden,
+        semester, duration_mins, deadline, total_points, quiz_password, quiz_password_plain, is_hidden,
         max_attempts, subject_id, grade_component_id, created_by, updated_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, NOW())
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, NOW())
       RETURNING id
       `,
       [
@@ -533,6 +555,7 @@ export async function createQuiz(pool, facultyId, payload) {
         parseDeadline(payload.deadline),
         totalPoints,
         payload.quiz_password || null,
+        payload.quiz_password_plain || null,
         Boolean(payload.is_hidden),
         normalizeMaxAttempts(payload.max_attempts),
         subjectId,
@@ -584,9 +607,9 @@ export async function updateQuiz(pool, id, facultyId, payload) {
           title = $1, description = $2, instructions = $3, activity_type = $4,
           subject = $5, grade_level = $6, semester = $7,
           duration_mins = $8, deadline = $9, total_points = $10,
-          quiz_password = $11, max_attempts = $12,
-          subject_id = $13, grade_component_id = $14, updated_at = NOW()
-        WHERE id = $15 AND created_by::text = $16::text
+          quiz_password = $11, quiz_password_plain = $12, max_attempts = $13,
+          subject_id = $14, grade_component_id = $15, updated_at = NOW()
+        WHERE id = $16 AND created_by::text = $17::text
         `,
         [
           payload.title,
@@ -600,6 +623,7 @@ export async function updateQuiz(pool, id, facultyId, payload) {
           parseDeadline(payload.deadline),
           totalPoints,
           payload.quiz_password || null,
+          payload.quiz_password_plain || null,
           normalizeMaxAttempts(payload.max_attempts),
           subjectId,
           gradeComponentId,

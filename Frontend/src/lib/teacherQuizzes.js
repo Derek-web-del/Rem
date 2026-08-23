@@ -40,6 +40,8 @@ export function mapQuizRow(row) {
     submission_open: row.submission_open !== false,
     is_hidden: Boolean(row.is_hidden),
     has_password: Boolean(row.has_password),
+    quiz_password_plain:
+      row.quiz_password_plain != null ? String(row.quiz_password_plain).trim() || null : null,
     created_by: String(row.created_by ?? '').trim(),
     created_at: row.created_at ?? null,
     updated_at: row.updated_at ?? null,

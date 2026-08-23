@@ -41,6 +41,15 @@ import { fetchTeacherSubjectsForAssignments } from '../../lib/teacherAssignments
 
 const FALLBACK_SUBJECTS = ['English', 'Math', 'Science', 'Filipino']
 const FALLBACK_GRADES = ['Grade 7', 'Grade 8', 'Grade 9', 'Grade 10']
+const PASSCODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+
+function generateQuizPasscode(length = 6) {
+  let out = ''
+  for (let i = 0; i < length; i += 1) {
+    out += PASSCODE_CHARS[Math.floor(Math.random() * PASSCODE_CHARS.length)]
+  }
+  return out
+}
 
 function normalizeSubjectMatchText(value) {
   return String(value || '').trim().toLowerCase().replace(/\s+/g, ' ')
@@ -563,18 +572,32 @@ export default function TeacherQuizForm({ mode = 'add' }) {
                 </div>
                 <div>
                   <label className={labelClass}>Pass code (optional)</label>
-                  <PasswordInput
-                    value={form.quiz_password}
-                    onChange={(e) => {
-                      setPasswordTouched(true)
-                      patchForm('quiz_password', e.target.value)
-                    }}
-                    placeholder={
-                      isEdit && hasPassword
-                        ? 'Keep current if blank'
-                        : 'Optional'
-                    }
-                  />
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1">
+                      <PasswordInput
+                        value={form.quiz_password}
+                        onChange={(e) => {
+                          setPasswordTouched(true)
+                          patchForm('quiz_password', e.target.value)
+                        }}
+                        placeholder={
+                          isEdit && hasPassword
+                            ? 'Keep current if blank'
+                            : 'Optional'
+                        }
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      className="shrink-0 rounded-lg border border-neutral-300 px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
+                      onClick={() => {
+                        setPasswordTouched(true)
+                        patchForm('quiz_password', generateQuizPasscode())
+                      }}
+                    >
+                      Generate
+                    </button>
+                  </div>
                   <p className="mt-1 text-xs text-neutral-500">Students must enter this pass code before starting.</p>
                 </div>
               </div>
