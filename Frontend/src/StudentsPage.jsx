@@ -664,7 +664,7 @@ export default function StudentsPage({
   }
 
   return (
-    <div className="space-y-6">
+    <div className="max-w-[1400px] space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <BackButton onClick={onBack} />

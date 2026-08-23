@@ -260,7 +260,7 @@ export default function StudentDetails({
   const showPasswordRules = mode !== 'edit' || Boolean(pwTrim)
 
   return (
-    <div className="space-y-6">
+    <div className="max-w-3xl space-y-6">
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-xs font-semibold uppercase tracking-wider text-neutral-500">{mode === 'add' ? 'Add' : 'Edit'}</p>

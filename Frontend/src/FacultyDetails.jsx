@@ -453,7 +453,7 @@ export default function FacultyDetails({
   }
 
   return (
-    <div className="space-y-6">
+    <div className="max-w-3xl space-y-6">
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-xs font-semibold uppercase tracking-wider text-neutral-500">{mode === 'add' ? 'Add New' : 'Edit'}</p>
@@ -661,14 +661,15 @@ export default function FacultyDetails({
             />
           </div>
 
+          <TextField
+            label="Faculty Qualification"
+            required
+            value={form.qualification}
+            onChange={(e) => setForm((p) => ({ ...p, qualification: e.target.value }))}
+          />
+
+          {!limitedMode ? (
           <div className="grid gap-4 md:grid-cols-2">
-            <TextField
-              label="Faculty Qualification"
-              required
-              value={form.qualification}
-              onChange={(e) => setForm((p) => ({ ...p, qualification: e.target.value }))}
-            />
-            {!limitedMode ? (
             <div className="rounded-xl border border-neutral-200 bg-white p-4">
               <div className="text-sm font-semibold text-neutral-900">Faculty Code ID</div>
               <div className="mt-2 flex items-center gap-2">
@@ -685,52 +686,50 @@ export default function FacultyDetails({
                 access to faculty resources.
               </div>
             </div>
-            ) : null}
-          </div>
 
-          {!limitedMode ? (
-          <div className="rounded-xl border border-neutral-200 bg-white p-4">
-            <div className="flex items-start justify-between gap-2">
-              <div>
-                <div className="text-sm font-semibold text-neutral-900">Faculty Password</div>
-                <div className="mt-1 text-xs text-neutral-500">
-                  {mode === 'edit'
-                    ? pwTrim
-                      ? 'Password must contain:'
-                      : 'Leave blank to keep current password'
-                    : 'Password must contain:'}
+            <div className="rounded-xl border border-neutral-200 bg-white p-4">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <div className="text-sm font-semibold text-neutral-900">Faculty Password</div>
+                  <div className="mt-1 text-xs text-neutral-500">
+                    {mode === 'edit'
+                      ? pwTrim
+                        ? 'Password must contain:'
+                        : 'Leave blank to keep current password'
+                      : 'Password must contain:'}
+                  </div>
                 </div>
+                <button
+                  type="button"
+                  className="rounded bg-neutral-200 px-3 py-2 text-sm font-semibold text-neutral-700 hover:bg-neutral-300"
+                  onClick={() => setForm((p) => ({ ...p, password: generateStrongPassword() }))}
+                  title="Generate"
+                >
+                  Generate
+                </button>
               </div>
-              <button
-                type="button"
-                className="rounded bg-neutral-200 px-3 py-2 text-sm font-semibold text-neutral-700 hover:bg-neutral-300"
-                onClick={() => setForm((p) => ({ ...p, password: generateStrongPassword() }))}
-                title="Generate"
-              >
-                Generate
-              </button>
-            </div>
 
-            <div className="mt-2 flex items-center gap-2">
-              <input
-                type="text"
-                className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm"
-                value={form.password}
-                onChange={(e) => setForm((p) => ({ ...p, password: e.target.value }))}
-                required={mode !== 'edit'}
-                placeholder={mode === 'edit' ? 'Unchanged' : ''}
-              />
-            </div>
+              <div className="mt-2 flex items-center gap-2">
+                <input
+                  type="text"
+                  className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm"
+                  value={form.password}
+                  onChange={(e) => setForm((p) => ({ ...p, password: e.target.value }))}
+                  required={mode !== 'edit'}
+                  placeholder={mode === 'edit' ? 'Unchanged' : ''}
+                />
+              </div>
 
-            {showPasswordRules ? (
-              <ul className="mt-3 space-y-1 text-xs font-medium text-neutral-600">
-                <li className={checks.len ? 'text-green-700' : ''}>✓ At least 8 characters</li>
-                <li className={checks.upper ? 'text-green-700' : ''}>✓ At least one uppercase letter</li>
-                <li className={checks.lower ? 'text-green-700' : ''}>✓ At least one lowercase letter</li>
-                <li className={checks.num ? 'text-green-700' : ''}>✓ At least one number</li>
-                <li className={checks.special ? 'text-green-700' : ''}>✓ At least one special character</li>
-              </ul>
-            ) : null}
+              {showPasswordRules ? (
+                <ul className="mt-3 space-y-1 text-xs font-medium text-neutral-600">
+                  <li className={checks.len ? 'text-green-700' : ''}>✓ At least 8 characters</li>
+                  <li className={checks.upper ? 'text-green-700' : ''}>✓ At least one uppercase letter</li>
+                  <li className={checks.lower ? 'text-green-700' : ''}>✓ At least one lowercase letter</li>
+                  <li className={checks.num ? 'text-green-700' : ''}>✓ At least one number</li>
+                  <li className={checks.special ? 'text-green-700' : ''}>✓ At least one special character</li>
+                </ul>
+              ) : null}
+            </div>
           </div>
           ) : null}
 
