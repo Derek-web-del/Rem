@@ -27,6 +27,7 @@ export const ADMIN_ONLY_NAV_IDS = new Set([
   'registrars',
   'students',
   'faculties',
+  'promotion',
 ])
 
 export function normalizeRole(role) {

@@ -13,6 +13,7 @@ export const NAV_ID_TO_PATH = {
   archive: '/admin/archive-vault',
   turnover: '/admin/turnover',
   registrars: '/admin/registrar-accounts',
+  promotion: '/admin/promotion',
 }
 
 const PATH_TO_NAV_ID = Object.fromEntries(

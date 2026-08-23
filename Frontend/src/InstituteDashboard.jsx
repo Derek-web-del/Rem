@@ -28,6 +28,7 @@ import IncidentResponsePage from './pages/admin/IncidentResponsePage.jsx'
 import BackupPage from './pages/BackupPage.jsx'
 import ArchiveVault from './pages/ArchiveVault.jsx'
 import AdminTurnoverPage from './pages/admin/AdminTurnoverPage.jsx'
+import GradePromotionPage from './pages/admin/GradePromotionPage.jsx'
 import RegistrarAccountsPage from './pages/admin/RegistrarAccountsPage.jsx'
 import AdminTermsPage from './pages/admin/AdminTermsPage.jsx'
 import AuditStatisticsSection from './components/AuditStatisticsSection.jsx'
@@ -725,6 +726,7 @@ const NAV = [
   { id: 'monitoring', label: 'Audit Logs', icon: ActivityIcon, to: NAV_ID_TO_PATH.monitoring },
   { id: 'incidents', label: 'Incident Response', icon: ShieldAlertIcon, to: NAV_ID_TO_PATH.incidents },
   { id: 'turnover', label: 'Admin Transfer', icon: UserTieIcon, to: NAV_ID_TO_PATH.turnover },
+  { id: 'promotion', label: 'Grade Promotion', icon: GradCapIcon, to: NAV_ID_TO_PATH.promotion },
   { id: 'registrars', label: 'Registrar Accounts', icon: UserTieIcon, to: NAV_ID_TO_PATH.registrars },
   { id: 'backup', label: 'Data Backup', icon: DatabaseExportIcon, to: NAV_ID_TO_PATH.backup },
   { id: 'archive', label: 'Archive Vault', icon: ArchiveIcon, to: NAV_ID_TO_PATH.archive },
@@ -3178,6 +3180,8 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
             <IncidentResponsePage />
           ) : activeNav === 'turnover' ? (
             <AdminTurnoverPage />
+          ) : activeNav === 'promotion' ? (
+            <GradePromotionPage />
           ) : activeNav === 'registrars' ? (
             <RegistrarAccountsPage />
           ) : activeNav === 'backup' ? (

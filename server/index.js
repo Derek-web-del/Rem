@@ -26,6 +26,7 @@ import { createTeacherSubmissionExtensionV1Router } from './api/teacherSubmissio
 import { createAdminCurriculumGuidesRouter } from './api/adminCurriculumGuides.js'
 import { createAdminSubjectCurriculumRouter } from './api/adminSubjectCurriculum.js'
 import { createAdminTurnoverRouter } from './api/adminTurnoverV1.js'
+import { createGradePromotionV1Router } from './api/gradePromotionV1.js'
 import { createSecurityIncidentsRouter } from './api/securityIncidentsV1.js'
 import { createSchoolYearRouter } from './api/schoolYearV1.js'
 import { createRegistrarsRouter } from './api/registrarsV1.js'
@@ -503,6 +504,7 @@ app.all('/api/auth/*', toNodeHandler(auth))
   app.use('/api', createAdminCurriculumGuidesRouter(express, auth))
   app.use('/api', createAdminSubjectCurriculumRouter(express, auth))
   app.use('/api', createAdminTurnoverRouter(express, auth))
+  app.use('/api', createGradePromotionV1Router(express, auth))
   app.use('/api', createSecurityIncidentsRouter(express, auth))
   app.use('/api', createSchoolYearRouter(express, auth))
   app.use('/api', createRegistrarsRouter(express, auth))
