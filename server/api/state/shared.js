@@ -426,6 +426,10 @@ export async function mapBodyToFacultiesRow(pool, b, { sectionIds = [], includeS
   if (colSet.has('address')) {
     row.address = readStudentOptional(b, 'address', 'address') || null
   }
+  const facultyCode =
+    readStudentField(b, 'facultyCodeId', 'faculty_code_id') ||
+    readStudentField(b, 'facultyUsername', 'faculty_username') ||
+    readStudentField(b, 'facultyCode', 'faculty_code')
   if (colSet.has('employee_id')) {
     const empId =
       readStudentField(b, 'employeeId', 'employee_id') ||
@@ -440,10 +444,6 @@ export async function mapBodyToFacultiesRow(pool, b, { sectionIds = [], includeS
       readStudentField(b, 'qualification', 'qualification') ||
       null
   }
-  const facultyCode =
-    readStudentField(b, 'facultyCodeId', 'faculty_code_id') ||
-    readStudentField(b, 'facultyUsername', 'faculty_username') ||
-    readStudentField(b, 'facultyCode', 'faculty_code')
   if (colSet.has('faculty_code')) row.faculty_code = facultyCode || null
   if (colSet.has('faculty_username')) row.faculty_username = facultyCode || null
   const photoValue = readFacultyPhotoUrl(b)

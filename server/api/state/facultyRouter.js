@@ -170,8 +170,15 @@ export function registerFacultyRoutes(router, ctx) {
           isUpdate: false,
         })
       } catch (photoErr) {
-        res.status(400).json({ success: false, error: String(photoErr?.message || photoErr) })
-        return
+        if (photoErr?.statusCode === 400) {
+          res.status(400).json({ success: false, error: String(photoErr?.message || photoErr) })
+          return
+        }
+        // Photo is optional; a storage failure (e.g. misconfigured DigitalOcean Spaces bucket)
+        // shouldn't block account creation — drop the photo and continue.
+        console.warn('[POST /v1/faculty] Photo storage failed — continuing without photo:', photoErr?.message || photoErr)
+        delete b.photo_url
+        delete b.photoDataUrl
       }
 
       const { row, colSet } = await mapBodyToFacultiesRow(pool, b, {
@@ -275,9 +282,15 @@ export function registerFacultyRoutes(router, ctx) {
           priorPhotoUrl,
         })
       } catch (photoErr) {
-        const code = photoErr?.statusCode === 400 ? 400 : 400
-        res.status(code).json({ success: false, error: String(photoErr?.message || photoErr) })
-        return
+        if (photoErr?.statusCode === 400) {
+          res.status(400).json({ success: false, error: String(photoErr?.message || photoErr) })
+          return
+        }
+        // Photo is optional; a storage failure (e.g. misconfigured DigitalOcean Spaces bucket)
+        // shouldn't block saving the rest of the update — drop the photo change and continue.
+        console.warn('[PUT /v1/faculty] Photo storage failed — continuing without photo change:', photoErr?.message || photoErr)
+        delete b.photo_url
+        delete b.photoDataUrl
       }
 
       const sectionIds = parseFacultySectionIds(b)
