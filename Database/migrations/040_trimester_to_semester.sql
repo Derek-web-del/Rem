@@ -5,11 +5,17 @@ BEGIN
   IF EXISTS (
     SELECT 1 FROM information_schema.columns
     WHERE table_schema = 'public' AND table_name = 'subjects' AND column_name = 'trimester'
+  ) AND NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'subjects' AND column_name = 'semester'
   ) THEN
     ALTER TABLE public.subjects RENAME COLUMN trimester TO semester;
   ELSIF EXISTS (
     SELECT 1 FROM information_schema.columns
     WHERE table_schema = 'public' AND table_name = 'subjects' AND column_name = 'quarter'
+  ) AND NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'subjects' AND column_name = 'semester'
   ) THEN
     ALTER TABLE public.subjects RENAME COLUMN quarter TO semester;
   END IF;
@@ -26,11 +32,17 @@ BEGIN
   IF EXISTS (
     SELECT 1 FROM information_schema.columns
     WHERE table_schema = 'public' AND table_name = 'students' AND column_name = 'trimester'
+  ) AND NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'students' AND column_name = 'semester'
   ) THEN
     ALTER TABLE public.students RENAME COLUMN trimester TO semester;
   ELSIF EXISTS (
     SELECT 1 FROM information_schema.columns
     WHERE table_schema = 'public' AND table_name = 'students' AND column_name = 'quarter'
+  ) AND NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'students' AND column_name = 'semester'
   ) THEN
     ALTER TABLE public.students RENAME COLUMN quarter TO semester;
   END IF;
@@ -43,11 +55,17 @@ BEGIN
   IF EXISTS (
     SELECT 1 FROM information_schema.columns
     WHERE table_schema = 'public' AND table_name = 'faculties' AND column_name = 'trimester'
+  ) AND NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'faculties' AND column_name = 'semester'
   ) THEN
     ALTER TABLE public.faculties RENAME COLUMN trimester TO semester;
   ELSIF EXISTS (
     SELECT 1 FROM information_schema.columns
     WHERE table_schema = 'public' AND table_name = 'faculties' AND column_name = 'quarter'
+  ) AND NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'faculties' AND column_name = 'semester'
   ) THEN
     ALTER TABLE public.faculties RENAME COLUMN quarter TO semester;
   END IF;
@@ -60,11 +78,17 @@ BEGIN
   IF EXISTS (
     SELECT 1 FROM information_schema.columns
     WHERE table_schema = 'public' AND table_name = 'assignments' AND column_name = 'trimester'
+  ) AND NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'assignments' AND column_name = 'semester'
   ) THEN
     ALTER TABLE public.assignments RENAME COLUMN trimester TO semester;
   ELSIF EXISTS (
     SELECT 1 FROM information_schema.columns
     WHERE table_schema = 'public' AND table_name = 'assignments' AND column_name = 'quarter'
+  ) AND NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'assignments' AND column_name = 'semester'
   ) THEN
     ALTER TABLE public.assignments RENAME COLUMN quarter TO semester;
   END IF;
@@ -77,11 +101,17 @@ BEGIN
   IF EXISTS (
     SELECT 1 FROM information_schema.columns
     WHERE table_schema = 'public' AND table_name = 'activities' AND column_name = 'trimester'
+  ) AND NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'activities' AND column_name = 'semester'
   ) THEN
     ALTER TABLE public.activities RENAME COLUMN trimester TO semester;
   ELSIF EXISTS (
     SELECT 1 FROM information_schema.columns
     WHERE table_schema = 'public' AND table_name = 'activities' AND column_name = 'quarter'
+  ) AND NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'activities' AND column_name = 'semester'
   ) THEN
     ALTER TABLE public.activities RENAME COLUMN quarter TO semester;
   END IF;
@@ -94,11 +124,17 @@ BEGIN
   IF EXISTS (
     SELECT 1 FROM information_schema.columns
     WHERE table_schema = 'public' AND table_name = 'quizzes' AND column_name = 'trimester'
+  ) AND NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'quizzes' AND column_name = 'semester'
   ) THEN
     ALTER TABLE public.quizzes RENAME COLUMN trimester TO semester;
   ELSIF EXISTS (
     SELECT 1 FROM information_schema.columns
     WHERE table_schema = 'public' AND table_name = 'quizzes' AND column_name = 'quarter'
+  ) AND NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'quizzes' AND column_name = 'semester'
   ) THEN
     ALTER TABLE public.quizzes RENAME COLUMN quarter TO semester;
   END IF;
@@ -111,11 +147,17 @@ BEGIN
   IF EXISTS (
     SELECT 1 FROM information_schema.columns
     WHERE table_schema = 'public' AND table_name = 'study_materials' AND column_name = 'trimester'
+  ) AND NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'study_materials' AND column_name = 'semester'
   ) THEN
     ALTER TABLE public.study_materials RENAME COLUMN trimester TO semester;
   ELSIF EXISTS (
     SELECT 1 FROM information_schema.columns
     WHERE table_schema = 'public' AND table_name = 'study_materials' AND column_name = 'quarter'
+  ) AND NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'study_materials' AND column_name = 'semester'
   ) THEN
     ALTER TABLE public.study_materials RENAME COLUMN quarter TO semester;
   END IF;
@@ -128,11 +170,17 @@ BEGIN
   IF EXISTS (
     SELECT 1 FROM information_schema.columns
     WHERE table_schema = 'public' AND table_name = 'subject_materials' AND column_name = 'subject_trimester'
+  ) AND NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'subject_materials' AND column_name = 'subject_semester'
   ) THEN
     ALTER TABLE public.subject_materials RENAME COLUMN subject_trimester TO subject_semester;
   ELSIF EXISTS (
     SELECT 1 FROM information_schema.columns
     WHERE table_schema = 'public' AND table_name = 'subject_materials' AND column_name = 'subject_quarter'
+  ) AND NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'subject_materials' AND column_name = 'subject_semester'
   ) THEN
     ALTER TABLE public.subject_materials RENAME COLUMN subject_quarter TO subject_semester;
   END IF;
