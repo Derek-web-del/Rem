@@ -57,19 +57,25 @@ function formatViolationTimestamp(iso) {
   })
 }
 
-function tabSwitchViolations(st) {
-  const list = Array.isArray(st.violations) ? st.violations : []
-  return list.filter((v) => String(v?.type || '').trim() === 'tab_switch')
+const SECURITY_VIOLATION_TYPES = new Set(['tab_switch', 'fullscreen_exit'])
+
+function securityViolationLabel(type) {
+  return type === 'fullscreen_exit' ? 'Exited fullscreen' : 'Tab switch'
 }
 
-function tabSwitchTooltip(st) {
-  const tabSwitches = tabSwitchViolations(st)
-  if (tabSwitches.length < 1) return ''
-  const lines = tabSwitches.map(
+function securityViolations(st) {
+  const list = Array.isArray(st.violations) ? st.violations : []
+  return list.filter((v) => SECURITY_VIOLATION_TYPES.has(String(v?.type || '').trim()))
+}
+
+function securityViolationsTooltip(st) {
+  const violations = securityViolations(st)
+  if (violations.length < 1) return ''
+  const lines = violations.map(
     (v) =>
-      `• Tab switch — Q${v.question_number ?? '?'} — ${formatViolationTimestamp(v.timestamp)}`,
+      `• ${securityViolationLabel(v.type)} — Q${v.question_number ?? '?'} — ${formatViolationTimestamp(v.timestamp)}`,
   )
-  return [`${tabSwitches.length} tab switch${tabSwitches.length === 1 ? '' : 'es'}`, ...lines].join('\n')
+  return [`${violations.length} flag${violations.length === 1 ? '' : 's'}`, ...lines].join('\n')
 }
 
 function partPointsSubtotal(part) {
@@ -490,15 +496,15 @@ export default function TeacherQuizView() {
                                 {st.submitted_at ? formatDateYmd(st.submitted_at) : '—'}
                               </td>
                               <td className="px-4 py-3 text-neutral-700">
-                                {tabSwitchViolations(st).length >= 1 ? (
+                                {securityViolations(st).length >= 1 ? (
                                   <span
                                     className="inline-flex items-center gap-1.5 text-amber-600"
-                                    title={tabSwitchTooltip(st)}
-                                    aria-label={`${tabSwitchViolations(st).length} tab switch violation(s)`}
+                                    title={securityViolationsTooltip(st)}
+                                    aria-label={`${securityViolations(st).length} security violation(s)`}
                                   >
                                     <i className="ti ti-flag-filled text-base" aria-hidden="true" />
                                     <span className="text-xs font-bold tabular-nums">
-                                      {tabSwitchViolations(st).length}
+                                      {securityViolations(st).length}
                                     </span>
                                   </span>
                                 ) : (

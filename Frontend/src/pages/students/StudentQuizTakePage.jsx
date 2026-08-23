@@ -16,7 +16,7 @@ import {
   submitQuizViolations,
   verifyStudentQuizPassword,
 } from '../../lib/studentQuizzes.js'
-import { createQuizSessionGuard } from '../../lib/quizSessionGuard.js'
+import { createQuizSessionGuard, requestQuizFullscreenSync } from '../../lib/quizSessionGuard.js'
 import StudentMainHeader from './StudentMainHeader.jsx'
 import StudentViewHeader from './StudentViewHeader.jsx'
 import { ACTION_BLUE } from '../teachers/instituteChrome.js'
@@ -159,6 +159,7 @@ export default function StudentQuizTakePage() {
   const [multiTabBlocked, setMultiTabBlocked] = useState(false)
   const [lockChecked, setLockChecked] = useState(false)
   const [sessionLocked, setSessionLocked] = useState(false)
+  const [confirmedStart, setConfirmedStart] = useState(false)
 
   const answerMapRef = useRef(answerMap)
   const timeSpentRef = useRef(timeSpent)
@@ -466,9 +467,10 @@ export default function StudentQuizTakePage() {
     guardSessionRef.current = false
     setLockChecked(false)
     setMultiTabBlocked(false)
+    setConfirmedStart(false)
   }, [id])
 
-  const sessionReady = Boolean(quiz && !loading && !passwordModalOpen)
+  const sessionReady = Boolean(quiz && !loading && !passwordModalOpen && confirmedStart)
 
   useEffect(() => {
     if (!sessionReady || guardSessionRef.current) return undefined
@@ -629,11 +631,37 @@ export default function StudentQuizTakePage() {
                     : 'flex min-h-[70vh] flex-col overflow-hidden rounded-xl border border-neutral-200 bg-neutral-50'
                 }
               >
-                {!lockChecked ? (
+                {!confirmedStart ? (
+                  <div className="m-4 rounded-lg border border-neutral-200 bg-white p-6 text-center">
+                    <i
+                      className="ti ti-shield-lock mx-auto mb-3 block text-3xl"
+                      style={{ color: ACTION_BLUE }}
+                      aria-hidden="true"
+                    />
+                    <h3 className="text-lg font-bold text-neutral-900">Secure Quiz Mode</h3>
+                    <p className="mx-auto mt-2 max-w-md text-sm text-neutral-600">
+                      This quiz runs in fullscreen. Leaving fullscreen, switching tabs, or opening another
+                      window is recorded as a violation and may lock your quiz until you return. Your time is
+                      already counting, so continue when you&apos;re ready.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        requestQuizFullscreenSync(quizWrapperRef.current)
+                        setConfirmedStart(true)
+                      }}
+                      className="mt-4 inline-flex items-center gap-2 rounded-lg px-5 py-2 text-sm font-semibold text-white hover:brightness-110"
+                      style={{ background: ACTION_BLUE }}
+                    >
+                      <i className="ti ti-maximize" aria-hidden="true" />
+                      Enter Fullscreen &amp; Start Quiz
+                    </button>
+                  </div>
+                ) : !lockChecked ? (
                   <p className="p-6 text-sm text-neutral-500">Preparing quiz session…</p>
                 ) : null}
 
-                {lockChecked && multiTabBlocked ? (
+                {confirmedStart && lockChecked && multiTabBlocked ? (
                   <div className="rounded-lg border border-amber-200 bg-amber-50 p-6 text-center m-4">
                     <p className="text-base font-semibold text-amber-900">Quiz already open in another tab</p>
                     <p className="mt-2 text-sm text-amber-800">
