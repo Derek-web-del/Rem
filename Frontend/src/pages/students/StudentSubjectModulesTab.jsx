@@ -65,8 +65,8 @@ export default function StudentSubjectModulesTab({ subjectId, subject }) {
   }
 
   return (
-    <div>
-      <OfflineCacheIndicator fromCache={fromCache} className="px-4 pt-4" />
+    <div className="p-4">
+      <OfflineCacheIndicator fromCache={fromCache} className="pb-2" />
       {topics.map((topic) => (
           <TopicGroup
           key={topic.id}

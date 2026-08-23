@@ -58,7 +58,7 @@ export default function SubjectModulesTab({ subjectId, subject }) {
   }
 
   return (
-    <div>
+    <div className="p-4">
       {topics.map((topic) => (
         <TopicGroup
           key={topic.id}

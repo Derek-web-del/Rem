@@ -31,6 +31,8 @@ export default function WorkRow({
     isPastDeadline(item.submission_deadline)
   const canDrag = editable && draggable && !isSyllabus && !item.is_locked
   const filePath = isSyllabus && subjectId ? syllabusFilePath(subjectId, role) : ''
+  const showDraftPill = editable && !isSyllabus && item.is_published === false
+  const showChevron = !editable && Boolean(navPath || (isSyllabus && filePath))
 
   const openSyllabus = async () => {
     if (!filePath) return
@@ -60,14 +62,14 @@ export default function WorkRow({
       : {}
 
   const inner = (
-    <div className="flex flex-1 items-center justify-between gap-3 py-2.5">
+    <div className="flex flex-1 items-center justify-between gap-3 py-3">
       {canDrag ? (
         <span className="shrink-0 cursor-grab rounded p-1 text-neutral-400 active:cursor-grabbing" aria-hidden="true">
           <i className="ti ti-grip-vertical" />
         </span>
       ) : null}
       <div className="flex min-w-0 flex-1 items-center gap-3">
-        <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border ${cfg.bg}`}>
+        <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full border ${cfg.bg}`}>
           <i className={`ti ${cfg.icon} ${cfg.color}`} aria-hidden="true" />
         </div>
         <div className="min-w-0">
@@ -76,6 +78,11 @@ export default function WorkRow({
             <span className={`rounded-full border px-2 py-0.5 font-semibold uppercase ${cfg.bg} ${cfg.color}`}>
               {cfg.label}
             </span>
+            {showDraftPill ? (
+              <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 font-semibold uppercase text-amber-700">
+                Draft
+              </span>
+            ) : null}
             {points ? <span>{points}</span> : null}
           </div>
         </div>
@@ -123,13 +130,14 @@ export default function WorkRow({
             </button>
           </>
         ) : null}
+        {showChevron ? <i className="ti ti-chevron-right text-neutral-300" aria-hidden="true" /> : null}
       </div>
     </div>
   )
 
   if (navPath && !editable) {
     return (
-      <Link to={navPath} className={`block border-b border-neutral-100 px-4 hover:bg-neutral-50 ${isDragOver ? 'bg-sky-50' : ''}`}>
+      <Link to={navPath} className={`block px-4 hover:bg-neutral-50 ${isDragOver ? 'bg-sky-50' : ''}`}>
         {inner}
       </Link>
     )
@@ -138,7 +146,7 @@ export default function WorkRow({
     return (
       <button
         type="button"
-        className={`block w-full border-b border-neutral-100 px-4 text-left hover:bg-neutral-50 ${isDragOver ? 'bg-sky-50' : ''}`}
+        className={`block w-full px-4 text-left hover:bg-neutral-50 ${isDragOver ? 'bg-sky-50' : ''}`}
         onClick={() => void openSyllabus()}
       >
         {inner}
@@ -147,7 +155,7 @@ export default function WorkRow({
   }
   return (
     <div
-      className={`border-b border-neutral-100 px-4 hover:bg-neutral-50 ${isDragOver ? 'border-t-2 border-t-sky-400 bg-sky-50' : ''}`}
+      className={`px-4 hover:bg-neutral-50 ${isDragOver ? 'border-t-2 border-t-sky-400 bg-sky-50' : ''}`}
       {...dragProps}
       onDragOver={editable ? (e) => e.preventDefault() : undefined}
     >

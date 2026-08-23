@@ -431,36 +431,40 @@ export default function SubjectClassworkTab({ subjectId, subject, onSyllabusUpda
 
       <SubjectSyllabusWeeks subjectId={subjectId} />
 
-      {topics.length === 0 ? (
-        <p className="px-4 py-8 text-sm text-neutral-500">No topics yet. Add a topic to organize lessons and work.</p>
-      ) : null}
+      <div className="p-4">
+        {topics.length === 0 ? (
+          <p className="rounded-xl border border-dashed border-neutral-200 px-4 py-8 text-center text-sm text-neutral-500">
+            No topics yet. Add a topic to organize lessons and work.
+          </p>
+        ) : null}
 
-      {topics.map((topic) => (
-        <TopicGroup
-          key={topic.id}
-          topic={topic}
-          subjectId={subjectId}
-          editable
-          collapsed={Boolean(collapsed[topic.id])}
-          buildQuery={buildQuery}
-          onToggle={() => setCollapsed((p) => ({ ...p, [topic.id]: !p[topic.id] }))}
-          onEditTopic={(t) => setTopicModal({ open: true, topic: t })}
-          onDeleteTopic={handleDeleteTopic}
-          onEditWork={handleEditWork}
-          onDeleteWork={handleDeleteWork}
-          onTopicDragStart={handleTopicDragStart}
-          onTopicDragEnd={clearDragState}
-          onTopicDragOver={handleTopicDragOver}
-          onTopicDrop={handleTopicDrop}
-          onItemDragStart={handleItemDragStart}
-          onItemDragEnd={clearDragState}
-          onItemDragOver={handleItemDragOver}
-          onItemDrop={handleItemDrop}
-          dragOverTopicId={dragOverTopicId}
-          dragOverItemKey={dragOverItemKey}
-          topicDraggable
-        />
-      ))}
+        {topics.map((topic) => (
+          <TopicGroup
+            key={topic.id}
+            topic={topic}
+            subjectId={subjectId}
+            editable
+            collapsed={Boolean(collapsed[topic.id])}
+            buildQuery={buildQuery}
+            onToggle={() => setCollapsed((p) => ({ ...p, [topic.id]: !p[topic.id] }))}
+            onEditTopic={(t) => setTopicModal({ open: true, topic: t })}
+            onDeleteTopic={handleDeleteTopic}
+            onEditWork={handleEditWork}
+            onDeleteWork={handleDeleteWork}
+            onTopicDragStart={handleTopicDragStart}
+            onTopicDragEnd={clearDragState}
+            onTopicDragOver={handleTopicDragOver}
+            onTopicDrop={handleTopicDrop}
+            onItemDragStart={handleItemDragStart}
+            onItemDragEnd={clearDragState}
+            onItemDragOver={handleItemDragOver}
+            onItemDrop={handleItemDrop}
+            dragOverTopicId={dragOverTopicId}
+            dragOverItemKey={dragOverItemKey}
+            topicDraggable
+          />
+        ))}
+      </div>
 
       <TopicFormModal
         open={topicModal.open}

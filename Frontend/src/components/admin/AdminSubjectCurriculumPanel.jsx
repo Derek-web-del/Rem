@@ -116,11 +116,15 @@ export default function AdminSubjectCurriculumPanel({ postgresSubjectId }) {
 
       {error ? <p className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p> : null}
 
-      <div className="mt-4 overflow-hidden rounded-xl border border-neutral-200">
+      <div className="mt-4">
         {loading ? (
-          <p className="px-4 py-8 text-sm text-neutral-500">Loading curriculum structure…</p>
+          <p className="rounded-xl border border-dashed border-neutral-200 px-4 py-8 text-center text-sm text-neutral-500">
+            Loading curriculum structure…
+          </p>
         ) : topics.length === 0 ? (
-          <p className="px-4 py-8 text-sm text-neutral-500">No topics yet. Add a topic, then upload lessons.</p>
+          <p className="rounded-xl border border-dashed border-neutral-200 px-4 py-8 text-center text-sm text-neutral-500">
+            No topics yet. Add a topic, then upload lessons.
+          </p>
         ) : (
           topics.map((topic) => (
             <TopicGroup

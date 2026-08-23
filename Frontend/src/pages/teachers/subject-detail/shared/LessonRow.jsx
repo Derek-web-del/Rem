@@ -9,27 +9,27 @@ export default function LessonRow({
   isDragOver = false,
 }) {
   const cfg = WORK_TYPE_CONFIG.lesson
-  const num = lesson.lesson_number ?? 1
 
   return (
     <div
-      className={`flex items-center justify-between gap-3 border-b border-neutral-100 px-4 py-2.5 hover:bg-neutral-50 ${isDragOver ? 'border-t-2 border-t-sky-400 bg-sky-50' : ''}`}
+      className={`flex items-center gap-3 px-4 py-3 hover:bg-neutral-50 ${isDragOver ? 'border-t-2 border-t-sky-400 bg-sky-50' : ''}`}
     >
       <button
         type="button"
-        className={`flex min-w-0 flex-1 items-center gap-3 text-left ${onView ? 'cursor-pointer hover:opacity-90' : ''}`}
+        className={`flex min-w-0 flex-1 items-center gap-3 text-left ${onView ? 'cursor-pointer' : 'cursor-default'}`}
         onClick={() => onView?.(lesson)}
         disabled={!onView}
       >
-        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-neutral-300 text-xs font-semibold text-neutral-700">
-          {num}
+        <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full border ${cfg.bg}`}>
+          <i className={`ti ${cfg.icon} text-sm ${cfg.color}`} aria-hidden="true" />
         </span>
-        <div className="min-w-0">
-          <div className="truncate text-sm font-medium text-neutral-900">{lesson.title}</div>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-sm font-medium text-neutral-900">{lesson.title}</span>
           <span className={`mt-0.5 inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase ${cfg.bg} ${cfg.color}`}>
-            Lesson
+            {cfg.label}
           </span>
-        </div>
+        </span>
+        {onView ? <i className="ti ti-chevron-right shrink-0 text-neutral-300" aria-hidden="true" /> : null}
       </button>
       {editable ? (
         <div className="flex shrink-0 items-center gap-2">

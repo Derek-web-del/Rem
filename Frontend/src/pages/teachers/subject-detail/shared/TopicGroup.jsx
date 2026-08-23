@@ -36,6 +36,7 @@ export default function TopicGroup({
   const entries = buildTopicEntries(topic)
   const navFn = role === 'student' ? studentNavPath : teacherNavPath
   const isTopicDropTarget = dragOverTopicId === topic.id
+  const itemCount = entries.length
 
   const handleHeaderDragOver = (e) => {
     e.preventDefault()
@@ -56,12 +57,12 @@ export default function TopicGroup({
 
   return (
     <div
-      className={`border-b border-neutral-200 ${isTopicDropTarget ? 'ring-2 ring-inset ring-sky-200' : ''}`}
+      className={`mb-3 overflow-hidden rounded-xl border bg-white shadow-sm last:mb-0 ${isTopicDropTarget ? 'border-sky-300 ring-2 ring-sky-100' : 'border-neutral-200'}`}
       onDragOver={editable ? (e) => onItemDragOver?.(e, topic.id, entries.length) : undefined}
       onDrop={editable ? (e) => onItemDrop?.(e, topic.id, entries.length) : undefined}
     >
       <div
-        className={`flex items-center justify-between bg-neutral-50/80 px-4 py-3 ${isTopicDropTarget ? 'bg-sky-50/60' : ''}`}
+        className={`flex items-center gap-2 border-b border-neutral-200 bg-neutral-50 px-4 py-3 ${isTopicDropTarget ? 'bg-sky-50' : ''}`}
         onDragOver={editable ? handleHeaderDragOver : undefined}
         onDrop={editable ? handleHeaderDrop : undefined}
       >
@@ -70,22 +71,26 @@ export default function TopicGroup({
             draggable
             onDragStart={(e) => onTopicDragStart?.(e, topic)}
             onDragEnd={onTopicDragEnd}
-            className="mr-1 shrink-0 cursor-grab rounded p-1 text-neutral-400 hover:bg-neutral-100 active:cursor-grabbing"
+            className="shrink-0 cursor-grab rounded p-1 text-neutral-400 hover:bg-neutral-100 active:cursor-grabbing"
             aria-label="Drag topic"
           >
             <i className="ti ti-grip-vertical" aria-hidden="true" />
           </span>
         ) : null}
-        <button
-          type="button"
-          className="flex flex-1 items-center gap-2 text-left text-sm font-medium text-neutral-900"
-          onClick={onToggle}
-        >
-          <i className={`ti ti-chevron-right text-xs transition-transform ${collapsed ? '' : 'rotate-90'}`} aria-hidden="true" />
-          <i className="ti ti-bookmark text-neutral-400" aria-hidden="true" />
-          {topic.title}
+        <button type="button" className="flex min-w-0 flex-1 items-center gap-3 text-left" onClick={onToggle}>
+          <i
+            className={`ti ti-chevron-right shrink-0 text-sm text-neutral-400 transition-transform ${collapsed ? '' : 'rotate-90'}`}
+            aria-hidden="true"
+          />
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-blue-100 bg-blue-50 text-blue-700">
+            <i className="ti ti-books text-sm" aria-hidden="true" />
+          </span>
+          <span className="min-w-0 flex-1 truncate text-sm font-semibold text-neutral-900">{topic.title}</span>
+          <span className="shrink-0 rounded-full bg-white px-2 py-0.5 text-[11px] font-medium text-neutral-500 ring-1 ring-inset ring-neutral-200">
+            {itemCount} {itemCount === 1 ? 'item' : 'items'}
+          </span>
         </button>
-        <div className="flex items-center gap-1">
+        <div className="flex shrink-0 items-center gap-1">
           {editable && showAddItemMenu ? (
             <TopicAddItemMenu
               subjectId={subjectId}
@@ -128,9 +133,9 @@ export default function TopicGroup({
         </div>
       </div>
       {!collapsed ? (
-        <div>
+        <div className="divide-y divide-neutral-100">
           {entries.length === 0 ? (
-            <p className="px-4 py-4 text-xs text-neutral-400">No items in this topic.</p>
+            <p className="px-4 py-6 text-center text-xs text-neutral-400">No items in this module yet.</p>
           ) : null}
           {entries.map((entry, index) => {
             const isOver = dragOverItemKey === `${topic.id}:${index}`

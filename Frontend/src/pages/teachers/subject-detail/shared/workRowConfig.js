@@ -4,7 +4,7 @@ export const WORK_TYPE_CONFIG = {
   quiz: { label: 'Quiz', icon: 'ti-pencil', color: 'text-purple-600', bg: 'bg-purple-50 border-purple-200' },
   material: { label: 'Material', icon: 'ti-file-text', color: 'text-blue-600', bg: 'bg-blue-50 border-blue-200' },
   syllabus: { label: 'Syllabus', icon: 'ti-file-description', color: 'text-amber-700', bg: 'bg-amber-50 border-amber-200' },
-  lesson: { label: 'Lesson', icon: 'ti-book-2', color: 'text-neutral-600', bg: 'bg-neutral-50 border-neutral-200' },
+  lesson: { label: 'Lesson', icon: 'ti-book-2', color: 'text-indigo-600', bg: 'bg-indigo-50 border-indigo-200' },
 }
 
 export function syllabusFilePath(subjectId, role = 'teacher') {
