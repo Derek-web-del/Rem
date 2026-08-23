@@ -24,6 +24,10 @@ export function mapCurriculumGuideToDashboard(row, resolveUrl = (p) => p) {
       uploadedAt,
       uploadedBy: row.uploaded_by_name ?? row.uploadedBy ?? 'Administrator',
       source: row.source ?? 'admin_upload',
+      units: Array.isArray(row.units) ? row.units : [],
+      writtenWorkPct: row.written_work_pct ?? row.writtenWorkPct ?? null,
+      performanceTaskPct: row.performance_task_pct ?? row.performanceTaskPct ?? null,
+      examPct: row.exam_pct ?? row.examPct ?? null,
     },
     0,
   )

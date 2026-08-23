@@ -49,6 +49,8 @@ function CurriculumPdfModal({ guide, onClose }) {
   const [loadError, setLoadError] = useState('')
   const filePath = String(guide?.file_url || '').trim()
   const fileName = guide?.file_name || guide?.title || 'curriculum.pdf'
+  const units = Array.isArray(guide?.units) ? guide.units : []
+  const hasUnits = units.length > 0
 
   useEffect(() => {
     let cancelled = false
@@ -116,35 +118,39 @@ function CurriculumPdfModal({ guide, onClose }) {
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-neutral-200 px-4 py-3">
           <div className="min-w-0">
             <p className="truncate text-sm font-semibold text-neutral-900">{fileName}</p>
-            <p className="text-xs text-neutral-500">PDF viewer</p>
+            <p className="text-xs text-neutral-500">{hasUnits ? 'Curriculum outline' : 'PDF viewer'}</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <div className="flex items-center gap-1 rounded-lg border border-neutral-200 bg-neutral-50 px-2 py-1">
+            {!hasUnits ? (
+              <div className="flex items-center gap-1 rounded-lg border border-neutral-200 bg-neutral-50 px-2 py-1">
+                <button
+                  type="button"
+                  className="rounded px-2 py-0.5 text-sm font-semibold text-neutral-700 hover:bg-white"
+                  onClick={() => setZoom((z) => Math.max(50, z - 10))}
+                  aria-label="Zoom out"
+                >
+                  −
+                </button>
+                <span className="min-w-[3rem] text-center text-xs font-medium text-neutral-600">{zoom}%</span>
+                <button
+                  type="button"
+                  className="rounded px-2 py-0.5 text-sm font-semibold text-neutral-700 hover:bg-white"
+                  onClick={() => setZoom((z) => Math.min(200, z + 10))}
+                  aria-label="Zoom in"
+                >
+                  +
+                </button>
+              </div>
+            ) : null}
+            {filePath ? (
               <button
                 type="button"
-                className="rounded px-2 py-0.5 text-sm font-semibold text-neutral-700 hover:bg-white"
-                onClick={() => setZoom((z) => Math.max(50, z - 10))}
-                aria-label="Zoom out"
+                className="rounded-lg border border-neutral-200 px-3 py-1.5 text-xs font-semibold text-neutral-700 hover:bg-neutral-50"
+                onClick={handleDownload}
               >
-                −
+                Download
               </button>
-              <span className="min-w-[3rem] text-center text-xs font-medium text-neutral-600">{zoom}%</span>
-              <button
-                type="button"
-                className="rounded px-2 py-0.5 text-sm font-semibold text-neutral-700 hover:bg-white"
-                onClick={() => setZoom((z) => Math.min(200, z + 10))}
-                aria-label="Zoom in"
-              >
-                +
-              </button>
-            </div>
-            <button
-              type="button"
-              className="rounded-lg border border-neutral-200 px-3 py-1.5 text-xs font-semibold text-neutral-700 hover:bg-neutral-50"
-              onClick={handleDownload}
-            >
-              Download
-            </button>
+            ) : null}
             <button
               type="button"
               className="rounded-lg px-3 py-1.5 text-xs font-semibold text-white"
@@ -156,20 +162,58 @@ function CurriculumPdfModal({ guide, onClose }) {
           </div>
         </div>
         <div className="min-h-0 flex-1 overflow-auto bg-neutral-100 p-4">
-          <div
-            className="mx-auto origin-top"
-            style={{ transform: `scale(${zoom / 100})`, width: `${10000 / zoom}%`, maxWidth: '100%' }}
-          >
-            {viewerSrc ? (
-              <iframe title={fileName} src={`${viewerSrc}#toolbar=0&navpanes=0`} className="h-[75vh] w-full rounded border border-neutral-200 bg-white" />
-            ) : (
-              <p className="py-12 text-center text-sm text-neutral-500">{loadError || 'Loading…'}</p>
-            )}
-          </div>
+          {hasUnits ? (
+            <div className="mx-auto max-w-3xl space-y-4">
+              {gradingWeightsSummary(guide) ? (
+                <p className="text-sm text-neutral-600">{gradingWeightsSummary(guide)}</p>
+              ) : null}
+              <ol className="space-y-3">
+                {units.map((u, i) => (
+                  <li key={u.id} className="rounded-lg border bg-white p-3">
+                    <p className="font-semibold text-neutral-900">
+                      Unit {i + 1} · {u.title}
+                    </p>
+                    {u.description ? <p className="mt-1 text-sm text-neutral-700">{u.description}</p> : null}
+                  </li>
+                ))}
+              </ol>
+              {filePath ? (
+                <div>
+                  <p className="text-sm font-medium text-neutral-700">Reference PDF</p>
+                  <div className="mt-1 h-[50vh] w-full overflow-hidden rounded border border-neutral-200 bg-white">
+                    {viewerSrc ? (
+                      <iframe title={fileName} src={`${viewerSrc}#toolbar=0&navpanes=0`} className="h-full w-full" />
+                    ) : (
+                      <p className="py-12 text-center text-sm text-neutral-500">{loadError || 'Loading…'}</p>
+                    )}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            <div
+              className="mx-auto origin-top"
+              style={{ transform: `scale(${zoom / 100})`, width: `${10000 / zoom}%`, maxWidth: '100%' }}
+            >
+              {viewerSrc ? (
+                <iframe title={fileName} src={`${viewerSrc}#toolbar=0&navpanes=0`} className="h-[75vh] w-full rounded border border-neutral-200 bg-white" />
+              ) : (
+                <p className="py-12 text-center text-sm text-neutral-500">{loadError || 'Loading…'}</p>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>
   )
+}
+
+function gradingWeightsSummary(guide) {
+  const parts = []
+  if (guide.written_work_pct != null) parts.push(`Written Work ${guide.written_work_pct}%`)
+  if (guide.performance_task_pct != null) parts.push(`Performance Task ${guide.performance_task_pct}%`)
+  if (guide.exam_pct != null) parts.push(`Exam ${guide.exam_pct}%`)
+  return parts.join(' · ')
 }
 
 function CurriculumGuideCard({ guide, onView }) {
@@ -179,6 +223,7 @@ function CurriculumGuideCard({ guide, onView }) {
   const title = guide.title || guide.file_name || 'Curriculum guide'
   const uploaded = formatUploadDate(guide.created_at)
   const by = guide.uploaded_by_name || 'Administrator'
+  const units = Array.isArray(guide.units) ? guide.units : []
 
   return (
     <article
@@ -187,7 +232,23 @@ function CurriculumGuideCard({ guide, onView }) {
       onMouseLeave={() => setHover(false)}
     >
       <div className="relative overflow-hidden bg-neutral-50 p-3">
-        <PdfPreviewFrame guide={guide} title={title} className="h-44 w-full" />
+        {units.length > 0 ? (
+          <div className="h-44 w-full overflow-hidden rounded-lg border bg-white p-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
+              {units.length} unit{units.length === 1 ? '' : 's'}
+            </p>
+            <ul className="mt-1.5 space-y-0.5 text-sm text-neutral-700">
+              {units.slice(0, 4).map((u) => (
+                <li key={u.id} className="truncate">
+                  • {u.title}
+                </li>
+              ))}
+              {units.length > 4 ? <li className="text-neutral-400">+{units.length - 4} more</li> : null}
+            </ul>
+          </div>
+        ) : (
+          <PdfPreviewFrame guide={guide} title={title} className="h-44 w-full" />
+        )}
         {hover ? (
           <button
             type="button"

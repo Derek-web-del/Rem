@@ -12,6 +12,7 @@ import path from 'node:path'
 import { sendSafeServerError } from '../lib/safeApiError.js'
 import { logUnauthorizedAccessFromRequest } from '../lib/security.js'
 import { listPublishedCurriculumGuides } from '../lib/curriculumGuidesDb.js'
+import { listUnitsForGuides } from '../lib/curriculumGuideUnitsDb.js'
 import {
   enrichSubjectDetailsFields,
   resolveTeacherSubjectSectionName,
@@ -1688,7 +1689,9 @@ export function createTeacherApiRouter(express, auth) {
       const grade_level = String(req.query?.grade_level || '').trim()
       const subject = String(req.query?.subject || '').trim()
       const guides = await listPublishedCurriculumGuides(pool, { grade_level, subject })
-      res.json(guides)
+      const unitsByGuide = await listUnitsForGuides(pool, guides.map((g) => g.id))
+      const withUnits = guides.map((g) => ({ ...g, units: unitsByGuide[g.id] || [] }))
+      res.json(withUnits)
     } catch (e) {
       sendSafeServerError(res, e, 'GET /api/teacher/curriculum-guides')
     }

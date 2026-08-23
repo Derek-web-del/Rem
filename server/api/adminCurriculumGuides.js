@@ -16,6 +16,15 @@ import {
   setCurriculumGuidePublished,
   updateAdminCurriculumGuide,
 } from '../lib/curriculumGuidesDb.js'
+import {
+  createUnit,
+  deleteUnit,
+  listUnitsForGuide,
+  listUnitsForGuides,
+  readGradingWeights,
+  reorderUnits,
+  updateUnit,
+} from '../lib/curriculumGuideUnitsDb.js'
 import { requireAdminSession, auditInstituteRecord, purgeCurriculumFromAppStateJson } from './state/shared.js'
 import {
   curriculumAuditDescription,
@@ -46,6 +55,10 @@ export function createAdminCurriculumGuidesRouter(express, auth) {
     router.put('/admin/curriculum-guides/:id', svc503)
     router.patch('/admin/curriculum-guides/:id', svc503)
     router.delete('/admin/curriculum-guides/:id', svc503)
+    router.post('/admin/curriculum-guides/:id/units', svc503)
+    router.put('/admin/curriculum-guides/:id/units/:unitId', svc503)
+    router.delete('/admin/curriculum-guides/:id/units/:unitId', svc503)
+    router.patch('/admin/curriculum-guides/:id/units/reorder', svc503)
     return router
   }
 
@@ -55,7 +68,9 @@ export function createAdminCurriculumGuidesRouter(express, auth) {
       if (!session) return
       const pool = getPgPool()
       const guides = await listAdminCurriculumGuides(pool)
-      res.json(guides)
+      const unitsByGuide = await listUnitsForGuides(pool, guides.map((g) => g.id))
+      const withUnits = guides.map((g) => ({ ...g, units: unitsByGuide[g.id] || [] }))
+      res.json(withUnits)
     } catch (e) {
       sendSafeServerError(res, e, 'GET /api/admin/curriculum-guides')
     }
@@ -92,13 +107,15 @@ export function createAdminCurriculumGuidesRouter(express, auth) {
         res.status(400).json({ error: 'BAD_REQUEST', message: 'Subject is required.' })
         return
       }
-      if (!file) {
-        res.status(400).json({ error: 'BAD_REQUEST', message: 'Curriculum file is required.' })
-        return
+
+      let file_url = null
+      let file_name = null
+      if (file) {
+        file_url = await saveCurriculumGuideFile(file.buffer, file.originalname)
+        file_name = String(file.originalname || 'guide.pdf').trim() || 'guide.pdf'
       }
 
-      const file_url = await saveCurriculumGuideFile(file.buffer, file.originalname)
-      const file_name = String(file.originalname || 'guide.pdf').trim() || 'guide.pdf'
+      const weights = readGradingWeights(req.body)
       const id = randomUUID()
       const pool = getPgPool()
       const guide = await insertAdminCurriculumGuide(pool, {
@@ -112,6 +129,9 @@ export function createAdminCurriculumGuidesRouter(express, auth) {
         uploaded_by: String(session.user?.id || ''),
         uploaded_by_name: adminDisplayName(session),
         is_published: publishNow,
+        written_work_pct: weights.written_work_pct,
+        performance_task_pct: weights.performance_task_pct,
+        exam_pct: weights.exam_pct,
       })
 
       const snap = curriculumGuideRowSnapshot(guide)
@@ -128,7 +148,28 @@ export function createAdminCurriculumGuidesRouter(express, auth) {
         await syncCurriculumGuideLessonForAllSubjects(pool, id)
       }
 
-      res.status(201).json(guide)
+      let units = []
+      const rawUnits = req.body?.units
+      if (rawUnits) {
+        let draftUnits = []
+        try {
+          draftUnits = JSON.parse(rawUnits)
+        } catch {
+          draftUnits = []
+        }
+        if (Array.isArray(draftUnits)) {
+          let order = 0
+          for (const u of draftUnits) {
+            const unitTitle = String(u?.title || '').trim()
+            if (!unitTitle) continue
+            await createUnit(pool, id, { title: unitTitle, description: u?.description, unit_order: order })
+            order += 1
+          }
+          units = await listUnitsForGuide(pool, id)
+        }
+      }
+
+      res.status(201).json({ ...guide, units })
     } catch (e) {
       sendSafeServerError(res, e, 'POST /api/admin/curriculum-guides')
     }
@@ -175,6 +216,7 @@ export function createAdminCurriculumGuidesRouter(express, auth) {
         file_name = String(file.originalname || 'guide.pdf').trim() || 'guide.pdf'
       }
 
+      const weights = readGradingWeights(req.body)
       const guide = await updateAdminCurriculumGuide(pool, id, {
         title,
         subject,
@@ -182,6 +224,10 @@ export function createAdminCurriculumGuidesRouter(express, auth) {
         description,
         file_name,
         file_url,
+        written_work_pct: weights.written_work_pct,
+        performance_task_pct: weights.performance_task_pct,
+        exam_pct: weights.exam_pct,
+        uploaded_by_name: adminDisplayName(session),
       })
 
       /** Editing a legacy app_state-mirrored guide claims it permanently — purge the mirror so it can't reappear or overwrite this edit later. */
@@ -203,7 +249,8 @@ export function createAdminCurriculumGuidesRouter(express, auth) {
         await syncCurriculumGuideLessonForAllSubjects(pool, id)
       }
 
-      res.json(guide)
+      const units = await listUnitsForGuide(pool, id)
+      res.json({ ...guide, units })
     } catch (e) {
       sendSafeServerError(res, e, 'PUT /api/admin/curriculum-guides/:id')
     }
@@ -298,6 +345,103 @@ export function createAdminCurriculumGuidesRouter(express, auth) {
       res.json({ ok: true, id: removed.id })
     } catch (e) {
       sendSafeServerError(res, e, 'DELETE /api/admin/curriculum-guides/:id')
+    }
+  })
+
+  async function auditUnitChange(session, guideId, note) {
+    const pool = getPgPool()
+    const guide = await fetchCurriculumGuideById(pool, guideId)
+    const snap = curriculumGuideRowSnapshot(guide)
+    if (!snap) return
+    await auditInstituteRecord(session, 'CURRICULUM_UPDATED', {
+      recordType: 'curriculum',
+      recordId: String(guideId),
+      description: curriculumAuditDescription('updated', snap),
+      details: curriculumAuditDetails(snap, { note }),
+    })
+  }
+
+  router.post('/admin/curriculum-guides/:id/units', async (req, res) => {
+    try {
+      const session = await requireAdminSession(req, res, auth)
+      if (!session) return
+      const id = String(req.params.id || '').trim()
+      const title = String(req.body?.title || '').trim()
+      if (!id || !title) {
+        res.status(400).json({ error: 'BAD_REQUEST', message: 'Unit title is required.' })
+        return
+      }
+      const pool = getPgPool()
+      const existing = await listUnitsForGuide(pool, id)
+      const unit = await createUnit(pool, id, {
+        title,
+        description: req.body?.description,
+        unit_order: req.body?.unit_order ?? existing.length,
+      })
+      if (!unit) {
+        res.status(404).json({ error: 'NOT_FOUND', message: 'Curriculum guide not found.' })
+        return
+      }
+      await auditUnitChange(session, id, `Added unit: ${title}`)
+      res.status(201).json(unit)
+    } catch (e) {
+      sendSafeServerError(res, e, 'POST /api/admin/curriculum-guides/:id/units')
+    }
+  })
+
+  router.put('/admin/curriculum-guides/:id/units/:unitId', async (req, res) => {
+    try {
+      const session = await requireAdminSession(req, res, auth)
+      if (!session) return
+      const id = String(req.params.id || '').trim()
+      const unitId = req.params.unitId
+      const pool = getPgPool()
+      const unit = await updateUnit(pool, unitId, id, {
+        title: req.body?.title,
+        description: req.body?.description,
+        unit_order: req.body?.unit_order,
+      })
+      if (!unit) {
+        res.status(404).json({ error: 'NOT_FOUND', message: 'Unit not found.' })
+        return
+      }
+      await auditUnitChange(session, id, `Edited unit: ${unit.title}`)
+      res.json(unit)
+    } catch (e) {
+      sendSafeServerError(res, e, 'PUT /api/admin/curriculum-guides/:id/units/:unitId')
+    }
+  })
+
+  router.delete('/admin/curriculum-guides/:id/units/:unitId', async (req, res) => {
+    try {
+      const session = await requireAdminSession(req, res, auth)
+      if (!session) return
+      const id = String(req.params.id || '').trim()
+      const unitId = req.params.unitId
+      const pool = getPgPool()
+      const ok = await deleteUnit(pool, unitId, id)
+      if (!ok) {
+        res.status(404).json({ error: 'NOT_FOUND', message: 'Unit not found.' })
+        return
+      }
+      await auditUnitChange(session, id, 'Removed a unit')
+      res.json({ ok: true, id: Number(unitId) })
+    } catch (e) {
+      sendSafeServerError(res, e, 'DELETE /api/admin/curriculum-guides/:id/units/:unitId')
+    }
+  })
+
+  router.patch('/admin/curriculum-guides/:id/units/reorder', async (req, res) => {
+    try {
+      const session = await requireAdminSession(req, res, auth)
+      if (!session) return
+      const id = String(req.params.id || '').trim()
+      const orderedIds = Array.isArray(req.body?.unit_ids) ? req.body.unit_ids : []
+      const pool = getPgPool()
+      const units = await reorderUnits(pool, id, orderedIds)
+      res.json(units)
+    } catch (e) {
+      sendSafeServerError(res, e, 'PATCH /api/admin/curriculum-guides/:id/units/reorder')
     }
   })
 

@@ -67,6 +67,9 @@ function mapGuideRow(row) {
     is_published: row.is_published === true,
     source: String(row.source ?? 'app_state').trim(),
     created_at: created,
+    written_work_pct: row.written_work_pct ?? null,
+    performance_task_pct: row.performance_task_pct ?? null,
+    exam_pct: row.exam_pct ?? null,
   }
 }
 
@@ -97,7 +100,7 @@ export async function listPublishedCurriculumGuides(pool, filters = {}) {
   }
   sql += ` ORDER BY COALESCE(created_at, updated_at) DESC NULLS LAST, id DESC`
   const { rows } = await pool.query(sql, params)
-  return (rows || []).map(mapGuideRow).filter((r) => r?.file_url)
+  return (rows || []).map(mapGuideRow).filter(Boolean)
 }
 
 export async function listAdminCurriculumGuides(pool) {
@@ -126,6 +129,9 @@ export async function insertAdminCurriculumGuide(pool, payload) {
     uploaded_by,
     uploaded_by_name,
     is_published,
+    written_work_pct,
+    performance_task_pct,
+    exam_pct,
   } = payload
   const descriptionText = String(description ?? title ?? subject ?? file_name ?? '').trim()
   await pool.query(
@@ -133,11 +139,13 @@ export async function insertAdminCurriculumGuide(pool, payload) {
     INSERT INTO curriculum_guides (
       id, grade, subject, description, file_name, file_type, file_data_url,
       uploaded_at, uploaded_by, updated_at,
-      title, file_url, grade_level, is_published, uploaded_by_name, source, created_at
+      title, file_url, grade_level, is_published, uploaded_by_name, source, created_at,
+      written_work_pct, performance_task_pct, exam_pct
     ) VALUES (
       $1, $2, $3, $4, $5, $6, $7,
       $8, $9, NOW(),
-      $10, $11, $12, $13, $14, 'admin_upload', NOW()
+      $10, $11, $12, $13, $14, 'admin_upload', NOW(),
+      $15, $16, $17
     )
     `,
     [
@@ -145,16 +153,19 @@ export async function insertAdminCurriculumGuide(pool, payload) {
       grade_level || '',
       subject || '',
       descriptionText,
-      file_name,
-      curriculumMimeForFileName(file_name),
-      file_url,
+      file_name || null,
+      file_name ? curriculumMimeForFileName(file_name) : null,
+      file_url || null,
       new Date().toISOString(),
       uploaded_by || null,
       title,
-      file_url,
+      file_url || null,
       grade_level || null,
       is_published === true,
       uploaded_by_name || null,
+      written_work_pct ?? null,
+      performance_task_pct ?? null,
+      exam_pct ?? null,
     ],
   )
   return mapGuideRow({
@@ -169,6 +180,9 @@ export async function insertAdminCurriculumGuide(pool, payload) {
     is_published,
     source: 'admin_upload',
     created_at: new Date(),
+    written_work_pct,
+    performance_task_pct,
+    exam_pct,
   })
 }
 
@@ -183,7 +197,12 @@ export async function updateAdminCurriculumGuide(pool, id, payload) {
   const description = String(payload.description ?? existing.description ?? title).trim()
   const file_name = String(payload.file_name ?? existing.file_name ?? '').trim()
   const file_url = String(payload.file_url ?? existing.file_url ?? '').trim()
-  const file_type = String(payload.file_type ?? curriculumMimeForFileName(file_name)).trim()
+  const file_type = file_name ? curriculumMimeForFileName(file_name) : null
+  const written_work_pct = payload.written_work_pct !== undefined ? payload.written_work_pct : existing.written_work_pct
+  const performance_task_pct =
+    payload.performance_task_pct !== undefined ? payload.performance_task_pct : existing.performance_task_pct
+  const exam_pct = payload.exam_pct !== undefined ? payload.exam_pct : existing.exam_pct
+  const uploaded_by_name = payload.uploaded_by_name ?? existing.uploaded_by_name ?? null
 
   /** Any admin edit claims ownership from the legacy app_state mirror so it can't be silently resurrected/overwritten by a future state sync. */
   await pool.query(
@@ -199,10 +218,29 @@ export async function updateAdminCurriculumGuide(pool, id, payload) {
         file_url = $9,
         grade_level = $10,
         source = 'admin_upload',
+        written_work_pct = $11,
+        performance_task_pct = $12,
+        exam_pct = $13,
+        uploaded_by_name = $14,
         updated_at = NOW()
     WHERE id = $1
     `,
-    [String(id), grade_level, subject, description, file_name, file_type, file_url, title, file_url, grade_level],
+    [
+      String(id),
+      grade_level,
+      subject,
+      description,
+      file_name || null,
+      file_type,
+      file_url || null,
+      title,
+      file_url || null,
+      grade_level,
+      written_work_pct ?? null,
+      performance_task_pct ?? null,
+      exam_pct ?? null,
+      uploaded_by_name,
+    ],
   )
   return fetchCurriculumGuideById(pool, id)
 }

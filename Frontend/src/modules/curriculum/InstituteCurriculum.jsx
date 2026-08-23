@@ -88,6 +88,14 @@ function subjectsForGrade(subjects, grade) {
   )
 }
 
+function gradingWeightsSummary(item) {
+  const parts = []
+  if (item.writtenWorkPct != null && item.writtenWorkPct !== '') parts.push(`Written Work ${item.writtenWorkPct}%`)
+  if (item.performanceTaskPct != null && item.performanceTaskPct !== '') parts.push(`Performance Task ${item.performanceTaskPct}%`)
+  if (item.examPct != null && item.examPct !== '') parts.push(`Exam ${item.examPct}%`)
+  return parts.join(' · ')
+}
+
 function curriculumCardTitle(item) {
   const fn = String(item?.fileName ?? '').trim()
   if (fn) return fn
@@ -233,6 +241,162 @@ function CurriculumPdfEmbed({ item, title, className = '', frameClassName = 'h-f
   )
 }
 
+function newDraftUnitId() {
+  return `new-${Math.random().toString(36).slice(2)}-${Date.now()}`
+}
+
+function isDraftUnitId(id) {
+  return String(id ?? '').startsWith('new-')
+}
+
+/** Ordered unit list editor — shared by the upload and edit forms. Persistence (API vs local
+ * draft state) is the caller's responsibility; this component only edits the array in memory. */
+function UnitsEditor({ units, onChange }) {
+  function addUnit() {
+    onChange([...units, { id: newDraftUnitId(), title: '', description: '' }])
+  }
+  function updateUnit(id, patch) {
+    onChange(units.map((u) => (u.id === id ? { ...u, ...patch } : u)))
+  }
+  function removeUnit(id) {
+    onChange(units.filter((u) => u.id !== id))
+  }
+  function moveUnit(index, dir) {
+    const target = index + dir
+    if (target < 0 || target >= units.length) return
+    const next = [...units]
+    ;[next[index], next[target]] = [next[target], next[index]]
+    onChange(next)
+  }
+
+  return (
+    <div className="space-y-3">
+      {units.length === 0 ? (
+        <p className="rounded-lg border border-dashed p-3 text-sm text-neutral-500">
+          No units yet — add the topics this curriculum covers.
+        </p>
+      ) : (
+        units.map((unit, index) => (
+          <div key={unit.id} className="rounded-lg border bg-neutral-50 p-3">
+            <div className="flex items-start gap-2">
+              <div className="flex-1 space-y-2">
+                <input
+                  type="text"
+                  className="w-full rounded border px-3 py-1.5 text-sm font-medium"
+                  placeholder={`Unit ${index + 1} title (e.g. Matter and Its Properties)`}
+                  value={unit.title}
+                  onChange={(e) => updateUnit(unit.id, { title: e.target.value })}
+                />
+                <textarea
+                  className="w-full rounded border px-3 py-1.5 text-sm"
+                  placeholder="Learning competencies / description (optional)"
+                  rows={2}
+                  value={unit.description || ''}
+                  onChange={(e) => updateUnit(unit.id, { description: e.target.value })}
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <button
+                  type="button"
+                  className="rounded border px-2 py-1 text-xs text-neutral-600 disabled:opacity-30"
+                  onClick={() => moveUnit(index, -1)}
+                  disabled={index === 0}
+                  aria-label="Move unit up"
+                >
+                  ↑
+                </button>
+                <button
+                  type="button"
+                  className="rounded border px-2 py-1 text-xs text-neutral-600 disabled:opacity-30"
+                  onClick={() => moveUnit(index, 1)}
+                  disabled={index === units.length - 1}
+                  aria-label="Move unit down"
+                >
+                  ↓
+                </button>
+                <button
+                  type="button"
+                  className="rounded border border-red-300 px-2 py-1 text-xs text-red-700"
+                  onClick={() => removeUnit(unit.id)}
+                  aria-label="Remove unit"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+          </div>
+        ))
+      )}
+      <button
+        type="button"
+        className="rounded-lg border border-emerald-600 px-3 py-1.5 text-sm font-semibold text-emerald-700"
+        onClick={addUnit}
+      >
+        + Add unit
+      </button>
+    </div>
+  )
+}
+
+function gradingWeightsSum(weights) {
+  return ['writtenWorkPct', 'performanceTaskPct', 'examPct'].reduce((sum, key) => {
+    const n = Number(weights[key])
+    return sum + (Number.isFinite(n) ? n : 0)
+  }, 0)
+}
+
+/** Written Work / Performance Task / Exam percentage inputs with a live sum check. */
+function GradingWeightsFields({ weights, onChange }) {
+  const sum = gradingWeightsSum(weights)
+  const anySet = weights.writtenWorkPct !== '' || weights.performanceTaskPct !== '' || weights.examPct !== ''
+  const isValid = !anySet || sum === 100
+  return (
+    <div>
+      <p className="text-sm font-medium text-neutral-700">Grading criteria (optional)</p>
+      <div className="mt-1 grid grid-cols-3 gap-2">
+        <label className="text-xs text-neutral-600">
+          Written Work %
+          <input
+            type="number"
+            min="0"
+            max="100"
+            className="mt-1 w-full rounded border px-2 py-1.5 text-sm"
+            value={weights.writtenWorkPct}
+            onChange={(e) => onChange({ ...weights, writtenWorkPct: e.target.value })}
+          />
+        </label>
+        <label className="text-xs text-neutral-600">
+          Performance Task %
+          <input
+            type="number"
+            min="0"
+            max="100"
+            className="mt-1 w-full rounded border px-2 py-1.5 text-sm"
+            value={weights.performanceTaskPct}
+            onChange={(e) => onChange({ ...weights, performanceTaskPct: e.target.value })}
+          />
+        </label>
+        <label className="text-xs text-neutral-600">
+          Exam %
+          <input
+            type="number"
+            min="0"
+            max="100"
+            className="mt-1 w-full rounded border px-2 py-1.5 text-sm"
+            value={weights.examPct}
+            onChange={(e) => onChange({ ...weights, examPct: e.target.value })}
+          />
+        </label>
+      </div>
+      {anySet ? (
+        <p className={`mt-1 text-xs ${isValid ? 'text-neutral-500' : 'text-red-600'}`}>
+          Total: {sum}% {isValid ? '' : '— must add up to 100% (or leave all three blank)'}
+        </p>
+      ) : null}
+    </div>
+  )
+}
+
 const InstituteCurriculum = forwardRef(function InstituteCurriculum(
   { curriculums, setCurriculums, subjects = [], persistenceMode, setActiveNav, onCurriculumRefresh },
   ref,
@@ -248,6 +412,10 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
     subject: '',
     description: '',
     file: null,
+    units: [],
+    writtenWorkPct: '',
+    performanceTaskPct: '',
+    examPct: '',
   })
   const [editId, setEditId] = useState('')
   const [editForm, setEditForm] = useState({
@@ -255,6 +423,10 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
     subject: '',
     description: '',
     file: null,
+    units: [],
+    writtenWorkPct: '',
+    performanceTaskPct: '',
+    examPct: '',
   })
   const [editingError, setEditingError] = useState('')
   const [filterGrade, setFilterGrade] = useState('')
@@ -334,24 +506,33 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
       setFormError('Please complete Grade Level, Subject, and Description.')
       return
     }
-    if (!uploadForm.file) {
-      setFormError('Please choose a curriculum PDF file.')
+    if (uploadForm.file && !isAllowedCurriculumGuideFile(uploadForm.file)) {
+      setFormError('File must be PDF.')
       return
     }
-    if (!isAllowedCurriculumGuideFile(uploadForm.file)) {
-      setFormError('File must be PDF.')
+    const cleanUnits = uploadForm.units.filter((u) => u.title.trim())
+    const weightsSum = gradingWeightsSum(uploadForm)
+    const anyWeightSet = uploadForm.writtenWorkPct !== '' || uploadForm.performanceTaskPct !== '' || uploadForm.examPct !== ''
+    if (anyWeightSet && weightsSum !== 100) {
+      setFormError('Grading criteria percentages must add up to 100%, or leave all three blank.')
       return
     }
     setIsUploading(true)
     try {
       if (persistenceMode === 'server') {
         const body = new FormData()
-        body.append('file', uploadForm.file)
+        if (uploadForm.file) body.append('file', uploadForm.file)
         body.append('title', uploadForm.subject)
         body.append('subject', uploadForm.subject)
         body.append('grade_level', uploadForm.grade)
         body.append('description', uploadForm.description.trim())
         body.append('is_published', 'true')
+        if (cleanUnits.length) {
+          body.append('units', JSON.stringify(cleanUnits.map((u) => ({ title: u.title.trim(), description: u.description || '' }))))
+        }
+        if (uploadForm.writtenWorkPct !== '') body.append('written_work_pct', uploadForm.writtenWorkPct)
+        if (uploadForm.performanceTaskPct !== '') body.append('performance_task_pct', uploadForm.performanceTaskPct)
+        if (uploadForm.examPct !== '') body.append('exam_pct', uploadForm.examPct)
         const res = await fetch(apiUrl('/api/admin/curriculum-guides'), {
           method: 'POST',
           credentials: 'include',
@@ -368,22 +549,26 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
           if (mapped) setCurriculums((prev) => [mapped, ...prev.filter((x) => x.id !== mapped.id)])
         }
       } else {
-        const dataUrl = await readFileAsDataUrl(uploadForm.file)
+        const dataUrl = uploadForm.file ? await readFileAsDataUrl(uploadForm.file) : ''
         const newItem = {
           id: crypto.randomUUID(),
           grade: uploadForm.grade,
           subject: uploadForm.subject,
           description: uploadForm.description.trim(),
-          fileName: uploadForm.file.name,
-          fileType: uploadForm.file.type,
+          fileName: uploadForm.file?.name || '',
+          fileType: uploadForm.file?.type || '',
           fileDataUrl: dataUrl,
           uploadedAt: nowDateStamp(),
           uploadedBy:
             String(sessionUser?.name || sessionUser?.email || sessionUser?.id || '').trim() || 'Administrator',
+          units: cleanUnits.map((u, i) => ({ id: u.id, title: u.title.trim(), description: u.description || '', unit_order: i })),
+          writtenWorkPct: uploadForm.writtenWorkPct || null,
+          performanceTaskPct: uploadForm.performanceTaskPct || null,
+          examPct: uploadForm.examPct || null,
         }
         setCurriculums((prev) => [newItem, ...prev])
       }
-      setUploadForm({ grade: '', subject: '', description: '', file: null })
+      setUploadForm({ grade: '', subject: '', description: '', file: null, units: [], writtenWorkPct: '', performanceTaskPct: '', examPct: '' })
       setCurriculumPage('manage')
       toast.created('Curriculum guide saved and published for faculty.')
     } catch (err) {
@@ -403,6 +588,14 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
       subject: item.subject,
       description: item.description,
       file: null,
+      units: (Array.isArray(item.units) ? item.units : []).map((u) => ({
+        id: String(u.id),
+        title: u.title || '',
+        description: u.description || '',
+      })),
+      writtenWorkPct: item.writtenWorkPct != null ? String(item.writtenWorkPct) : '',
+      performanceTaskPct: item.performanceTaskPct != null ? String(item.performanceTaskPct) : '',
+      examPct: item.examPct != null ? String(item.examPct) : '',
     })
   }
 
@@ -422,6 +615,12 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
       setEditingError('File must be PDF.')
       return
     }
+    const weightsSum = gradingWeightsSum(editForm)
+    const anyWeightSet = editForm.writtenWorkPct !== '' || editForm.performanceTaskPct !== '' || editForm.examPct !== ''
+    if (anyWeightSet && weightsSum !== 100) {
+      setEditingError('Grading criteria percentages must add up to 100%, or leave all three blank.')
+      return
+    }
     let resolvedGuideId = String(target?.id ?? '').trim()
     if (persistenceMode === 'server') {
       resolvedGuideId = String(await resolveCurriculumPostgresId(target) || target?.id || '').trim()
@@ -431,6 +630,11 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
       }
       try {
         let res
+        const weightFields = {
+          written_work_pct: editForm.writtenWorkPct,
+          performance_task_pct: editForm.performanceTaskPct,
+          exam_pct: editForm.examPct,
+        }
         if (editForm.file) {
           const body = new FormData()
           body.append('title', editForm.subject)
@@ -438,6 +642,7 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
           body.append('grade_level', editForm.grade)
           body.append('description', editForm.description.trim())
           body.append('file', editForm.file)
+          for (const [k, v] of Object.entries(weightFields)) if (v !== '') body.append(k, v)
           res = await fetch(apiUrl(`/api/admin/curriculum-guides/${encodeURIComponent(resolvedGuideId)}`), {
             method: 'PUT',
             credentials: 'include',
@@ -453,6 +658,7 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
               subject: editForm.subject,
               grade_level: editForm.grade,
               description: editForm.description.trim(),
+              ...Object.fromEntries(Object.entries(weightFields).filter(([, v]) => v !== '')),
             }),
           })
         }
@@ -461,6 +667,51 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
           setEditingError(String(data?.message || data?.error || `Update failed (${res.status}).`))
           return
         }
+
+        /** Diff editForm.units against what was originally loaded and sync via the unit endpoints. */
+        const originalUnits = (Array.isArray(target.units) ? target.units : []).map((u) => ({
+          id: String(u.id),
+          title: u.title || '',
+          description: u.description || '',
+        }))
+        const originalById = new Map(originalUnits.map((u) => [u.id, u]))
+        const keptIds = new Set()
+        for (let i = 0; i < editForm.units.length; i += 1) {
+          const u = editForm.units[i]
+          if (!u.title.trim()) continue
+          if (isDraftUnitId(u.id)) {
+            await fetch(apiUrl(`/api/admin/curriculum-guides/${encodeURIComponent(resolvedGuideId)}/units`), {
+              method: 'POST',
+              credentials: 'include',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ title: u.title.trim(), description: u.description || '', unit_order: i }),
+            })
+          } else {
+            keptIds.add(u.id)
+            const original = originalById.get(u.id)
+            const changed = !original || original.title !== u.title || original.description !== (u.description || '')
+            if (changed) {
+              await fetch(
+                apiUrl(`/api/admin/curriculum-guides/${encodeURIComponent(resolvedGuideId)}/units/${encodeURIComponent(u.id)}`),
+                {
+                  method: 'PUT',
+                  credentials: 'include',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ title: u.title.trim(), description: u.description || '', unit_order: i }),
+                },
+              )
+            }
+          }
+        }
+        for (const original of originalUnits) {
+          if (!keptIds.has(original.id)) {
+            await fetch(
+              apiUrl(`/api/admin/curriculum-guides/${encodeURIComponent(resolvedGuideId)}/units/${encodeURIComponent(original.id)}`),
+              { method: 'DELETE', credentials: 'include' },
+            )
+          }
+        }
+
         if (typeof onCurriculumRefresh === 'function') {
           await onCurriculumRefresh()
         } else {
@@ -493,6 +744,10 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
                 fileDataUrl: nextFileDataUrl,
                 fileName: nextFileName,
                 fileType: nextFileType,
+                units: editForm.units.filter((u) => u.title.trim()),
+                writtenWorkPct: editForm.writtenWorkPct || null,
+                performanceTaskPct: editForm.performanceTaskPct || null,
+                examPct: editForm.examPct || null,
               }
             : item,
         ),
@@ -501,7 +756,7 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
 
     setEditId('')
     setCurriculumPage('manage')
-    setEditForm({ grade: '', subject: '', description: '', file: null })
+    setEditForm({ grade: '', subject: '', description: '', file: null, units: [], writtenWorkPct: '', performanceTaskPct: '', examPct: '' })
     toast.updated('You have updated Curriculum Guide.')
   }
 
@@ -550,6 +805,27 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
   }
 
   function previewCard(item) {
+    const units = Array.isArray(item.units) ? item.units : []
+    if (units.length > 0) {
+      return (
+        <div className="h-44 w-full overflow-hidden rounded-lg border bg-white p-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
+            {units.length} unit{units.length === 1 ? '' : 's'}
+          </p>
+          <ul className="mt-1.5 space-y-0.5 text-sm text-neutral-700">
+            {units.slice(0, 4).map((u) => (
+              <li key={u.id} className="truncate">
+                • {u.title}
+              </li>
+            ))}
+            {units.length > 4 ? <li className="text-neutral-400">+{units.length - 4} more</li> : null}
+          </ul>
+          {gradingWeightsSummary(item) ? (
+            <p className="mt-2 text-xs text-neutral-500">{gradingWeightsSummary(item)}</p>
+          ) : null}
+        </div>
+      )
+    }
     const src = curriculumFilePreviewSrc(item)
     if (String(item.fileType || '').startsWith('image/')) {
       return (
@@ -647,7 +923,29 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
                 </select>
               </label>
               <label className="text-sm font-medium text-neutral-700">
-                Curriculum Guide File (PDF)
+                Description
+                <textarea
+                  className="mt-1 min-h-24 w-full rounded-lg border px-3 py-2"
+                  value={uploadForm.description}
+                  onChange={(e) => setUploadForm((prev) => ({ ...prev, description: e.target.value }))}
+                  placeholder="Optional description for this curriculum guide."
+                />
+              </label>
+              <div>
+                <p className="text-sm font-medium text-neutral-700">Units</p>
+                <p className="mt-0.5 text-xs text-neutral-500">
+                  Add the topics this curriculum covers — this becomes the editable content faculty see, instead of a file.
+                </p>
+                <div className="mt-2">
+                  <UnitsEditor units={uploadForm.units} onChange={(units) => setUploadForm((prev) => ({ ...prev, units }))} />
+                </div>
+              </div>
+              <GradingWeightsFields
+                weights={uploadForm}
+                onChange={(next) => setUploadForm((prev) => ({ ...prev, ...next }))}
+              />
+              <label className="text-sm font-medium text-neutral-700">
+                Reference PDF (optional)
                 <div className="mt-1 flex items-center gap-2 rounded-lg border bg-white px-3 py-2 text-sm">
                   <label
                     htmlFor="upload-curriculum-file"
@@ -672,15 +970,9 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
                 {uploadFilenameHint ? (
                   <p className="mt-1 text-xs text-amber-700">{uploadFilenameHint}</p>
                 ) : null}
-              </label>
-              <label className="text-sm font-medium text-neutral-700">
-                Description
-                <textarea
-                  className="mt-1 min-h-24 w-full rounded-lg border px-3 py-2"
-                  value={uploadForm.description}
-                  onChange={(e) => setUploadForm((prev) => ({ ...prev, description: e.target.value }))}
-                  placeholder="Optional description for this curriculum guide."
-                />
+                <p className="mt-1 text-xs text-neutral-500">
+                  Optional — attach the official source document alongside the units above.
+                </p>
               </label>
               {formError ? <p className="text-sm text-red-600">{formError}</p> : null}
               <button
@@ -734,7 +1026,22 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
               </select>
             </label>
             <label className="text-sm font-medium text-neutral-700">
-              Replace PDF (optional)
+              Description
+              <textarea
+                className="mt-1 min-h-24 w-full rounded-lg border px-3 py-2"
+                value={editForm.description}
+                onChange={(e) => setEditForm((prev) => ({ ...prev, description: e.target.value }))}
+              />
+            </label>
+            <div>
+              <p className="text-sm font-medium text-neutral-700">Units</p>
+              <div className="mt-2">
+                <UnitsEditor units={editForm.units} onChange={(units) => setEditForm((prev) => ({ ...prev, units }))} />
+              </div>
+            </div>
+            <GradingWeightsFields weights={editForm} onChange={(next) => setEditForm((prev) => ({ ...prev, ...next }))} />
+            <label className="text-sm font-medium text-neutral-700">
+              Replace reference PDF (optional)
               <div className="mt-1 flex items-center gap-2 rounded-lg border bg-white px-3 py-2 text-sm">
                 <label
                   htmlFor="edit-curriculum-file"
@@ -759,14 +1066,6 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
               <p className="mt-1 text-xs text-neutral-500">
                 Leave empty to keep current file: {curriculumCardTitle(editingItem || {}) || 'none'}
               </p>
-            </label>
-            <label className="text-sm font-medium text-neutral-700">
-              Description
-              <textarea
-                className="mt-1 min-h-24 w-full rounded-lg border px-3 py-2"
-                value={editForm.description}
-                onChange={(e) => setEditForm((prev) => ({ ...prev, description: e.target.value }))}
-              />
             </label>
             {editingError ? <p className="text-sm text-red-600">{editingError}</p> : null}
             <div className="flex gap-3">
@@ -924,25 +1223,51 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
                 Close
               </button>
             </div>
-            {String(viewingItem.fileType || '').startsWith('image/') ? (
-              <AuthenticatedImage
-                src={curriculumFilePreviewSrc(viewingItem)}
-                alt={curriculumCardTitle(viewingItem)}
-                className="max-h-[75vh] w-full object-contain"
-                fallback={
-                  <div className="flex h-[75vh] w-full items-center justify-center rounded border bg-neutral-50 p-6 text-center text-sm text-neutral-600">
-                    Image preview unavailable.
-                  </div>
-                }
-              />
-            ) : (
-              <CurriculumPdfEmbed
-                item={viewingItem}
-                title={curriculumCardTitle(viewingItem)}
-                className="flex h-[75vh] w-full items-center justify-center rounded border bg-neutral-50 p-6 text-center text-sm text-neutral-600"
-                frameClassName="h-[75vh] w-full"
-              />
-            )}
+            <div className="max-h-[75vh] overflow-y-auto">
+              {Array.isArray(viewingItem.units) && viewingItem.units.length > 0 ? (
+                <div className="space-y-4">
+                  {gradingWeightsSummary(viewingItem) ? (
+                    <p className="text-sm text-neutral-600">{gradingWeightsSummary(viewingItem)}</p>
+                  ) : null}
+                  <ol className="space-y-3">
+                    {viewingItem.units.map((u, i) => (
+                      <li key={u.id} className="rounded-lg border bg-neutral-50 p-3">
+                        <p className="font-semibold text-neutral-900">
+                          Unit {i + 1} · {u.title}
+                        </p>
+                        {u.description ? <p className="mt-1 text-sm text-neutral-700">{u.description}</p> : null}
+                      </li>
+                    ))}
+                  </ol>
+                  {curriculumFilePreviewSrc(viewingItem) ? (
+                    <div>
+                      <p className="text-sm font-medium text-neutral-700">Reference PDF</p>
+                      <div className="mt-1 h-[50vh] w-full overflow-hidden rounded border bg-neutral-100">
+                        <CurriculumPdfEmbed item={viewingItem} title={curriculumCardTitle(viewingItem)} className="" frameClassName="h-full w-full" />
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              ) : String(viewingItem.fileType || '').startsWith('image/') ? (
+                <AuthenticatedImage
+                  src={curriculumFilePreviewSrc(viewingItem)}
+                  alt={curriculumCardTitle(viewingItem)}
+                  className="max-h-[75vh] w-full object-contain"
+                  fallback={
+                    <div className="flex h-[75vh] w-full items-center justify-center rounded border bg-neutral-50 p-6 text-center text-sm text-neutral-600">
+                      Image preview unavailable.
+                    </div>
+                  }
+                />
+              ) : (
+                <CurriculumPdfEmbed
+                  item={viewingItem}
+                  title={curriculumCardTitle(viewingItem)}
+                  className="flex h-[75vh] w-full items-center justify-center rounded border bg-neutral-50 p-6 text-center text-sm text-neutral-600"
+                  frameClassName="h-[75vh] w-full"
+                />
+              )}
+            </div>
           </div>
         </div>
       ) : null}
