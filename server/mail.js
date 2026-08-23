@@ -83,6 +83,11 @@ function useResendApi() {
   return Boolean(String(process.env.RESEND_API_KEY || '').trim())
 }
 
+/** Second HTTPS email API — used as a fallback when Resend is unset or its send fails (e.g. daily cap hit). */
+function useBrevoApi() {
+  return Boolean(String(process.env.BREVO_API_KEY || '').trim())
+}
+
 function isRailwayHosted() {
   return Boolean(
     process.env.RAILWAY_ENVIRONMENT ||
@@ -91,18 +96,32 @@ function isRailwayHosted() {
   )
 }
 
-function resolveFromAddress() {
-  if (useResendApi()) {
+function resolveFromAddress(provider) {
+  if (provider === 'resend') {
     const resendFrom = String(process.env.RESEND_FROM || '').trim()
     if (resendFrom) return resendFrom
     // Resend test sender — only delivers to your Resend account email until a domain is verified.
     return 'onboarding@resend.dev'
+  }
+  if (provider === 'brevo') {
+    const brevoFrom = String(process.env.BREVO_FROM || '').trim()
+    if (brevoFrom) return brevoFrom
   }
 
   const user = (process.env.SMTP_USER || '').trim()
   let from = String(process.env.SMTP_FROM || user).trim()
   if (!from.includes('@')) from = user
   return from
+}
+
+/** Splits `"Name <email>"` (the SMTP_FROM/RESEND_FROM convention) into parts — Brevo's API wants them separate. */
+function parseFromAddress(raw) {
+  const s = String(raw || '').trim()
+  const m = s.match(/^(.*?)<([^>]+)>$/)
+  if (m) {
+    return { name: m[1].trim().replace(/^"|"$/g, ''), email: m[2].trim() }
+  }
+  return { name: '', email: s }
 }
 
 function formatResendError(status, bodyText) {
@@ -120,7 +139,7 @@ function formatResendError(status, bodyText) {
 
 async function sendEmailViaResend({ to, subject, text, html }) {
   const apiKey = String(process.env.RESEND_API_KEY || '').trim()
-  const from = resolveFromAddress()
+  const from = resolveFromAddress('resend')
   if (!from) {
     throw new Error('Set RESEND_FROM or SMTP_FROM (verified sender in Resend).')
   }
@@ -146,21 +165,102 @@ async function sendEmailViaResend({ to, subject, text, html }) {
   }
 }
 
+function formatBrevoError(status, bodyText) {
+  try {
+    const body = JSON.parse(bodyText)
+    const msg = String(body.message || bodyText)
+    if (status === 401) {
+      return `Brevo API ${status}: ${msg} (check BREVO_API_KEY)`
+    }
+    if (status === 400 && /sender/i.test(msg)) {
+      return `${msg} Verify the sender at https://app.brevo.com/senders/list and set BREVO_FROM to that address.`
+    }
+    return `Brevo API ${status}: ${msg}`
+  } catch {
+    return `Brevo API ${status}: ${bodyText}`
+  }
+}
+
+async function sendEmailViaBrevo({ to, subject, text, html }) {
+  const apiKey = String(process.env.BREVO_API_KEY || '').trim()
+  const { name, email: fromEmail } = parseFromAddress(resolveFromAddress('brevo'))
+  if (!fromEmail) {
+    throw new Error('Set BREVO_FROM (verified sender email in Brevo) or SMTP_FROM/SMTP_USER.')
+  }
+  const fromName = name || String(process.env.BREVO_FROM_NAME || 'LenLearn LMS').trim()
+
+  const res = await fetch('https://api.brevo.com/v3/smtp/email', {
+    method: 'POST',
+    headers: {
+      'api-key': apiKey,
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    },
+    body: JSON.stringify({
+      sender: { email: fromEmail, name: fromName },
+      to: [{ email: to }],
+      subject,
+      textContent: text,
+      htmlContent: html,
+    }),
+  })
+
+  const bodyText = await res.text()
+  if (!res.ok) {
+    throw new Error(formatBrevoError(res.status, bodyText))
+  }
+
+  try {
+    return JSON.parse(bodyText)
+  } catch {
+    return { messageId: null, raw: bodyText }
+  }
+}
+
+/**
+ * Tries each configured provider in order — Resend, then Brevo, then SMTP — falling through to
+ * the next one on failure (e.g. a provider's daily send cap is hit). Throws the last error only
+ * if every configured provider failed.
+ */
 async function sendMailMessage({ to, subject, text, html }) {
-  if (useResendApi()) {
-    const info = await sendEmailViaResend({ to, subject, text, html })
-    return { messageId: info?.id || 'resend', provider: 'resend' }
+  const hasSmtp = Boolean(
+    (process.env.SMTP_USER || '').trim() && (process.env.SMTP_PASS || '').trim(),
+  )
+  const attempts = [
+    useResendApi() && 'resend',
+    useBrevoApi() && 'brevo',
+    hasSmtp && 'smtp',
+  ].filter(Boolean)
+
+  if (!attempts.length) {
+    throw new Error('No email provider configured (set RESEND_API_KEY, BREVO_API_KEY, or SMTP_USER/SMTP_PASS).')
   }
 
-  const mailer = getMailer()
-  if (!mailer) {
-    throw new Error('SMTP is not configured (SMTP_USER and SMTP_PASS).')
+  let lastErr = null
+  for (const provider of attempts) {
+    try {
+      if (provider === 'resend') {
+        const info = await sendEmailViaResend({ to, subject, text, html })
+        return { messageId: info?.id || 'resend', provider: 'resend' }
+      }
+      if (provider === 'brevo') {
+        const info = await sendEmailViaBrevo({ to, subject, text, html })
+        return { messageId: info?.messageId || 'brevo', provider: 'brevo' }
+      }
+      const mailer = getMailer()
+      if (!mailer) throw new Error('SMTP is not configured (SMTP_USER and SMTP_PASS).')
+      const user = (process.env.SMTP_USER || '').trim()
+      const from = resolveFromAddress('smtp')
+      const info = await mailer.sendMail({ from, to, replyTo: user, subject, text, html })
+      return { messageId: info.messageId || 'smtp', provider: 'smtp' }
+    } catch (err) {
+      const formatted = provider === 'smtp' ? new Error(formatSmtpError(err)) : err
+      const suffix = attempts.length > 1 ? ' — trying next provider' : ''
+      console.warn(`[mail] ${provider} send failed${suffix}: ${formatted.message}`)
+      lastErr = formatted
+    }
   }
-
-  const user = (process.env.SMTP_USER || '').trim()
-  const from = resolveFromAddress()
-  const info = await mailer.sendMail({ from, to, replyTo: user, subject, text, html })
-  return { messageId: info.messageId || 'smtp', provider: 'smtp' }
+  throw lastErr
 }
 
 /** Human-readable SMTP / Gmail error for logs. */
@@ -187,25 +287,26 @@ function formatSmtpError(err) {
  * Set `SMTP_VERIFY_STRICT=1` to throw and stop the server if verify fails.
  */
 export async function verifySmtpTransporter() {
-  if (useResendApi()) {
-    console.info(
-      '[smtp] RESEND_API_KEY set — email via Resend HTTPS API (SMTP verify skipped).',
-    )
-    return
-  }
+  const providers = [useResendApi() && 'resend', useBrevoApi() && 'brevo'].filter(Boolean)
 
   const user = (process.env.SMTP_USER || '').trim()
   const pass = (process.env.SMTP_PASS || '').replace(/\s/g, '')
-  if (!user || !pass) {
+  const hasSmtp = Boolean(user && pass)
+  if (hasSmtp) providers.push('smtp')
+
+  if (!providers.length) {
     console.warn(
-      '[smtp] SMTP_USER or SMTP_PASS missing — skipping transporter.verify() (set RESEND_API_KEY or SMTP credentials to send email).',
+      '[smtp] No email provider configured — set RESEND_API_KEY, BREVO_API_KEY, or SMTP_USER/SMTP_PASS to send email.',
     )
     return
   }
+  console.info(`[smtp] Email provider order: ${providers.join(' -> ')}`)
+
+  if (!hasSmtp) return
 
   if (isRailwayHosted()) {
     console.warn(
-      '[smtp] Railway Trial/Hobby blocks outbound SMTP (ports 25/465/587). Set RESEND_API_KEY on Railway, or upgrade to Pro for Gmail SMTP.',
+      '[smtp] Railway Trial/Hobby blocks outbound SMTP (ports 25/465/587). SMTP here is a fallback link only — Resend/Brevo (if set) are tried first.',
     )
   }
 
@@ -241,14 +342,14 @@ export async function sendTwoFactorOtpEmail(to, otp) {
   const hasSmtp = Boolean(
     (process.env.SMTP_USER || '').trim() && (process.env.SMTP_PASS || '').trim(),
   )
-  if (!useResendApi() && !hasSmtp) {
+  if (!useResendApi() && !useBrevoApi() && !hasSmtp) {
     console.warn(
-      '[auth] No email provider — set RESEND_API_KEY or SMTP_USER/SMTP_PASS to send 2FA email.',
+      '[auth] No email provider — set RESEND_API_KEY, BREVO_API_KEY, or SMTP_USER/SMTP_PASS to send 2FA email.',
     )
     console.info(`[auth] 2FA OTP for ${to} (console only): ${otp}`)
     if (process.env.NODE_ENV === 'production') {
       throw new Error(
-        'Email is not configured. Set RESEND_API_KEY (recommended on Railway) or SMTP_USER and SMTP_PASS, then restart.',
+        'Email is not configured. Set RESEND_API_KEY, BREVO_API_KEY (recommended on Railway/DigitalOcean), or SMTP_USER and SMTP_PASS, then restart.',
       )
     }
     return
@@ -265,15 +366,15 @@ export async function sendTwoFactorOtpEmail(to, otp) {
     )
   } catch (err) {
     const gmailHint =
-      !useResendApi() && isLikelyGmail()
+      !useResendApi() && !useBrevoApi() && isLikelyGmail()
         ? ' Gmail: enable 2-Step Verification, create an App Password at https://myaccount.google.com/apppasswords , and put it in SMTP_PASS. SMTP_USER must be that Gmail address.'
         : ''
-    const resendHint = isRailwayHosted() && !useResendApi()
-      ? ' On Railway Hobby/Trial, SMTP is blocked — add RESEND_API_KEY instead.'
+    const providerHint = isRailwayHosted() && !useResendApi() && !useBrevoApi()
+      ? ' On Railway Hobby/Trial (and DigitalOcean by default), SMTP is blocked — add RESEND_API_KEY or BREVO_API_KEY instead.'
       : ''
     console.error(
-      `[auth] Email send failed.${gmailHint}${resendHint}`,
-      useResendApi() ? err.message || String(err) : formatSmtpError(err),
+      `[auth] Email send failed (all configured providers exhausted).${gmailHint}${providerHint}`,
+      err.message || String(err),
     )
 
     const allowConsoleFallback =
@@ -338,14 +439,14 @@ export async function sendPasswordResetEmail({ to, name, resetUrl }) {
     </div>
   `.trim()
 
-  if (!useResendApi() && !getMailer()) {
+  if (!useResendApi() && !useBrevoApi() && !getMailer()) {
     console.warn(
-      '[auth] No email provider — set RESEND_API_KEY or SMTP_USER/SMTP_PASS to send password reset email.',
+      '[auth] No email provider — set RESEND_API_KEY, BREVO_API_KEY, or SMTP_USER/SMTP_PASS to send password reset email.',
     )
     console.info(`[auth] Password reset link for ${to} (console only): ${resetUrl}`)
     if (process.env.NODE_ENV === 'production') {
       throw new Error(
-        'Email is not configured. Set RESEND_API_KEY (recommended on Railway) or SMTP_USER and SMTP_PASS, then restart.',
+        'Email is not configured. Set RESEND_API_KEY, BREVO_API_KEY (recommended on Railway/DigitalOcean), or SMTP_USER and SMTP_PASS, then restart.',
       )
     }
     return
@@ -358,8 +459,8 @@ export async function sendPasswordResetEmail({ to, name, resetUrl }) {
     )
   } catch (err) {
     console.error(
-      '[auth] Password reset email send failed:',
-      useResendApi() ? err.message || String(err) : formatSmtpError(err),
+      '[auth] Password reset email send failed (all configured providers exhausted):',
+      err.message || String(err),
     )
     const allowConsoleFallback =
       process.env.NODE_ENV !== 'production' &&

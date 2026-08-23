@@ -24,6 +24,22 @@ export function assertPostgresDatabaseUrl(connectionString) {
   }
 }
 
+/**
+ * `pg` re-derives its own SSL config from a `sslmode` query param on the connection string,
+ * which can override the explicit `ssl` option below (e.g. DO's self-signed CA gets rejected
+ * even with rejectUnauthorized: false). Stripping it leaves our own `ssl` object authoritative.
+ */
+function stripSslModeParam(connectionString) {
+  try {
+    const url = new URL(connectionString)
+    if (!url.searchParams.has('sslmode')) return connectionString
+    url.searchParams.delete('sslmode')
+    return url.toString()
+  } catch {
+    return connectionString
+  }
+}
+
 /** SSL for DigitalOcean Managed PostgreSQL and other cloud providers. */
 export function resolvePgSsl(connectionString) {
   const explicit = String(process.env.DATABASE_SSL || '').trim().toLowerCase()
@@ -62,7 +78,7 @@ export function getPgPool() {
   const queryTimeout = Number(process.env.PG_QUERY_TIMEOUT_MS || 60000)
   const ssl = resolvePgSsl(connectionString)
   _pool = new pg.Pool({
-    connectionString,
+    connectionString: ssl ? stripSslModeParam(connectionString) : connectionString,
     ...(ssl ? { ssl } : {}),
     max: Number(process.env.PG_POOL_MAX || 10) || 10,
     connectionTimeoutMillis: Number.isFinite(connectionTimeoutMillis) && connectionTimeoutMillis > 0

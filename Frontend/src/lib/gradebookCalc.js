@@ -63,6 +63,7 @@ export function groupItemsByComponent(components, items) {
         if (grouped[id]) return id
         return null
       }
+      if (type !== 'quiz') return null
     }
 
     if (type === 'quiz' && quizComponent) return String(quizComponent.id)
