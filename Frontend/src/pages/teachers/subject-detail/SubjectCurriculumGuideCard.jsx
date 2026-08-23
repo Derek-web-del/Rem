@@ -12,7 +12,9 @@ function curriculumGuideLabel(subject) {
   return 'Linked institute guide'
 }
 
-export default function SubjectCurriculumGuideCard({ subject }) {
+/** libraryPath: optional route to a "browse curriculum library" page — omit for roles (e.g.
+ * students) that don't have one, and the link is simply hidden. */
+export default function SubjectCurriculumGuideCard({ subject, libraryPath = '' }) {
   const [expanded, setExpanded] = useState(false)
 
   if (!subject) return null
@@ -33,12 +35,13 @@ export default function SubjectCurriculumGuideCard({ subject }) {
       <aside className="rounded-xl border border-dashed border-neutral-200 bg-neutral-50 p-4 shadow-sm">
         <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Curriculum guide (DepEd)</p>
         <p className="mt-2 text-sm text-neutral-600">
-          No institute curriculum guide is linked to this subject yet. Ask your admin to link one when creating the
-          subject.
+          No institute curriculum guide is linked to this subject yet.
         </p>
-        <Link to="/teacher/curriculum" className="mt-3 inline-block text-sm font-semibold text-sky-800 hover:underline">
-          Browse curriculum library
-        </Link>
+        {libraryPath ? (
+          <Link to={libraryPath} className="mt-3 inline-block text-sm font-semibold text-sky-800 hover:underline">
+            Browse curriculum library
+          </Link>
+        ) : null}
       </aside>
     )
   }
@@ -70,12 +73,14 @@ export default function SubjectCurriculumGuideCard({ subject }) {
               >
                 Expand
               </button>
-              <Link
-                to="/teacher/curriculum"
-                className="rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-800 hover:bg-blue-100"
-              >
-                Open library
-              </Link>
+              {libraryPath ? (
+                <Link
+                  to={libraryPath}
+                  className="rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-800 hover:bg-blue-100"
+                >
+                  Open library
+                </Link>
+              ) : null}
             </div>
           </div>
         ) : (

@@ -58,7 +58,9 @@ function mapGuideRow(row) {
   return {
     id: String(row.id),
     title,
-    file_name: String(row.file_name ?? '').trim() || pathBasename(fileUrl) || 'guide.pdf',
+    // Only ever a real name — never a fabricated placeholder like "guide.pdf" that reads
+    // as a real file when none is actually attached (e.g. after a Spaces storage failure).
+    file_name: String(row.file_name ?? '').trim() || (fileUrl ? pathBasename(fileUrl) : '') || null,
     file_url: fileUrl,
     grade_level: gradeLevel || null,
     subject: String(row.subject ?? '').trim() || null,

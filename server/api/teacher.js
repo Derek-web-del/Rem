@@ -1045,7 +1045,11 @@ function mapTeacherSubjectRow(row, extras = {}) {
     curriculumGuideFileUrl: String(row.curriculum_guide_file_url ?? '').trim(),
     curriculum_guide_file_url: String(row.curriculum_guide_file_url ?? '').trim(),
     curriculumGuideFileName: String(row.curriculum_guide_file_name ?? '').trim(),
-    section_name: String(extras.section_name ?? '').trim() || '—',
+    // The subject's own assigned section (sub.section_id) is authoritative — it's what
+    // Admin actually assigned this subject to. Only fall back to inferring "a section this
+    // faculty advises at the same grade" (extras.section_name) for subjects that predate
+    // having an explicit section_id.
+    section_name: String(row.subject_section_name ?? extras.section_name ?? '').trim() || '—',
   }
   return enrichSubjectDetailsFields(base, extras)
 }
@@ -1532,12 +1536,15 @@ const TEACHER_SUBJECT_SELECT = `
     NULLIF(trim(f.name), '')
   ) AS faculty_name,
   COALESCE(NULLIF(trim(f.faculty_code), ''), NULLIF(trim(f.employee_id), '')) AS faculty_code,
+  sub.section_id,
+  sec.section_name AS subject_section_name,
   sub.created_at
 `
 
 const TEACHER_SUBJECT_FACULTY_JOIN = `
   LEFT JOIN faculties f ON f.id::text = sub.faculty_id::text
-  LEFT JOIN curriculum_guides cg ON cg.id::text = sub.curriculum_guide_id::text
+  LEFT JOIN curriculum_guides cg ON cg.id::text = sub.curriculum_guide_id::text AND cg.is_published = true
+  LEFT JOIN sections sec ON sec.id = sub.section_id
 `
 
 /** Public GET /api/teacher/* helpers for signed-in Better Auth faculty. */
@@ -1865,7 +1872,9 @@ export function createTeacherApiRouter(express, auth) {
         res.status(404).json({ error: 'NOT_FOUND', message: 'Subject not found.' })
         return
       }
-      const section_name = await resolveTeacherSubjectSectionName(pool, facultyRow, resolved.row.grade_level)
+      const section_name = String(resolved.row.subject_section_name ?? '').trim()
+        ? undefined
+        : await resolveTeacherSubjectSectionName(pool, facultyRow, resolved.row.grade_level)
       const mapped = mapTeacherSubjectRow(resolved.row, { section_name })
       const payload = await withSubjectSchedules(pool, mapped)
       if (resolved.resolvedFromSubjectId != null) {

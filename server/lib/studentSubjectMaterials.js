@@ -295,7 +295,7 @@ export async function fetchStudentSubjectDetails(pool, subjectId) {
         SELECT ${SUBJECT_DETAIL_SELECT}
         FROM subjects sub
         LEFT JOIN faculties f ON f.id::text = sub.faculty_id::text
-        LEFT JOIN curriculum_guides cg ON cg.id::text = sub.curriculum_guide_id::text
+        LEFT JOIN curriculum_guides cg ON cg.id::text = sub.curriculum_guide_id::text AND cg.is_published = true
         WHERE sub.id = $1
         LIMIT 1
       `,

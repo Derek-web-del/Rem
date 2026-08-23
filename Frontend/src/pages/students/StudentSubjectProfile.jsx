@@ -4,6 +4,7 @@ import { fetchStudentSubject, StudentApiError } from '../../lib/studentPortal.js
 import StudentMainHeader from './StudentMainHeader.jsx'
 import StudentViewHeader from './StudentViewHeader.jsx'
 import SubjectDetailsCard from '../teachers/subject-detail/SubjectDetailsCard.jsx'
+import SubjectCurriculumGuideCard from '../teachers/subject-detail/SubjectCurriculumGuideCard.jsx'
 import StudentSubjectModulesTab from './StudentSubjectModulesTab.jsx'
 import StudentSubjectMaterialsTab from './StudentSubjectMaterialsTab.jsx'
 import StudentSubjectGradesTab from './StudentSubjectGradesTab.jsx'
@@ -143,6 +144,7 @@ export default function StudentSubjectProfile() {
             </div>
             <div className="space-y-4 lg:sticky lg:top-4">
               <SubjectDetailsCard subject={subject} />
+              <SubjectCurriculumGuideCard subject={subject} />
             </div>
           </div>
         ) : null}
