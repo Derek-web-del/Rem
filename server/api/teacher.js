@@ -14,6 +14,14 @@ import { logUnauthorizedAccessFromRequest } from '../lib/security.js'
 import { listPublishedCurriculumGuides } from '../lib/curriculumGuidesDb.js'
 import { listUnitsForGuides } from '../lib/curriculumGuideUnitsDb.js'
 import {
+  createWeek as createSyllabusWeek,
+  deleteWeek as deleteSyllabusWeek,
+  generateFromCurriculumIfEmpty,
+  listWeeksForSubject,
+  reorderWeeks as reorderSyllabusWeeks,
+  updateWeek as updateSyllabusWeek,
+} from '../lib/subjectSyllabusWeeksDb.js'
+import {
   enrichSubjectDetailsFields,
   resolveTeacherSubjectSectionName,
 } from '../lib/subjectDetailsEnrich.js'
@@ -1554,6 +1562,11 @@ export function createTeacherApiRouter(express, auth) {
     router.get('/teacher/subjects/:subjectId', svc503)
     router.patch('/teacher/subjects/:subjectId/syllabus', svc503)
     router.delete('/teacher/subjects/:subjectId/syllabus', svc503)
+    router.get('/teacher/subjects/:subjectId/syllabus-weeks', svc503)
+    router.post('/teacher/subjects/:subjectId/syllabus-weeks', svc503)
+    router.put('/teacher/subjects/:subjectId/syllabus-weeks/:weekId', svc503)
+    router.delete('/teacher/subjects/:subjectId/syllabus-weeks/:weekId', svc503)
+    router.patch('/teacher/subjects/:subjectId/syllabus-weeks/reorder', svc503)
     router.post('/teacher/materials', svc503)
     router.get('/teacher/materials/:materialId', svc503)
     router.patch('/teacher/materials/:materialId', svc503)
@@ -1983,6 +1996,111 @@ export function createTeacherApiRouter(express, auth) {
       res.json({ success: true, message: 'Syllabus deleted.' })
     } catch (e) {
       sendSafeServerError(res, e, 'DELETE /api/teacher/subjects/:subjectId/syllabus')
+    }
+  })
+
+  async function resolveOwnedSyllabusSubject(req, res, auth) {
+    const session = await requireFacultyOrTeacherSession(req, res, auth)
+    if (!session) return null
+    const user = session.user ?? session?.data?.user ?? session?.session?.user ?? session?.data?.session?.user
+    const pool = getPgPool()
+    const facultyRow = await fetchFacultyRowForSession(pool, user)
+    if (!facultyRow?.id) {
+      res.status(404).json({ error: 'FACULTY_NOT_FOUND', message: 'Faculty profile not linked.' })
+      return null
+    }
+    const subjectId = Number(req.params.subjectId)
+    if (!Number.isFinite(subjectId) || subjectId <= 0) {
+      res.status(400).json({ error: 'BAD_REQUEST', message: 'Invalid subject id.' })
+      return null
+    }
+    if (!(await teacherOwnsSubject(pool, facultyRow.id, subjectId))) {
+      res.status(404).json({ error: 'NOT_FOUND', message: 'Subject not found.' })
+      return null
+    }
+    return { pool, subjectId }
+  }
+
+  router.get('/teacher/subjects/:subjectId/syllabus-weeks', async (req, res) => {
+    try {
+      const ctx = await resolveOwnedSyllabusSubject(req, res, auth)
+      if (!ctx) return
+      const { pool, subjectId } = ctx
+      const { weeks, derivedFrom } = await generateFromCurriculumIfEmpty(pool, subjectId)
+      res.json({ weeks, derived_from: derivedFrom })
+    } catch (e) {
+      sendSafeServerError(res, e, 'GET /api/teacher/subjects/:subjectId/syllabus-weeks')
+    }
+  })
+
+  router.post('/teacher/subjects/:subjectId/syllabus-weeks', async (req, res) => {
+    try {
+      const ctx = await resolveOwnedSyllabusSubject(req, res, auth)
+      if (!ctx) return
+      const { pool, subjectId } = ctx
+      const title = String(req.body?.title || '').trim()
+      if (!title) {
+        res.status(400).json({ error: 'BAD_REQUEST', message: 'Week title is required.' })
+        return
+      }
+      const existing = await listWeeksForSubject(pool, subjectId)
+      const week = await createSyllabusWeek(pool, subjectId, {
+        title,
+        content: req.body?.content,
+        week_order: req.body?.week_order ?? existing.length,
+      })
+      res.status(201).json(week)
+    } catch (e) {
+      sendSafeServerError(res, e, 'POST /api/teacher/subjects/:subjectId/syllabus-weeks')
+    }
+  })
+
+  router.put('/teacher/subjects/:subjectId/syllabus-weeks/:weekId', async (req, res) => {
+    try {
+      const ctx = await resolveOwnedSyllabusSubject(req, res, auth)
+      if (!ctx) return
+      const { pool, subjectId } = ctx
+      const week = await updateSyllabusWeek(pool, req.params.weekId, subjectId, {
+        title: req.body?.title,
+        content: req.body?.content,
+        week_order: req.body?.week_order,
+      })
+      if (!week) {
+        res.status(404).json({ error: 'NOT_FOUND', message: 'Syllabus week not found.' })
+        return
+      }
+      res.json(week)
+    } catch (e) {
+      sendSafeServerError(res, e, 'PUT /api/teacher/subjects/:subjectId/syllabus-weeks/:weekId')
+    }
+  })
+
+  router.delete('/teacher/subjects/:subjectId/syllabus-weeks/:weekId', async (req, res) => {
+    try {
+      const ctx = await resolveOwnedSyllabusSubject(req, res, auth)
+      if (!ctx) return
+      const { pool, subjectId } = ctx
+      const ok = await deleteSyllabusWeek(pool, req.params.weekId, subjectId)
+      if (!ok) {
+        res.status(404).json({ error: 'NOT_FOUND', message: 'Syllabus week not found.' })
+        return
+      }
+      res.json({ ok: true, id: Number(req.params.weekId) })
+    } catch (e) {
+      sendSafeServerError(res, e, 'DELETE /api/teacher/subjects/:subjectId/syllabus-weeks/:weekId')
+    }
+  })
+
+  router.patch('/teacher/subjects/:subjectId/syllabus-weeks/reorder', async (req, res) => {
+    try {
+      const ctx = await resolveOwnedSyllabusSubject(req, res, auth)
+      if (!ctx) return
+      const { pool, subjectId } = ctx
+      const orderedIds = Array.isArray(req.body?.week_ids) ? req.body.week_ids : []
+      const weeks = await reorderSyllabusWeeks(pool, subjectId, orderedIds)
+      res.json(weeks)
+    } catch (e) {
+      sendSafeServerError(res, e, 'PATCH /api/teacher/subjects/:subjectId/syllabus-weeks/reorder')
     }
   })
 

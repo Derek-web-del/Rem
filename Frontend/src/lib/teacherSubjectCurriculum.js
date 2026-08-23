@@ -281,3 +281,51 @@ export async function deleteSubjectSyllabus(subjectId) {
   })
   return parseJson(res)
 }
+
+/** Auto-generates weeks from the subject's linked curriculum guide on first call, then just lists them. */
+export async function fetchSyllabusWeeks(subjectId) {
+  const res = await fetch(curriculumPath(subjectId, '/syllabus-weeks'), { credentials: 'include' })
+  const data = await parseJson(res)
+  return {
+    weeks: Array.isArray(data.weeks) ? data.weeks : [],
+    derivedFrom: data.derived_from || null,
+  }
+}
+
+export async function createSyllabusWeek(subjectId, payload) {
+  const res = await fetch(curriculumPath(subjectId, '/syllabus-weeks'), {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  return parseJson(res)
+}
+
+export async function updateSyllabusWeek(subjectId, weekId, payload) {
+  const res = await fetch(curriculumPath(subjectId, `/syllabus-weeks/${encodeURIComponent(weekId)}`), {
+    method: 'PUT',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  return parseJson(res)
+}
+
+export async function deleteSyllabusWeek(subjectId, weekId) {
+  const res = await fetch(curriculumPath(subjectId, `/syllabus-weeks/${encodeURIComponent(weekId)}`), {
+    method: 'DELETE',
+    credentials: 'include',
+  })
+  return parseJson(res)
+}
+
+export async function reorderSyllabusWeeks(subjectId, weekIds) {
+  const res = await fetch(curriculumPath(subjectId, '/syllabus-weeks/reorder'), {
+    method: 'PATCH',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ week_ids: weekIds }),
+  })
+  return parseJson(res)
+}

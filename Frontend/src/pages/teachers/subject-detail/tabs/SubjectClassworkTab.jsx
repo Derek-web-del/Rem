@@ -18,6 +18,7 @@ import { deleteTeacherQuiz } from '../../../../lib/teacherQuizzes.js'
 import { useFacultyNotify } from '../../../../lib/facultyNotify.js'
 import DeleteConfirmModal from '../../../../components/DeleteConfirmModal.jsx'
 import TopicGroup from '../shared/TopicGroup.jsx'
+import SubjectSyllabusWeeks from '../SubjectSyllabusWeeks.jsx'
 import TopicFormModal from '../shared/TopicFormModal.jsx'
 import {
   applyEntryOrderToTopic,
@@ -427,6 +428,8 @@ export default function SubjectClassworkTab({ subjectId, subject, onSyllabusUpda
           </Link>
         </div>
       </div>
+
+      <SubjectSyllabusWeeks subjectId={subjectId} />
 
       {topics.length === 0 ? (
         <p className="px-4 py-8 text-sm text-neutral-500">No topics yet. Add a topic to organize lessons and work.</p>
