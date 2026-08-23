@@ -236,7 +236,7 @@ async function sendMailMessage({ to, subject, text, html }) {
     throw new Error('No email provider configured (set RESEND_API_KEY, BREVO_API_KEY, or SMTP_USER/SMTP_PASS).')
   }
 
-  let lastErr = null
+  const failures = []
   for (const provider of attempts) {
     try {
       if (provider === 'resend') {
@@ -257,10 +257,13 @@ async function sendMailMessage({ to, subject, text, html }) {
       const formatted = provider === 'smtp' ? new Error(formatSmtpError(err)) : err
       const suffix = attempts.length > 1 ? ' — trying next provider' : ''
       console.warn(`[mail] ${provider} send failed${suffix}: ${formatted.message}`)
-      lastErr = formatted
+      failures.push(`${provider}: ${formatted.message}`)
     }
   }
-  throw lastErr
+  // Every configured provider failed — report all of them, not just the last one tried,
+  // so an earlier failure (e.g. Brevo rejecting the sender) isn't masked by a later
+  // fallback's unrelated error (e.g. bad SMTP credentials).
+  throw new Error(`All email providers failed — ${failures.join(' | ')}`)
 }
 
 /** Human-readable SMTP / Gmail error for logs. */
