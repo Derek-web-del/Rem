@@ -61,6 +61,7 @@ export default function SubjectDetails({
   gradeOptions,
   facultyOptions,
   curriculumGuideOptions = [],
+  sectionOptions = [],
   initial,
   onBack,
   onSave,
@@ -80,6 +81,7 @@ export default function SubjectDetails({
       semCode: initial.semCode || '',
       assignedFacultyId: initial.assignedFacultyId || '',
       curriculumGuideId: initial.curriculumGuideId || '',
+      sectionId: initial.sectionId || '',
       scheduleDays: scheduleDaysFromSubject(initial).length ? scheduleDaysFromSubject(initial) : ['1'],
       scheduleStartTime: times.scheduleStartTime,
       scheduleEndTime: times.scheduleEndTime,
@@ -97,6 +99,7 @@ export default function SubjectDetails({
       semCode: initial.semCode || '',
       assignedFacultyId: initial.assignedFacultyId || '',
       curriculumGuideId: initial.curriculumGuideId || '',
+      sectionId: initial.sectionId || '',
       scheduleDays: scheduleDaysFromSubject(initial).length ? scheduleDaysFromSubject(initial) : ['1'],
       scheduleStartTime: times.scheduleStartTime,
       scheduleEndTime: times.scheduleEndTime,
@@ -123,6 +126,16 @@ export default function SubjectDetails({
       return true
     })
   }, [curriculumGuideOptions, form.grade, form.subjectName])
+
+  const matchingSections = useMemo(() => {
+    const grade = String(form.grade || '').trim().toLowerCase()
+    const list = (Array.isArray(sectionOptions) ? sectionOptions : []).filter((s) => s.postgresSectionId != null)
+    if (!grade) return list
+    return list.filter((s) => {
+      const sGrade = String(s.grade ?? '').trim().toLowerCase()
+      return !sGrade || sGrade === grade
+    })
+  }, [sectionOptions, form.grade])
 
   const computedSemCode = useMemo(() => {
     const gradeNum = String(form.grade || '').replace(/[^0-9]/g, '')
@@ -173,6 +186,7 @@ export default function SubjectDetails({
       facultyCode: faculty?.facultyUsername || faculty?.facultyCode || '',
       facultyEmail: faculty?.email || '',
       curriculumGuideId: form.curriculumGuideId,
+      sectionId: form.sectionId,
       scheduleDays: form.scheduleDays,
       scheduleStartTime: form.scheduleStartTime,
       scheduleEndTime: form.scheduleEndTime,
@@ -322,6 +336,25 @@ export default function SubjectDetails({
               {matchingCurriculumGuides.map((g) => (
                 <option key={g.id} value={g.id}>
                   {g.grade} — {g.subject}
+                </option>
+              ))}
+            </SelectField>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <SelectField
+              label="Section"
+              value={form.sectionId}
+              onChange={(e) => setForm((p) => ({ ...p, sectionId: e.target.value }))}
+              disabled={submitting}
+              helper="Leave blank to keep this subject visible to the whole grade level. Set a section to scope its classwork to just that section."
+            >
+              <option value="">
+                {matchingSections.length ? 'All sections in this grade (default)' : 'No sections for this grade yet'}
+              </option>
+              {matchingSections.map((s) => (
+                <option key={s.postgresSectionId} value={s.postgresSectionId}>
+                  {s.name}
                 </option>
               ))}
             </SelectField>

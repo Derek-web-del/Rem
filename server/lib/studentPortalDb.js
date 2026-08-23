@@ -21,12 +21,21 @@ export async function fetchStudentSubjects(pool, studentRow) {
   }
   const params = [...gradeVariants]
   const placeholders = params.map((_, i) => `$${i + 1}`).join(', ')
+  const studentSectionId = Number(studentRow?.section_id)
+  let sectionFilter
+  if (Number.isFinite(studentSectionId) && studentSectionId > 0) {
+    params.push(studentSectionId)
+    sectionFilter = `AND (section_id IS NULL OR section_id = $${params.length})`
+  } else {
+    sectionFilter = 'AND section_id IS NULL'
+  }
   const { rows } = await pool.query(
     `
       SELECT id, subject_code, subject_name, grade_level, semester, subject_photo, faculty_id, created_at
       FROM subjects
       WHERE archived_at IS NULL
         AND lower(trim(replace(coalesce(grade_level, ''), '  ', ' '))) IN (${placeholders})
+        ${sectionFilter}
       ORDER BY subject_name ASC, id ASC
     `,
     params,
@@ -69,11 +78,18 @@ export async function fetchStudentAssignments(pool, studentRow) {
   await ensureAssignmentsSchema(pool)
   const grade = await resolveStudentGradeLevel(pool, studentRow)
   const studentId = studentRow?.id
+  const studentSectionId = Number(studentRow?.section_id)
   const params = [studentId]
   let where = '1=1'
   if (grade) {
     params.push(grade)
     where += ` AND lower(trim(replace(coalesce(a.grade_level, ''), '  ', ' '))) = $${params.length}`
+  }
+  if (Number.isFinite(studentSectionId) && studentSectionId > 0) {
+    params.push(studentSectionId)
+    where += ` AND (sub.section_id IS NULL OR sub.section_id = $${params.length})`
+  } else {
+    where += ` AND sub.section_id IS NULL`
   }
   const { rows } = await pool.query(
     `
@@ -107,11 +123,18 @@ export async function fetchStudentActivities(pool, studentRow) {
   await ensureActivitiesSchema(pool)
   const grade = await resolveStudentGradeLevel(pool, studentRow)
   const studentId = studentRow?.id
+  const studentSectionId = Number(studentRow?.section_id)
   const params = [studentId]
   let where = '1=1'
   if (grade) {
     params.push(grade)
     where += ` AND lower(trim(replace(coalesce(a.grade_level, ''), '  ', ' '))) = $${params.length}`
+  }
+  if (Number.isFinite(studentSectionId) && studentSectionId > 0) {
+    params.push(studentSectionId)
+    where += ` AND (sub.section_id IS NULL OR sub.section_id = $${params.length})`
+  } else {
+    where += ` AND sub.section_id IS NULL`
   }
   const { rows } = await pool.query(
     `

@@ -3,7 +3,7 @@ import { normalizeGradeLevel } from './studentSession.js'
 const QUIZ_COLUMNS = `
   id, title, description, instructions, activity_type, subject, grade_level,
   branch, semester, duration_mins, deadline, total_points, quiz_password, quiz_password_plain, is_hidden,
-  max_attempts, created_by, created_at, updated_at
+  max_attempts, subject_id, created_by, created_at, updated_at
 `
 
 const QUIZ_ACCESS_TTL_MS = 4 * 60 * 60 * 1000

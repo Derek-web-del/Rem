@@ -228,11 +228,20 @@ export async function listStudentQuizzesWithSubmissions(pool, studentRow) {
   await ensureQuizSubmissionsSchema(pool)
   const grade = await resolveStudentGradeLevel(pool, studentRow)
   const studentId = studentRow?.id
+  const studentSectionId = Number(studentRow?.section_id)
+  const hasStudentSection = Number.isFinite(studentSectionId) && studentSectionId > 0
   const params = [studentId]
   let gradeFilter = ''
   if (grade) {
     params.push(grade)
     gradeFilter = ` AND lower(trim(replace(coalesce(q.grade_level, ''), '  ', ' '))) = $${params.length}`
+  }
+  let sectionFilter
+  if (hasStudentSection) {
+    params.push(studentSectionId)
+    sectionFilter = ` AND (sub.section_id IS NULL OR sub.section_id = $${params.length})`
+  } else {
+    sectionFilter = ` AND sub.section_id IS NULL`
   }
 
   const { rows } = await pool.query(
@@ -256,9 +265,11 @@ export async function listStudentQuizzesWithSubmissions(pool, studentRow) {
         s.attempt_number,
         s.late_submission_until
       FROM quizzes q
+      LEFT JOIN subjects sub ON sub.id = q.subject_id
       LEFT JOIN quiz_submissions s ON s.quiz_id = q.id AND s.student_id = $1
       WHERE COALESCE(q.is_hidden, FALSE) = FALSE
       ${gradeFilter}
+      ${sectionFilter}
       ORDER BY q.created_at DESC, q.id DESC
     `,
     params,
@@ -312,6 +323,14 @@ export async function assertStudentQuizAccess(pool, studentRow, quizId) {
   if (grade) {
     const qg = normalizeGradeLevel(quiz.grade_level)
     if (qg && qg !== grade) return null
+  }
+  if (quiz.subject_id) {
+    const { rows } = await pool.query(`SELECT section_id FROM subjects WHERE id = $1 LIMIT 1`, [quiz.subject_id])
+    const subjectSectionId = rows?.[0]?.section_id
+    if (subjectSectionId != null) {
+      const studentSectionId = Number(studentRow?.section_id)
+      if (!Number.isFinite(studentSectionId) || studentSectionId !== Number(subjectSectionId)) return null
+    }
   }
   return quiz
 }

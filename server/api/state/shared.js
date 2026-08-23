@@ -1013,9 +1013,14 @@ export async function ensureSchema(pool) {
 
   await ensureSubjectsTable(pool)
 
-  const { ensureSubjectSchedulesSchema, ensureSubjectsCurriculumGuideColumn, seedDemoSubjectSchedules } =
-    await import('../../lib/subjectSchedulesDb.js')
+  const {
+    ensureSubjectSchedulesSchema,
+    ensureSubjectsCurriculumGuideColumn,
+    ensureSubjectsSectionColumn,
+    seedDemoSubjectSchedules,
+  } = await import('../../lib/subjectSchedulesDb.js')
   await ensureSubjectsCurriculumGuideColumn(pool)
+  await ensureSubjectsSectionColumn(pool)
   await ensureSubjectSchedulesSchema(pool)
   try {
     await seedDemoSubjectSchedules(pool)
@@ -1393,6 +1398,8 @@ export function readSubjectBodyFields(b) {
     readStudentField(b, 'facultyId', 'faculty_id')
   const curriculum_guide_id =
     readStudentField(b, 'curriculumGuideId', 'curriculum_guide_id') || null
+  const section_id_raw = readStudentField(b, 'sectionId', 'section_id')
+  const section_id = section_id_raw && Number.isFinite(Number(section_id_raw)) ? Number(section_id_raw) : null
   const syllabus_pdf = readSubjectSyllabus(b)
   const schedule_days_raw = b?.scheduleDays ?? b?.schedule_days ?? b?.scheduleDayOfWeek ?? b?.schedule_day_of_week
   const schedule_start_time = String(b?.scheduleStartTime ?? b?.schedule_start_time ?? '').trim()
@@ -1445,6 +1452,7 @@ export function readSubjectBodyFields(b) {
     semester,
     faculty_id,
     curriculum_guide_id,
+    section_id,
     syllabus_pdf,
     schedule_spec,
     schedule,
@@ -1545,6 +1553,10 @@ export function subjectRowToResponse(row) {
     curriculumGuideTitle: String(row.curriculum_guide_title ?? '').trim(),
     curriculumGuideGrade: String(row.curriculum_guide_grade ?? '').trim(),
     curriculum_guide_grade: String(row.curriculum_guide_grade ?? '').trim(),
+    sectionId: row.section_id != null ? Number(row.section_id) : null,
+    section_id: row.section_id != null ? Number(row.section_id) : null,
+    sectionName: String(row.section_name ?? '').trim(),
+    section_name: String(row.section_name ?? '').trim(),
     schedule: row.schedule ?? null,
     schedules: Array.isArray(row.schedules) ? row.schedules : row.schedule ? [row.schedule] : [],
     schedule_label: String(row.schedule_label ?? '').trim(),

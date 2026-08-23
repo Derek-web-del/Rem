@@ -31,9 +31,11 @@ const SUBJECT_SELECT_WITH_FACULTY = `
     s.syllabus_pdf,
     s.subject_photo,
     s.curriculum_guide_id,
+    s.section_id,
     s.created_at,
     cg.subject AS curriculum_guide_title,
     cg.grade AS curriculum_guide_grade,
+    sec.section_name AS section_name,
     COALESCE(
       NULLIF(trim(concat_ws(' ',
         nullif(trim(f.first_name), ''),
@@ -45,6 +47,7 @@ const SUBJECT_SELECT_WITH_FACULTY = `
   FROM subjects s
   LEFT JOIN faculties f ON f.id::text = s.faculty_id::text
   LEFT JOIN curriculum_guides cg ON cg.id::text = s.curriculum_guide_id::text
+  LEFT JOIN sections sec ON sec.id = s.section_id
 `
 
 /** @param {import('express').Router} router @param {{ pool: import('pg').Pool, auth: object }} ctx */
@@ -99,7 +102,7 @@ export function registerSubjectsRoutes(router, ctx) {
       const adminSession = await requireAdminSession(req, res, auth)
       if (!adminSession) return
       const b = req.body || {}
-      const { subject_code, subject_name, grade_level, semester, faculty_id, curriculum_guide_id, syllabus_pdf, schedule_spec, has_schedule_fields } =
+      const { subject_code, subject_name, grade_level, semester, faculty_id, curriculum_guide_id, section_id, syllabus_pdf, schedule_spec, has_schedule_fields } =
         readSubjectBodyFields(b)
 
       if (!subject_code || !subject_name || !grade_level || !semester) {
@@ -115,12 +118,12 @@ export function registerSubjectsRoutes(router, ctx) {
       const { rows } = await pool.query(
         `
           INSERT INTO subjects (
-            subject_code, subject_name, grade_level, semester, faculty_id, curriculum_guide_id, syllabus_pdf, subject_photo
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            subject_code, subject_name, grade_level, semester, faculty_id, curriculum_guide_id, section_id, syllabus_pdf, subject_photo
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
           RETURNING id, subject_code, subject_name, grade_level, semester,
-            faculty_id, curriculum_guide_id, syllabus_pdf, subject_photo, created_at
+            faculty_id, curriculum_guide_id, section_id, syllabus_pdf, subject_photo, created_at
         `,
-        [subject_code, subject_name, grade_level, semester, facultyIdParam, guideIdParam, syllabus_pdf, subject_photo],
+        [subject_code, subject_name, grade_level, semester, facultyIdParam, guideIdParam, section_id, syllabus_pdf, subject_photo],
       )
       const row = rows?.[0]
       if (row?.id && has_schedule_fields) {
@@ -164,7 +167,7 @@ export function registerSubjectsRoutes(router, ctx) {
         return
       }
       const b = req.body || {}
-      const { subject_code, subject_name, grade_level, semester, faculty_id, curriculum_guide_id, syllabus_pdf, schedule_spec, has_schedule_fields } =
+      const { subject_code, subject_name, grade_level, semester, faculty_id, curriculum_guide_id, section_id, syllabus_pdf, schedule_spec, has_schedule_fields } =
         readSubjectBodyFields(b)
       const hasSyllabusField = ['syllabusDataUrl', 'syllabus_data_url', 'syllabus_pdf', 'syllabusPdf'].some((key) =>
         Object.prototype.hasOwnProperty.call(b, key),
@@ -195,10 +198,10 @@ export function registerSubjectsRoutes(router, ctx) {
         `
           UPDATE subjects
           SET subject_code = $1, subject_name = $2, grade_level = $3, semester = $4,
-            faculty_id = $5, curriculum_guide_id = $6, syllabus_pdf = $7, subject_photo = $8
-          WHERE id = $9
+            faculty_id = $5, curriculum_guide_id = $6, section_id = $7, syllabus_pdf = $8, subject_photo = $9
+          WHERE id = $10
           RETURNING id, subject_code, subject_name, grade_level, semester,
-            faculty_id, curriculum_guide_id, syllabus_pdf, subject_photo, created_at,
+            faculty_id, curriculum_guide_id, section_id, syllabus_pdf, subject_photo, created_at,
             (SELECT COALESCE(
               NULLIF(trim(concat_ws(' ',
                 nullif(trim(f.first_name), ''),
@@ -208,9 +211,10 @@ export function registerSubjectsRoutes(router, ctx) {
               NULLIF(trim(f.name), '')
             ) FROM faculties f WHERE f.id::text = subjects.faculty_id::text LIMIT 1) AS faculty_name,
             (SELECT cg.subject FROM curriculum_guides cg WHERE cg.id::text = subjects.curriculum_guide_id::text LIMIT 1) AS curriculum_guide_title,
-            (SELECT cg.grade FROM curriculum_guides cg WHERE cg.id::text = subjects.curriculum_guide_id::text LIMIT 1) AS curriculum_guide_grade
+            (SELECT cg.grade FROM curriculum_guides cg WHERE cg.id::text = subjects.curriculum_guide_id::text LIMIT 1) AS curriculum_guide_grade,
+            (SELECT sec.section_name FROM sections sec WHERE sec.id = subjects.section_id LIMIT 1) AS section_name
         `,
-        [subject_code, subject_name, grade_level, semester, facultyIdParam, guideIdParam, syllabusToSave, subject_photo, id],
+        [subject_code, subject_name, grade_level, semester, facultyIdParam, guideIdParam, section_id, syllabusToSave, subject_photo, id],
       )
       if (!rows?.length) {
         res.status(404).json({ error: 'Subject not found.' })

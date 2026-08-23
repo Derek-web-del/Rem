@@ -37,6 +37,7 @@ export default function SubjectsPage({
   gradeOptions,
   facultyOptions,
   curriculumGuideOptions = [],
+  sectionOptions = [],
   subjects,
   onAddSubject,
   onUpdateSubject,
@@ -116,6 +117,7 @@ export default function SubjectsPage({
             syllabusFileType: '',
             syllabusDataUrl: '',
             curriculumGuideId: '',
+            sectionId: '',
             scheduleDays: ['1', '2', '3', '4', '5'],
             scheduleStartTime: '08:00',
             scheduleEndTime: '09:00',
@@ -128,6 +130,7 @@ export default function SubjectsPage({
         gradeOptions={gradeOptions}
         facultyOptions={facultyOptions}
         curriculumGuideOptions={curriculumGuideOptions}
+        sectionOptions={sectionOptions}
         initial={initial}
         disableIdentity={mode === 'edit'}
         postgresSubjectId={

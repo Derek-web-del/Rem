@@ -106,6 +106,20 @@ export async function ensureSubjectsCurriculumGuideColumn(pool) {
   `)
 }
 
+/** Optional section scoping for a subject's classwork — nullable, additive.
+ * A subject with no section_id keeps today's grade-wide visibility. */
+export async function ensureSubjectsSectionColumn(pool) {
+  await pool.query(`
+    ALTER TABLE public.subjects
+    ADD COLUMN IF NOT EXISTS section_id INT REFERENCES public.sections(id) ON DELETE SET NULL
+  `)
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_subjects_section_id
+    ON public.subjects (section_id)
+    WHERE section_id IS NOT NULL
+  `)
+}
+
 export async function listSchedulesForSubject(pool, subjectId) {
   const sid = Number(subjectId)
   if (!Number.isFinite(sid) || sid <= 0) return []

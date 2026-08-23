@@ -268,6 +268,8 @@ function mapPgSubjectRow(row, facultiesList) {
     curriculumGuideId: String(row.curriculumGuideId ?? row.curriculum_guide_id ?? '').trim(),
     curriculumGuideTitle: String(row.curriculumGuideTitle ?? row.curriculum_guide_title ?? '').trim(),
     curriculumGuideGrade: String(row.curriculumGuideGrade ?? row.curriculum_guide_grade ?? '').trim(),
+    sectionId: row.sectionId != null ? String(row.sectionId) : row.section_id != null ? String(row.section_id) : '',
+    sectionName: String(row.sectionName ?? row.section_name ?? '').trim(),
     schedule: row.schedule || (Array.isArray(row.schedules) ? row.schedules[0] : null) || null,
     schedules: Array.isArray(row.schedules) ? row.schedules : row.schedule ? [row.schedule] : [],
     schedule_label: String(row.schedule_label ?? row.scheduleLabel ?? '').trim(),
@@ -300,6 +302,8 @@ function buildSubjectApiBody(payload) {
     faculty_id: String(payload.assignedFacultyId || '').trim(),
     curriculumGuideId: String(payload.curriculumGuideId || '').trim(),
     curriculum_guide_id: String(payload.curriculumGuideId || '').trim(),
+    sectionId: String(payload.sectionId || '').trim(),
+    section_id: String(payload.sectionId || '').trim(),
     scheduleDays,
     scheduleStartTime: scheduleStart,
     scheduleEndTime: scheduleEnd,
@@ -3210,6 +3214,7 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
               gradeOptions={GRADE_LEVELS}
               facultyOptions={faculties}
               curriculumGuideOptions={curriculums.filter((c) => c.isPublished !== false)}
+              sectionOptions={sections}
               subjects={subjects}
               onAddSubject={addSubject}
               onUpdateSubject={updateSubject}
