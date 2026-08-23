@@ -111,8 +111,18 @@ export function createAdminCurriculumGuidesRouter(express, auth) {
       let file_url = null
       let file_name = null
       if (file) {
-        file_url = await saveCurriculumGuideFile(file.buffer, file.originalname)
-        file_name = String(file.originalname || 'guide.pdf').trim() || 'guide.pdf'
+        try {
+          file_url = await saveCurriculumGuideFile(file.buffer, file.originalname)
+          file_name = String(file.originalname || 'guide.pdf').trim() || 'guide.pdf'
+        } catch (fileErr) {
+          // The reference PDF is optional (units are the editable content faculty actually
+          // see) — a storage failure (e.g. misconfigured DigitalOcean Spaces bucket)
+          // shouldn't block creating the curriculum guide. Drop the file and continue.
+          console.warn(
+            '[POST /api/admin/curriculum-guides] File storage failed — continuing without file:',
+            fileErr?.message || fileErr,
+          )
+        }
       }
 
       const weights = readGradingWeights(req.body)
@@ -209,11 +219,22 @@ export function createAdminCurriculumGuidesRouter(express, auth) {
       let file_url = existing.file_url
       let file_name = existing.file_name
       if (file) {
-        if (existing.file_url?.startsWith('/uploads/curriculum/')) {
-          await deleteCurriculumFileByUrl(existing.file_url)
+        try {
+          const newFileUrl = await saveCurriculumGuideFile(file.buffer, file.originalname)
+          if (existing.file_url?.startsWith('/uploads/curriculum/')) {
+            await deleteCurriculumFileByUrl(existing.file_url)
+          }
+          file_url = newFileUrl
+          file_name = String(file.originalname || 'guide.pdf').trim() || 'guide.pdf'
+        } catch (fileErr) {
+          // The reference PDF is optional — a storage failure (e.g. misconfigured
+          // DigitalOcean Spaces bucket) shouldn't block saving the rest of the edit.
+          // Keep the existing file reference rather than losing it.
+          console.warn(
+            '[PUT /api/admin/curriculum-guides/:id] File storage failed — keeping existing file:',
+            fileErr?.message || fileErr,
+          )
         }
-        file_url = await saveCurriculumGuideFile(file.buffer, file.originalname)
-        file_name = String(file.originalname || 'guide.pdf').trim() || 'guide.pdf'
       }
 
       const weights = readGradingWeights(req.body)
