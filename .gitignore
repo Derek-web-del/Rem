@@ -26,6 +26,8 @@ server/backups/*
 !server/backups/.gitkeep
 backups/*
 !backups/.gitkeep
+recycle-bin/*
+!recycle-bin/.gitkeep
 
 # Editor directories and files
 .vscode/*

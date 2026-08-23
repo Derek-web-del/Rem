@@ -23,6 +23,11 @@ import {
 } from '../lib/backupService.js'
 import { LNBAK_TABLE_KEYS } from '../lib/backupTables.js'
 import {
+  listRecycledFiles,
+  restoreRecycledFile,
+  permanentlyDeleteRecycledFile,
+} from '../lib/recycleBin.js'
+import {
   BACKUPS_DIR,
   BACKUP_UPLOADS_DIR,
   buildLnbakFilename,
@@ -867,6 +872,63 @@ export function createBackupRouter(express, auth) {
       res.json({ ok: true, success: true })
     } catch (e) {
       sendSafeServerError(res, e, 'DELETE /api/backup/:id')
+    }
+  })
+
+  router.get('/recycle-bin', async (req, res) => {
+    try {
+      const session = await requireAdmin(req, res)
+      if (!session) return
+      const pool = getPgPool()
+      const files = await listRecycledFiles(pool)
+      res.json({ ok: true, success: true, files })
+    } catch (e) {
+      sendSafeServerError(res, e, 'GET /api/backup/recycle-bin')
+    }
+  })
+
+  router.post('/recycle-bin/:id/restore', async (req, res) => {
+    try {
+      const session = await requireAdmin(req, res)
+      if (!session) return
+      const pool = getPgPool()
+      const result = await restoreRecycledFile(pool, req.params.id)
+      if (!result.ok) {
+        res.status(404).json({ success: false, error: result.error || 'NOT_FOUND' })
+        return
+      }
+      const actor = actorFromSession(session)
+      await logBackupAudit(actor, 'RECYCLED_FILE_RESTORED', {
+        backupId: null,
+        backupName: result.file_name || result.original_path,
+        description: `Restored "${result.file_name || result.original_path}" from the recycle bin`,
+        details: { original_path: result.original_path },
+      })
+      res.json({ ok: true, success: true, ...result })
+    } catch (e) {
+      sendSafeServerError(res, e, 'POST /api/backup/recycle-bin/:id/restore')
+    }
+  })
+
+  router.delete('/recycle-bin/:id', async (req, res) => {
+    try {
+      const session = await requireAdmin(req, res)
+      if (!session) return
+      const pool = getPgPool()
+      const result = await permanentlyDeleteRecycledFile(pool, req.params.id)
+      if (!result.ok) {
+        res.status(404).json({ success: false, error: result.error || 'NOT_FOUND' })
+        return
+      }
+      const actor = actorFromSession(session)
+      await logBackupAudit(actor, 'RECYCLED_FILE_PURGED', {
+        backupId: null,
+        backupName: result.file_name,
+        description: `Permanently deleted "${result.file_name}" from the recycle bin`,
+      })
+      res.json({ ok: true, success: true })
+    } catch (e) {
+      sendSafeServerError(res, e, 'DELETE /api/backup/recycle-bin/:id')
     }
   })
 

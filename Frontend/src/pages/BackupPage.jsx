@@ -4,6 +4,7 @@ import BackButton from '../components/BackButton.jsx'
 import { useNotify } from '../components/notifications.jsx'
 import { apiUrl } from '../lib/lmsStateStorage.js'
 import { dispatchAuditLogsRefresh, dispatchBackupRestored } from '../lib/auditLogRefresh.js'
+import RecycleBinPanel from '../components/RecycleBinPanel.jsx'
 
 const ACTION_BLUE = '#1e4fa3'
 
@@ -839,6 +840,8 @@ export default function BackupPage() {
       {loadError ? (
         <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{loadError}</div>
       ) : null}
+
+      <RecycleBinPanel />
 
       <section className="rounded-xl border border-neutral-100 bg-white p-5 shadow-sm">
         <h2 className="text-lg font-bold text-neutral-900">Google Drive Backup</h2>

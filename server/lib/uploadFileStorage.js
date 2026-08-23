@@ -12,6 +12,7 @@ import {
 import { Upload } from '@aws-sdk/lib-storage'
 import { createSpacesS3Client, getSpacesConfig, isSpacesConfigured } from './doSpacesClient.js'
 import { uploadsRoot } from './uploadPaths.js'
+import { getPgPool } from '../pgPool.js'
 
 function envDisabled(name) {
   const v = String(process.env[name] ?? '').trim().toLowerCase()
@@ -195,9 +196,28 @@ export async function ensureLocalUploadFile(storedPath) {
   }
 }
 
-export async function deleteUploadByStoredPath(storedPath) {
+/**
+ * Deletes an uploaded file. Tries the recycle bin first (dynamic import avoids a
+ * circular dependency with recycleBin.js, which itself uses helpers from this
+ * file) so any accidental delete/replace stays recoverable; falls back to a
+ * hard delete only if recycling can't happen (no DB pool, or the recycle
+ * module itself fails) so this never regresses behavior when it can't help.
+ */
+export async function deleteUploadByStoredPath(storedPath, { deletedBy = null, deletedByName = '' } = {}) {
   const normalized = normalizeStoredUploadPath(storedPath)
   if (!normalized) return
+
+  try {
+    const pool = getPgPool()
+    if (pool) {
+      const { moveUploadToRecycleBin } = await import('./recycleBin.js')
+      const recycled = await moveUploadToRecycleBin(pool, normalized, { deletedBy, deletedByName })
+      if (recycled) return
+    }
+  } catch (e) {
+    console.warn('[uploads] Recycle-bin move failed, falling back to hard delete:', normalized, e?.message || e)
+  }
+
   const abs = resolveLocalUploadAbsPath(normalized)
   try {
     await fsp.unlink(abs)

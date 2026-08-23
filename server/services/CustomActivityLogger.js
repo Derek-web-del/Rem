@@ -835,7 +835,11 @@ export class CustomActivityLogger {
                     ? 'Backup Uploaded to Spaces'
                     : type === 'BACKUP_SCHEDULE_UPDATED'
                     ? 'Backup Schedule Updated'
-                    : 'Backup')
+                    : type === 'RECYCLED_FILE_RESTORED'
+                      ? 'File Restored from Recycle Bin'
+                      : type === 'RECYCLED_FILE_PURGED'
+                        ? 'File Permanently Deleted'
+                        : 'Backup')
     return this._log({
       userId: uid,
       activityType: type,
