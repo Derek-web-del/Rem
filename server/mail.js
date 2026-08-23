@@ -84,8 +84,11 @@ function useResendApi() {
 }
 
 /** Second HTTPS email API — used as a fallback when Resend is unset or its send fails (e.g. daily cap hit). */
-function useBrevoApi() {
-  return Boolean(String(process.env.BREVO_API_KEY || '').trim())
+function useMailjetApi() {
+  return Boolean(
+    String(process.env.MAILJET_API_KEY || '').trim() &&
+      String(process.env.MAILJET_API_SECRET || '').trim(),
+  )
 }
 
 function isRailwayHosted() {
@@ -103,9 +106,9 @@ function resolveFromAddress(provider) {
     // Resend test sender — only delivers to your Resend account email until a domain is verified.
     return 'onboarding@resend.dev'
   }
-  if (provider === 'brevo') {
-    const brevoFrom = String(process.env.BREVO_FROM || '').trim()
-    if (brevoFrom) return brevoFrom
+  if (provider === 'mailjet') {
+    const mailjetFrom = String(process.env.MAILJET_FROM || '').trim()
+    if (mailjetFrom) return mailjetFrom
   }
 
   const user = (process.env.SMTP_USER || '').trim()
@@ -114,7 +117,7 @@ function resolveFromAddress(provider) {
   return from
 }
 
-/** Splits `"Name <email>"` (the SMTP_FROM/RESEND_FROM convention) into parts — Brevo's API wants them separate. */
+/** Splits `"Name <email>"` (the SMTP_FROM/RESEND_FROM convention) into parts — Mailjet's API wants them separate. */
 function parseFromAddress(raw) {
   const s = String(raw || '').trim()
   const m = s.match(/^(.*?)<([^>]+)>$/)
@@ -165,60 +168,73 @@ async function sendEmailViaResend({ to, subject, text, html }) {
   }
 }
 
-function formatBrevoError(status, bodyText) {
+function formatMailjetError(status, bodyText) {
   try {
     const body = JSON.parse(bodyText)
-    const msg = String(body.message || bodyText)
+    const msgError = body?.Messages?.[0]?.Errors?.[0]
+    const msg = String(msgError?.ErrorMessage || body.ErrorMessage || bodyText)
     if (status === 401) {
-      return `Brevo API ${status}: ${msg} (check BREVO_API_KEY)`
+      return `Mailjet API ${status}: ${msg} (check MAILJET_API_KEY / MAILJET_API_SECRET)`
     }
-    if (status === 400 && /sender/i.test(msg)) {
-      return `${msg} Verify the sender at https://app.brevo.com/senders/list and set BREVO_FROM to that address.`
+    if (/sender|from/i.test(msg)) {
+      return `${msg} Verify the sender at https://app.mailjet.com/account/sender and set MAILJET_FROM to that address.`
     }
-    return `Brevo API ${status}: ${msg}`
+    return `Mailjet API ${status}: ${msg}`
   } catch {
-    return `Brevo API ${status}: ${bodyText}`
+    return `Mailjet API ${status}: ${bodyText}`
   }
 }
 
-async function sendEmailViaBrevo({ to, subject, text, html }) {
-  const apiKey = String(process.env.BREVO_API_KEY || '').trim()
-  const { name, email: fromEmail } = parseFromAddress(resolveFromAddress('brevo'))
+async function sendEmailViaMailjet({ to, subject, text, html }) {
+  const apiKey = String(process.env.MAILJET_API_KEY || '').trim()
+  const apiSecret = String(process.env.MAILJET_API_SECRET || '').trim()
+  const { name, email: fromEmail } = parseFromAddress(resolveFromAddress('mailjet'))
   if (!fromEmail) {
-    throw new Error('Set BREVO_FROM (verified sender email in Brevo) or SMTP_FROM/SMTP_USER.')
+    throw new Error('Set MAILJET_FROM (verified sender email in Mailjet) or SMTP_FROM/SMTP_USER.')
   }
-  const fromName = name || String(process.env.BREVO_FROM_NAME || 'LenLearn LMS').trim()
+  const fromName = name || String(process.env.MAILJET_FROM_NAME || 'LenLearn LMS').trim()
 
-  const res = await fetch('https://api.brevo.com/v3/smtp/email', {
+  const res = await fetch('https://api.mailjet.com/v3.1/send', {
     method: 'POST',
     headers: {
-      'api-key': apiKey,
+      Authorization: `Basic ${btoa(`${apiKey}:${apiSecret}`)}`,
       'Content-Type': 'application/json',
       Accept: 'application/json',
     },
     body: JSON.stringify({
-      sender: { email: fromEmail, name: fromName },
-      to: [{ email: to }],
-      subject,
-      textContent: text,
-      htmlContent: html,
+      Messages: [
+        {
+          From: { Email: fromEmail, Name: fromName },
+          To: [{ Email: to }],
+          Subject: subject,
+          TextPart: text,
+          HTMLPart: html,
+        },
+      ],
     }),
   })
 
   const bodyText = await res.text()
   if (!res.ok) {
-    throw new Error(formatBrevoError(res.status, bodyText))
+    throw new Error(formatMailjetError(res.status, bodyText))
   }
 
+  let parsed
   try {
-    return JSON.parse(bodyText)
+    parsed = JSON.parse(bodyText)
   } catch {
     return { messageId: null, raw: bodyText }
   }
+  const message = parsed?.Messages?.[0]
+  if (message?.Status && message.Status !== 'success') {
+    const errMsg = message.Errors?.[0]?.ErrorMessage || `Mailjet rejected the message (status: ${message.Status})`
+    throw new Error(errMsg)
+  }
+  return { messageId: message?.To?.[0]?.MessageID || null, raw: parsed }
 }
 
 /**
- * Tries each configured provider in order — Resend, then Brevo, then SMTP — falling through to
+ * Tries each configured provider in order — Resend, then Mailjet, then SMTP — falling through to
  * the next one on failure (e.g. a provider's daily send cap is hit). Throws the last error only
  * if every configured provider failed.
  */
@@ -228,12 +244,12 @@ async function sendMailMessage({ to, subject, text, html }) {
   )
   const attempts = [
     useResendApi() && 'resend',
-    useBrevoApi() && 'brevo',
+    useMailjetApi() && 'mailjet',
     hasSmtp && 'smtp',
   ].filter(Boolean)
 
   if (!attempts.length) {
-    throw new Error('No email provider configured (set RESEND_API_KEY, BREVO_API_KEY, or SMTP_USER/SMTP_PASS).')
+    throw new Error('No email provider configured (set RESEND_API_KEY, MAILJET_API_KEY/MAILJET_API_SECRET, or SMTP_USER/SMTP_PASS).')
   }
 
   const failures = []
@@ -243,9 +259,9 @@ async function sendMailMessage({ to, subject, text, html }) {
         const info = await sendEmailViaResend({ to, subject, text, html })
         return { messageId: info?.id || 'resend', provider: 'resend' }
       }
-      if (provider === 'brevo') {
-        const info = await sendEmailViaBrevo({ to, subject, text, html })
-        return { messageId: info?.messageId || 'brevo', provider: 'brevo' }
+      if (provider === 'mailjet') {
+        const info = await sendEmailViaMailjet({ to, subject, text, html })
+        return { messageId: info?.messageId || 'mailjet', provider: 'mailjet' }
       }
       const mailer = getMailer()
       if (!mailer) throw new Error('SMTP is not configured (SMTP_USER and SMTP_PASS).')
@@ -261,7 +277,7 @@ async function sendMailMessage({ to, subject, text, html }) {
     }
   }
   // Every configured provider failed — report all of them, not just the last one tried,
-  // so an earlier failure (e.g. Brevo rejecting the sender) isn't masked by a later
+  // so an earlier failure (e.g. Mailjet rejecting the sender) isn't masked by a later
   // fallback's unrelated error (e.g. bad SMTP credentials).
   throw new Error(`All email providers failed — ${failures.join(' | ')}`)
 }
@@ -290,7 +306,7 @@ function formatSmtpError(err) {
  * Set `SMTP_VERIFY_STRICT=1` to throw and stop the server if verify fails.
  */
 export async function verifySmtpTransporter() {
-  const providers = [useResendApi() && 'resend', useBrevoApi() && 'brevo'].filter(Boolean)
+  const providers = [useResendApi() && 'resend', useMailjetApi() && 'mailjet'].filter(Boolean)
 
   const user = (process.env.SMTP_USER || '').trim()
   const pass = (process.env.SMTP_PASS || '').replace(/\s/g, '')
@@ -299,7 +315,7 @@ export async function verifySmtpTransporter() {
 
   if (!providers.length) {
     console.warn(
-      '[smtp] No email provider configured — set RESEND_API_KEY, BREVO_API_KEY, or SMTP_USER/SMTP_PASS to send email.',
+      '[smtp] No email provider configured — set RESEND_API_KEY, MAILJET_API_KEY/MAILJET_API_SECRET, or SMTP_USER/SMTP_PASS to send email.',
     )
     return
   }
@@ -309,7 +325,7 @@ export async function verifySmtpTransporter() {
 
   if (isRailwayHosted()) {
     console.warn(
-      '[smtp] Railway Trial/Hobby blocks outbound SMTP (ports 25/465/587). SMTP here is a fallback link only — Resend/Brevo (if set) are tried first.',
+      '[smtp] Railway Trial/Hobby blocks outbound SMTP (ports 25/465/587). SMTP here is a fallback link only — Resend/Mailjet (if set) are tried first.',
     )
   }
 
@@ -345,14 +361,14 @@ export async function sendTwoFactorOtpEmail(to, otp) {
   const hasSmtp = Boolean(
     (process.env.SMTP_USER || '').trim() && (process.env.SMTP_PASS || '').trim(),
   )
-  if (!useResendApi() && !useBrevoApi() && !hasSmtp) {
+  if (!useResendApi() && !useMailjetApi() && !hasSmtp) {
     console.warn(
-      '[auth] No email provider — set RESEND_API_KEY, BREVO_API_KEY, or SMTP_USER/SMTP_PASS to send 2FA email.',
+      '[auth] No email provider — set RESEND_API_KEY, MAILJET_API_KEY/MAILJET_API_SECRET, or SMTP_USER/SMTP_PASS to send 2FA email.',
     )
     console.info(`[auth] 2FA OTP for ${to} (console only): ${otp}`)
     if (process.env.NODE_ENV === 'production') {
       throw new Error(
-        'Email is not configured. Set RESEND_API_KEY, BREVO_API_KEY (recommended on Railway/DigitalOcean), or SMTP_USER and SMTP_PASS, then restart.',
+        'Email is not configured. Set RESEND_API_KEY, MAILJET_API_KEY/MAILJET_API_SECRET (recommended on Railway/DigitalOcean), or SMTP_USER and SMTP_PASS, then restart.',
       )
     }
     return
@@ -369,11 +385,11 @@ export async function sendTwoFactorOtpEmail(to, otp) {
     )
   } catch (err) {
     const gmailHint =
-      !useResendApi() && !useBrevoApi() && isLikelyGmail()
+      !useResendApi() && !useMailjetApi() && isLikelyGmail()
         ? ' Gmail: enable 2-Step Verification, create an App Password at https://myaccount.google.com/apppasswords , and put it in SMTP_PASS. SMTP_USER must be that Gmail address.'
         : ''
-    const providerHint = isRailwayHosted() && !useResendApi() && !useBrevoApi()
-      ? ' On Railway Hobby/Trial (and DigitalOcean by default), SMTP is blocked — add RESEND_API_KEY or BREVO_API_KEY instead.'
+    const providerHint = isRailwayHosted() && !useResendApi() && !useMailjetApi()
+      ? ' On Railway Hobby/Trial (and DigitalOcean by default), SMTP is blocked — add RESEND_API_KEY or MAILJET_API_KEY/MAILJET_API_SECRET instead.'
       : ''
     console.error(
       `[auth] Email send failed (all configured providers exhausted).${gmailHint}${providerHint}`,
@@ -442,14 +458,14 @@ export async function sendPasswordResetEmail({ to, name, resetUrl }) {
     </div>
   `.trim()
 
-  if (!useResendApi() && !useBrevoApi() && !getMailer()) {
+  if (!useResendApi() && !useMailjetApi() && !getMailer()) {
     console.warn(
-      '[auth] No email provider — set RESEND_API_KEY, BREVO_API_KEY, or SMTP_USER/SMTP_PASS to send password reset email.',
+      '[auth] No email provider — set RESEND_API_KEY, MAILJET_API_KEY/MAILJET_API_SECRET, or SMTP_USER/SMTP_PASS to send password reset email.',
     )
     console.info(`[auth] Password reset link for ${to} (console only): ${resetUrl}`)
     if (process.env.NODE_ENV === 'production') {
       throw new Error(
-        'Email is not configured. Set RESEND_API_KEY, BREVO_API_KEY (recommended on Railway/DigitalOcean), or SMTP_USER and SMTP_PASS, then restart.',
+        'Email is not configured. Set RESEND_API_KEY, MAILJET_API_KEY/MAILJET_API_SECRET (recommended on Railway/DigitalOcean), or SMTP_USER and SMTP_PASS, then restart.',
       )
     }
     return
