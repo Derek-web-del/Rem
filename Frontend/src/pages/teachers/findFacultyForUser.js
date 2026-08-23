@@ -1,4 +1,5 @@
 import { normalizeFacultyShape } from '../../lib/lmsStateStorage.js'
+import { facultyPhotoDisplaySrc } from '../../lib/facultyPhoto.js'
 
 function normName(s) {
   return String(s || '')
@@ -102,7 +103,10 @@ export function mergeFacultyWithSessionUser(faculty, sessionUser) {
   const out = normalizeFacultyShape({ ...faculty })
   if (!String(out.qualification || '').trim() && fq) out.qualification = fq
   if (!String(out.contactNumber || '').trim() && fc) out.contactNumber = fc
-  if (!String(out.photoDataUrl || '').trim() && img) out.photoDataUrl = img
+  // Better Auth's user.image stores the raw stored path (e.g. /uploads/faculties/x.png), not a
+  // display-ready URL — resolve it here so photoDataUrl is always safe to pass straight to
+  // <img>/AuthenticatedImage, regardless of what the caller does with it.
+  if (!String(out.photoDataUrl || '').trim() && img) out.photoDataUrl = facultyPhotoDisplaySrc(img)
   if (!String(out.facultyUsername || '').trim() && un) out.facultyUsername = un
   if (!String(out.facultyCode || '').trim() && un) out.facultyCode = un
   if (!String(out.name || '').trim() && sessionUser.name) out.name = String(sessionUser.name).trim()
@@ -137,7 +141,8 @@ export function buildSessionFallbackFaculty(sessionUser) {
     grade: '',
     qualification: fq,
     contactNumber: fc,
-    photoDataUrl: image,
+    // See mergeFacultyWithSessionUser above — user.image is a raw stored path, resolve it here.
+    photoDataUrl: facultyPhotoDisplaySrc(image),
     authUserId: uid,
   })
 }

@@ -529,9 +529,14 @@ async function canAccessCategoryFile(req, auth, category, relativePath) {
   }
 }
 
-/** Rewrite legacy /uploads/... paths to /api/files/... category segments. */
+/**
+ * Rewrite legacy /uploads/... paths to /api/files/... category segments.
+ * Accepts both a full path (`/uploads/faculties/x.png`) and a path already relative to an
+ * `/uploads` mount point (`/faculties/x.png`, as Express's `req.path` is inside a router
+ * mounted at `/uploads` — the mount prefix is stripped before the handler ever sees it).
+ */
 export function rewriteLegacyUploadPath(urlPath) {
-  let rest = String(urlPath || '').replace(/^\/uploads\/?/, '')
+  let rest = String(urlPath || '').replace(/^\/uploads\/?/, '').replace(/^\/+/, '')
   if (rest.startsWith('faculties/')) rest = `photos/${rest.slice('faculties/'.length)}`
   else if (rest.startsWith('Subjects_images/')) rest = `subjects/${rest.slice('Subjects_images/'.length)}`
   return rest
@@ -667,7 +672,13 @@ export function createLegacyUploadsRouter(express, { auth }) {
       res.status(403).json({ success: false, error: 'FORBIDDEN', message: 'Invalid file path.' })
       return
     }
-    req.params = { category: rest.slice(0, slash), 0: rest.slice(slash + 1) }
+    // Rewrite req.url (not just req.params) before delegating — fileRouter's own `/:category/*`
+    // route re-matches against req.url when .handle() is called directly, which silently
+    // overwrote any req.params set here with params parsed from the ORIGINAL, un-rewritten path
+    // (e.g. category="faculties", which isn't in ALLOWED_CATEGORIES) instead of the mapped one.
+    const queryIndex = req.url.indexOf('?')
+    const query = queryIndex === -1 ? '' : req.url.slice(queryIndex)
+    req.url = `/${rest}${query}`
     return fileRouter.handle(req, res, next)
   })
   return router
