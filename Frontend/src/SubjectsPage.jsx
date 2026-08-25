@@ -133,11 +133,6 @@ export default function SubjectsPage({
         sectionOptions={sectionOptions}
         initial={initial}
         disableIdentity={mode === 'edit'}
-        postgresSubjectId={
-          mode === 'edit' && activeSubject
-            ? String(activeSubject.postgresSubjectId ?? activeSubject.id ?? '')
-            : ''
-        }
         onBack={() => setScreen('list')}
         savingLabel={mode === 'edit' ? 'Save Changes' : 'Save Changes'}
         onSave={async (payload) => {

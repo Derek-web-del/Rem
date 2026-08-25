@@ -10,8 +10,6 @@ import { loginPathWithPortalId } from '../lib/loginRoutes.js'
 import { homePathForRole, isNavAllowedForRole, markAccessDenied, normalizeRole } from '../lib/roleAccess.js'
 
 const InstituteDashboard = lazy(() => import('../modules/dashboard/InstituteDashboardModule.jsx'))
-const AdminLayout = lazy(() => import('../layouts/AdminLayout.jsx'))
-const AdminLessonFormPage = lazy(() => import('../pages/admin/AdminLessonFormPage.jsx'))
 
 const IDLE_MS = 30 * 60 * 1000
 const SESSION_LOST_DEBOUNCE_MS = 3500
@@ -74,13 +72,12 @@ export default function AdminDashboardRoute() {
   useEffect(() => {
     const role = normalizeRole(sessionUser?.role)
     const id = navIdFromPath(location.pathname)
-    const onLessonForm = /^\/admin\/subjects\/[^/]+\/lessons/.test(location.pathname.replace(/\/+$/, ''))
     const pathname = location.pathname.replace(/\/+$/, '') || '/admin'
     if (id && role === 'admin' && !isNavAllowedForRole(id, role)) {
       navigate(homePathForRole('admin'), { replace: true })
       return
     }
-    if (!id && !onLessonForm && pathname !== '/admin/terms') {
+    if (!id && pathname !== '/admin/terms') {
       const home = homePathForRole(sessionUser?.role)
       navigate(home, { replace: true })
     }
@@ -190,27 +187,6 @@ export default function AdminDashboardRoute() {
 
   if (!adminTermsAccepted && !isTermsAccepted()) {
     return <Navigate to="/admin/terms" replace />
-  }
-
-  const onAdminLessonForm = /^\/admin\/subjects\/[^/]+\/lessons/.test(pathname)
-  if (onAdminLessonForm && normalizeRole(sessionUser?.role) === 'registrar') {
-    return <Navigate to={homePathForRole('registrar')} replace />
-  }
-  if (onAdminLessonForm) {
-    const isEdit = /\/edit$/.test(pathname)
-    return (
-      <Suspense
-        fallback={
-          <div className="flex h-svh items-center justify-center bg-neutral-100 text-sm font-medium text-neutral-600">
-            Loading…
-          </div>
-        }
-      >
-        <AdminLayout onLogout={handleDashboardLogout}>
-          <AdminLessonFormPage mode={isEdit ? 'edit' : 'add'} />
-        </AdminLayout>
-      </Suspense>
-    )
   }
 
   return (

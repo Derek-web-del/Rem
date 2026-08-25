@@ -12,6 +12,7 @@ const ITEM_TABLES = {
   activity: { table: 'activities', idCol: 'id' },
   quiz: { table: 'quizzes', idCol: 'id' },
   material: { table: 'study_materials', idCol: 'id' },
+  lesson: { table: 'subject_modules', idCol: 'id' },
 }
 
 export async function ensureSubjectCurriculumSchema(pool) {

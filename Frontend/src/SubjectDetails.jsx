@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import BackButton from './components/BackButton.jsx'
 import SubjectCoverImage from './components/SubjectCoverImage.jsx'
-import AdminSubjectCurriculumPanel from './components/admin/AdminSubjectCurriculumPanel.jsx'
 import {
   PREDEFINED_SUBJECT_NAMES,
   resolveSubjectImageFromMap,
@@ -67,7 +66,6 @@ export default function SubjectDetails({
   onSave,
   savingLabel = 'Save Changes',
   disableIdentity,
-  postgresSubjectId = '',
 }) {
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -479,10 +477,6 @@ export default function SubjectDetails({
           </div>
         </form>
       </section>
-
-      {mode === 'edit' && postgresSubjectId ? (
-        <AdminSubjectCurriculumPanel postgresSubjectId={postgresSubjectId} />
-      ) : null}
     </div>
   )
 }

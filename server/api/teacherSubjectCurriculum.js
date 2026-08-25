@@ -53,7 +53,6 @@ import {
   summarizeGradeCriteriaComponents,
 } from '../lib/gradeCriteriaAudit.js'
 import { buildTargetLabel } from '../lib/teacherAuditSnapshots.js'
-import { blockTeacherCurriculumStructureWrite } from './adminSubjectCurriculum.js'
 
 function parseLessonBody(body = {}) {
   return {
@@ -114,13 +113,6 @@ async function requireSubjectAccess(req, res, auth, subjectId) {
     return null
   }
   return { pool, facultyRow, subjectId: sid, user }
-}
-
-async function requireSubjectAccessDenyStructureWrite(req, res, auth, subjectId) {
-  const ctx = await requireSubjectAccess(req, res, auth, subjectId)
-  if (!ctx) return null
-  blockTeacherCurriculumStructureWrite(req, res)
-  return null
 }
 
 async function subjectLabel(pool, subjectId) {
@@ -200,7 +192,7 @@ export function createTeacherSubjectCurriculumRouter(express, auth) {
 
   router.post('/teacher/subjects/:id/modules', async (req, res) => {
     try {
-      const ctx = await requireSubjectAccessDenyStructureWrite(req, res, auth, req.params.id)
+      const ctx = await requireSubjectAccess(req, res, auth, req.params.id)
       if (!ctx) return
       const title = String(req.body?.title || '').trim()
       if (!title) {
@@ -230,7 +222,7 @@ export function createTeacherSubjectCurriculumRouter(express, auth) {
 
   router.put('/teacher/subjects/:id/modules/:moduleId', async (req, res) => {
     try {
-      const ctx = await requireSubjectAccessDenyStructureWrite(req, res, auth, req.params.id)
+      const ctx = await requireSubjectAccess(req, res, auth, req.params.id)
       if (!ctx) return
       const oldRow = await fetchModuleRow(ctx.pool, ctx.subjectId, req.params.moduleId)
       const row = await updateSubjectModule(ctx.pool, ctx.subjectId, req.params.moduleId, {
@@ -264,7 +256,7 @@ export function createTeacherSubjectCurriculumRouter(express, auth) {
 
   router.delete('/teacher/subjects/:id/modules/:moduleId', async (req, res) => {
     try {
-      const ctx = await requireSubjectAccessDenyStructureWrite(req, res, auth, req.params.id)
+      const ctx = await requireSubjectAccess(req, res, auth, req.params.id)
       if (!ctx) return
       const oldRow = await fetchModuleRow(ctx.pool, ctx.subjectId, req.params.moduleId)
       const ok = await deleteSubjectModule(ctx.pool, ctx.subjectId, req.params.moduleId)
@@ -291,7 +283,7 @@ export function createTeacherSubjectCurriculumRouter(express, auth) {
 
   router.post('/teacher/subjects/:id/modules/:moduleId/subtopics', async (req, res) => {
     try {
-      const ctx = await requireSubjectAccessDenyStructureWrite(req, res, auth, req.params.id)
+      const ctx = await requireSubjectAccess(req, res, auth, req.params.id)
       if (!ctx) return
       const label = String(req.body?.label || '').trim()
       if (!label) {
@@ -314,7 +306,7 @@ export function createTeacherSubjectCurriculumRouter(express, auth) {
 
   router.put('/teacher/subjects/:id/modules/:moduleId/subtopics/:subtopicId', async (req, res) => {
     try {
-      const ctx = await requireSubjectAccessDenyStructureWrite(req, res, auth, req.params.id)
+      const ctx = await requireSubjectAccess(req, res, auth, req.params.id)
       if (!ctx) return
       const row = await updateModuleSubtopic(
         ctx.pool,
@@ -335,7 +327,7 @@ export function createTeacherSubjectCurriculumRouter(express, auth) {
 
   router.delete('/teacher/subjects/:id/modules/:moduleId/subtopics/:subtopicId', async (req, res) => {
     try {
-      const ctx = await requireSubjectAccessDenyStructureWrite(req, res, auth, req.params.id)
+      const ctx = await requireSubjectAccess(req, res, auth, req.params.id)
       if (!ctx) return
       const ok = await deleteModuleSubtopic(
         ctx.pool,
@@ -382,7 +374,7 @@ export function createTeacherSubjectCurriculumRouter(express, auth) {
 
   router.post('/teacher/subjects/:id/topics', async (req, res) => {
     try {
-      const ctx = await requireSubjectAccessDenyStructureWrite(req, res, auth, req.params.id)
+      const ctx = await requireSubjectAccess(req, res, auth, req.params.id)
       if (!ctx) return
       const validated = validateTopicTitle(req.body?.title)
       if (!validated.ok) {
@@ -413,7 +405,7 @@ export function createTeacherSubjectCurriculumRouter(express, auth) {
 
   router.put('/teacher/subjects/:id/topics/:topicId', async (req, res) => {
     try {
-      const ctx = await requireSubjectAccessDenyStructureWrite(req, res, auth, req.params.id)
+      const ctx = await requireSubjectAccess(req, res, auth, req.params.id)
       if (!ctx) return
       let title = req.body?.title
       if (title != null) {
@@ -471,7 +463,7 @@ export function createTeacherSubjectCurriculumRouter(express, auth) {
 
   router.post('/teacher/subjects/:id/lessons', lessonUploadMiddleware, async (req, res) => {
     try {
-      const ctx = await requireSubjectAccessDenyStructureWrite(req, res, auth, req.params.id)
+      const ctx = await requireSubjectAccess(req, res, auth, req.params.id)
       if (!ctx) return
       const fields = parseLessonBody(req.body)
       if (!fields.title) {
@@ -521,7 +513,7 @@ export function createTeacherSubjectCurriculumRouter(express, auth) {
 
   router.post('/teacher/subjects/:id/topics/:topicId/lessons', async (req, res) => {
     try {
-      const ctx = await requireSubjectAccessDenyStructureWrite(req, res, auth, req.params.id)
+      const ctx = await requireSubjectAccess(req, res, auth, req.params.id)
       if (!ctx) return
       const title = String(req.body?.title || '').trim()
       if (!title) {
@@ -557,7 +549,7 @@ export function createTeacherSubjectCurriculumRouter(express, auth) {
 
   router.put('/teacher/subjects/:id/lessons/:lessonId', lessonUploadMiddleware, async (req, res) => {
     try {
-      const ctx = await requireSubjectAccessDenyStructureWrite(req, res, auth, req.params.id)
+      const ctx = await requireSubjectAccess(req, res, auth, req.params.id)
       if (!ctx) return
       const existing = await fetchSubjectLesson(ctx.pool, ctx.subjectId, req.params.lessonId)
       if (!existing) {
@@ -621,7 +613,7 @@ export function createTeacherSubjectCurriculumRouter(express, auth) {
 
   router.delete('/teacher/subjects/:id/lessons/:lessonId', async (req, res) => {
     try {
-      const ctx = await requireSubjectAccessDenyStructureWrite(req, res, auth, req.params.id)
+      const ctx = await requireSubjectAccess(req, res, auth, req.params.id)
       if (!ctx) return
       const ok = await deleteSubjectLesson(ctx.pool, ctx.subjectId, req.params.lessonId)
       if (!ok) {
@@ -636,7 +628,7 @@ export function createTeacherSubjectCurriculumRouter(express, auth) {
 
   router.delete('/teacher/subjects/:id/topics/:topicId', async (req, res) => {
     try {
-      const ctx = await requireSubjectAccessDenyStructureWrite(req, res, auth, req.params.id)
+      const ctx = await requireSubjectAccess(req, res, auth, req.params.id)
       if (!ctx) return
       const oldRow = await fetchTopicRow(ctx.pool, ctx.subjectId, req.params.topicId)
       const ok = await deleteSubjectTopic(ctx.pool, ctx.subjectId, req.params.topicId)
@@ -813,7 +805,7 @@ export function createTeacherSubjectCurriculumRouter(express, auth) {
 
   router.patch('/teacher/subjects/:id/topics/reorder', async (req, res) => {
     try {
-      const ctx = await requireSubjectAccessDenyStructureWrite(req, res, auth, req.params.id)
+      const ctx = await requireSubjectAccess(req, res, auth, req.params.id)
       if (!ctx) return
       const topicIds = req.body?.topic_ids
       const result = await reorderSubjectTopics(ctx.pool, ctx.subjectId, topicIds)
@@ -844,9 +836,6 @@ export function createTeacherSubjectCurriculumRouter(express, auth) {
       const body = req.body || {}
       const session = await requireFacultyOrTeacherSession(req, res, auth)
       if (!session) return
-      if (String(body.item_type || '').toLowerCase() === 'lesson') {
-        return blockTeacherCurriculumStructureWrite(req, res)
-      }
       const user =
         session.user ?? session?.data?.user ?? session?.session?.user ?? session?.data?.session?.user
       const facultyRow = await fetchFacultyRowForSession(getPgPool(), user)
