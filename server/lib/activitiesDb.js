@@ -202,7 +202,7 @@ async function fetchStudentRowsForGradeLevel(pool, gradeNorm) {
     `
     SELECT st.id, st.first_name, st.middle_name, st.last_name
     FROM students st
-    JOIN sections sec ON st.section_id = sec.id
+    LEFT JOIN sections sec ON st.section_id = sec.id
     WHERE (
       lower(trim(coalesce(sec.grade_level, ''))) = $1
       OR lower(trim(coalesce(st.grade_level, ''))) = $1
@@ -270,7 +270,7 @@ export async function fetchSubmissionsForActivity(pool, activityId, gradeLevel) 
     SELECT s.*, st.first_name, st.middle_name, st.last_name
     FROM activity_submissions s
     JOIN students st ON s.student_id = st.id
-    JOIN sections sec ON st.section_id = sec.id
+    LEFT JOIN sections sec ON st.section_id = sec.id
     WHERE s.activity_id = $1
       AND (
         lower(trim(coalesce(sec.grade_level, ''))) = $2

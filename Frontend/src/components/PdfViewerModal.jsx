@@ -20,7 +20,6 @@ export function resolvePdfViewerUrl(fileUrl) {
  * @param {{ fileUrl: string, fileName?: string, onClose: () => void, onDownloadUnavailable?: (message: string) => void }} props
  */
 export default function PdfViewerModal({ fileUrl, fileName = 'document.pdf', onClose, onDownloadUnavailable }) {
-  const [zoom, setZoom] = useState(100)
   const [cached, setCached] = useState(false)
   const [viewerSrc, setViewerSrc] = useState('')
   const [loadError, setLoadError] = useState('')
@@ -122,25 +121,6 @@ export default function PdfViewerModal({ fileUrl, fileName = 'document.pdf', onC
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <div className="flex items-center gap-1 rounded-lg border border-neutral-200 bg-neutral-50 px-2 py-1">
-              <button
-                type="button"
-                className="rounded px-2 py-0.5 text-sm font-semibold text-neutral-700 hover:bg-white"
-                onClick={() => setZoom((z) => Math.max(50, z - 10))}
-                aria-label="Zoom out"
-              >
-                −
-              </button>
-              <span className="min-w-[3rem] text-center text-xs font-medium text-neutral-600">{zoom}%</span>
-              <button
-                type="button"
-                className="rounded px-2 py-0.5 text-sm font-semibold text-neutral-700 hover:bg-white"
-                onClick={() => setZoom((z) => Math.min(200, z + 10))}
-                aria-label="Zoom in"
-              >
-                +
-              </button>
-            </div>
             <button
               type="button"
               className="rounded-lg border border-neutral-200 px-3 py-1.5 text-xs font-semibold text-neutral-700 hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-50"
@@ -161,23 +141,18 @@ export default function PdfViewerModal({ fileUrl, fileName = 'document.pdf', onC
             </button>
           </div>
         </div>
-        <div className="min-h-0 flex-1 overflow-auto bg-neutral-100 p-4">
-          <div
-            className="mx-auto origin-top"
-            style={{ transform: `scale(${zoom / 100})`, width: `${10000 / zoom}%`, maxWidth: '100%' }}
-          >
-            {viewerSrc ? (
-              <iframe
-                title={displayName}
-                src={viewerSrc}
-                className="h-[75vh] w-full rounded border border-neutral-200 bg-white"
-              />
-            ) : (
-              <p className="py-12 text-center text-sm text-neutral-500">
-                {loadError || 'File unavailable.'}
-              </p>
-            )}
-          </div>
+        <div className="min-h-0 flex-1 bg-neutral-100 p-4">
+          {viewerSrc ? (
+            <iframe
+              title={displayName}
+              src={viewerSrc}
+              className="h-full w-full rounded border border-neutral-200 bg-white"
+            />
+          ) : (
+            <p className="py-12 text-center text-sm text-neutral-500">
+              {loadError || 'File unavailable.'}
+            </p>
+          )}
         </div>
       </div>
     </div>

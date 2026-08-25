@@ -83,12 +83,6 @@ export async function grantSubmissionExtension(
   const type = String(entityType || '').trim().toLowerCase()
   const entId = parsePositiveId(entityId)
   const sid = parsePositiveId(studentId)
-  if (type === 'quiz') {
-    return {
-      error: 'NOT_APPLICABLE',
-      message: 'Late submission extensions apply to assignments and activities only.',
-    }
-  }
   if (!ENTITY_TYPES.has(type) || !entId || !sid) return { error: 'BAD_REQUEST' }
 
   const untilDate = parseUntilIso(until)
@@ -132,7 +126,26 @@ export async function grantSubmissionExtension(
   const resetStatus = type === 'quiz' ? 'not_started' : 'not_submitted'
 
   let submission
-  if (existing) {
+  if (existing && type === 'quiz') {
+    // A completed attempt already consumed the student's attempt count — free up exactly one
+    // more so the reopened window is actually usable, instead of granting access to a quiz they
+    // can no longer start. Leave attempt_number untouched if they never finished one.
+    const { rows } = await pool.query(
+      `
+      UPDATE ${cfg.submissionTable}
+      SET late_submission_until = $1,
+          late_submission_reason = $2,
+          late_submission_granted_by = $3,
+          late_submission_granted_at = $4,
+          attempt_number = CASE WHEN status = 'completed' THEN GREATEST(0, COALESCE(attempt_number, 1) - 1) ELSE attempt_number END,
+          updated_at = NOW()
+      WHERE ${cfg.fkCol} = $5 AND student_id = $6
+      RETURNING *
+      `,
+      [untilIso, trimmedReason, grantedByText, grantedAt, entId, sid],
+    )
+    submission = rows?.[0]
+  } else if (existing) {
     const { rows } = await pool.query(
       `
       UPDATE ${cfg.submissionTable}

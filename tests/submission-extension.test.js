@@ -183,16 +183,82 @@ describe('grantSubmissionExtension', () => {
     assert.equal(result.error, 'NOT_LOCKED')
   })
 
-  it('rejects quiz late submission grants', async () => {
-    const pool = { query: async () => ({ rows: [] }) }
+  it('grants a quiz extension and frees one attempt when the student already completed one', async () => {
+    let updateSql = ''
+    let updateParams = []
+    const pool = {
+      query: async (sql, params) => {
+        const text = String(sql)
+        if (text.includes('CREATE TABLE') || text.includes('ALTER TABLE')) return { rows: [] }
+        if (text.includes('FROM quizzes WHERE id')) {
+          return { rows: [{ id: 3, title: 'Quiz 1', deadline: pastDeadline }] }
+        }
+        if (text.includes('FROM quiz_submissions WHERE')) {
+          return {
+            rows: [{ id: 44, quiz_id: 3, student_id: 7, status: 'completed', attempt_number: 1, score: 80 }],
+          }
+        }
+        if (text.includes('FROM students WHERE id')) {
+          return { rows: [{ id: 7, first_name: 'Ana', last_name: 'Cruz' }] }
+        }
+        if (text.includes('UPDATE quiz_submissions')) {
+          updateSql = text
+          updateParams = params
+          return {
+            rows: [
+              {
+                id: 44,
+                quiz_id: 3,
+                student_id: 7,
+                status: 'completed',
+                attempt_number: 0,
+                late_submission_until: params[0],
+              },
+            ],
+          }
+        }
+        return { rows: [] }
+      },
+    }
+
     const result = await grantSubmissionExtension(pool, {
       entityType: 'quiz',
       entityId: 3,
       studentId: 7,
       until: futureUntil.toISOString(),
-      reason: 'Should not apply',
-      grantedBy: 'admin-1',
+      reason: 'Technical issue during the exam window.',
+      grantedBy: 'teacher-1',
     })
-    assert.equal(result.error, 'NOT_APPLICABLE')
+
+    assert.equal(result.entity_type, 'quiz')
+    assert.equal(result.submission.attempt_number, 0)
+    assert.ok(updateSql.includes("attempt_number = CASE WHEN status = 'completed'"))
+    assert.equal(updateParams[4], 3)
+    assert.equal(updateParams[5], 7)
+  })
+
+  it('rejects a quiz extension before the original deadline passes', async () => {
+    const futureDeadline = new Date(Date.now() + 60_000)
+    const pool = {
+      query: async (sql) => {
+        const text = String(sql)
+        if (text.includes('CREATE TABLE') || text.includes('ALTER TABLE')) return { rows: [] }
+        if (text.includes('FROM quizzes WHERE id')) {
+          return { rows: [{ id: 3, title: 'Quiz 1', deadline: futureDeadline }] }
+        }
+        return { rows: [] }
+      },
+    }
+
+    const result = await grantSubmissionExtension(pool, {
+      entityType: 'quiz',
+      entityId: 3,
+      studentId: 7,
+      until: futureUntil.toISOString(),
+      reason: 'Should not apply yet',
+      grantedBy: 'teacher-1',
+    })
+
+    assert.equal(result.error, 'NOT_LOCKED')
   })
 })

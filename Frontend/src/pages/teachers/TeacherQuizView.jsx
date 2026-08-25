@@ -23,6 +23,7 @@ import {
 } from '../../lib/facultyNotify.js'
 import { formatScoreWithPercent } from '../../lib/gradeStatus.js'
 import { GradesScoreBar } from '../../components/GradesPanel.jsx'
+import LateSubmissionModal from '../../components/LateSubmissionModal.jsx'
 import TeacherMainHeader from './TeacherMainHeader.jsx'
 import BackButton from '../../components/BackButton.jsx'
 import { ACTION_BLUE } from './instituteChrome.js'
@@ -99,6 +100,7 @@ export default function TeacherQuizView() {
   const [savingScore, setSavingScore] = useState(false)
   const [fromCache, setFromCache] = useState(false)
   const [passcodeVisible, setPasscodeVisible] = useState(false)
+  const [lateSubmissionTarget, setLateSubmissionTarget] = useState(null)
 
   const totalPoints = quiz?.total_points ?? roster?.summary?.max_points ?? 100
   const deadlineIso = quiz?.deadline
@@ -415,7 +417,7 @@ export default function TeacherQuizView() {
               ) : hasLateExtensionStudents ? (
                 <div className="mt-4 rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
                   <i className="ti ti-clock mr-1.5 inline-block align-middle" aria-hidden="true" />
-                  Some students have an admin-granted late submission window. You can edit their scores until
+                  Some students have an extra attempt window open. Their score stays editable until
                   each student&apos;s extension deadline.
                 </div>
               ) : null}
@@ -512,28 +514,46 @@ export default function TeacherQuizView() {
                                 )}
                               </td>
                               <td className="px-4 py-3">
-                                {!st.submission_id ? (
-                                  <span className="text-xs text-neutral-500">No submission</span>
-                                ) : isSubmissionScoreEditable(st, deadlineIso) ? (
-                                  <button
-                                    type="button"
-                                    className="rounded-md px-3 py-1.5 text-xs font-semibold text-white hover:brightness-110"
-                                    style={BTN_EDIT}
-                                    onClick={() => openEditScore(st)}
-                                  >
-                                    Edit Score
-                                  </button>
-                                ) : (
-                                  <span
-                                    className="inline-flex items-center gap-1 text-sm text-neutral-600"
-                                    title={SCORE_LOCKED_MSG}
-                                  >
-                                    <i className="ti ti-lock" aria-hidden="true" />
-                                    {st.score != null
-                                      ? `${formatScoreWithPercent(st.score, st.total_points)} (locked)`
-                                      : '— (locked)'}
-                                  </span>
-                                )}
+                                <div className="flex flex-wrap items-center gap-2">
+                                  {!st.submission_id ? (
+                                    <span className="text-xs text-neutral-500">No submission</span>
+                                  ) : isSubmissionScoreEditable(st, deadlineIso) ? (
+                                    <button
+                                      type="button"
+                                      className="rounded-md px-3 py-1.5 text-xs font-semibold text-white hover:brightness-110"
+                                      style={BTN_EDIT}
+                                      onClick={() => openEditScore(st)}
+                                    >
+                                      Edit Score
+                                    </button>
+                                  ) : (
+                                    <span
+                                      className="inline-flex items-center gap-1 text-sm text-neutral-600"
+                                      title={SCORE_LOCKED_MSG}
+                                    >
+                                      <i className="ti ti-lock" aria-hidden="true" />
+                                      {st.score != null
+                                        ? `${formatScoreWithPercent(st.score, st.total_points)} (locked)`
+                                        : '— (locked)'}
+                                    </span>
+                                  )}
+                                  {deadlinePassed && !st.has_late_extension ? (
+                                    <button
+                                      type="button"
+                                      className="rounded-md px-3 py-1.5 text-xs font-semibold text-white hover:brightness-110"
+                                      style={{ background: '#059669' }}
+                                      onClick={() =>
+                                        setLateSubmissionTarget({
+                                          item: { entity_type: 'quiz', entity_id: id, title: quiz.title },
+                                          studentId: st.student_id,
+                                          studentName: st.student_name,
+                                        })
+                                      }
+                                    >
+                                      Add Attempt
+                                    </button>
+                                  ) : null}
+                                </div>
                               </td>
                             </tr>
                           ))}
@@ -591,6 +611,21 @@ export default function TeacherQuizView() {
             </div>
           </div>
         </div>
+      ) : null}
+
+      {lateSubmissionTarget ? (
+        <LateSubmissionModal
+          item={lateSubmissionTarget.item}
+          studentId={lateSubmissionTarget.studentId}
+          studentName={lateSubmissionTarget.studentName}
+          actorRole="teacher"
+          onClose={() => setLateSubmissionTarget(null)}
+          onSuccess={() => {
+            setLateSubmissionTarget(null)
+            toastRef.current.success('Extra attempt granted for this student.')
+            void loadRoster(sectionFilter)
+          }}
+        />
       ) : null}
     </>
   )
