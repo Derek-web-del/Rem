@@ -436,7 +436,10 @@ export default function TeacherActivityForm({ mode = 'add' }) {
         {loading ? (
           <p className="py-12 text-center text-sm text-neutral-500">Loading activity…</p>
         ) : (
-          <form onSubmit={(ev) => void handleSubmit(ev)} className="mt-6 space-y-6">
+          <form
+            onSubmit={(ev) => void handleSubmit(ev)}
+            className="mt-6 space-y-6 rounded-xl border border-neutral-200 bg-white p-5 shadow-sm md:p-6"
+          >
             <div className="grid grid-cols-1 gap-6 lg:grid-cols-2 lg:items-start">
               <div>
                 <p className="text-sm font-bold text-neutral-900">Activity File</p>
