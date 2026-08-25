@@ -2448,6 +2448,13 @@ function unionRowKeys(rows) {
   return [...keySet]
 }
 
+/** Columns that are native Postgres ARRAY types (e.g. TEXT[]), not JSONB — must be passed to
+ * `pg` as a raw JS array so it emits Postgres array-literal syntax ("{a,b}"), never JSON.stringify'd
+ * ("[\"a\",\"b\"]" is not a valid array literal and fails restore with "malformed array literal"). */
+const ARRAY_COLUMNS_BY_TABLE = {
+  audit_logs: new Set(['changed_fields']),
+}
+
 async function bulkInsert(client, tableKey, rows, pool = null, { insertAllColumns = false } = {}) {
   if (!Array.isArray(rows) || rows.length === 0) return
   const fromSql = TABLE_FROM_SQL[tableKey]
@@ -2487,13 +2494,19 @@ async function bulkInsert(client, tableKey, rows, pool = null, { insertAllColumn
           `(${cols.map((_, j) => `$${i * colCount + j + 1}`).join(',')})`,
       )
       .join(',')
+    const arrayCols = ARRAY_COLUMNS_BY_TABLE[tableKey]
     const values = batch.flatMap((r) =>
       cols.map((c) => {
         const v = r[c]
-        if (v !== null && typeof v === 'object' && !(v instanceof Date) && !Buffer.isBuffer(v)) {
+        if (v === null || v === undefined) return null
+        if (Array.isArray(v) && arrayCols?.has(c)) {
+          // Native Postgres array column — pass through so `pg` emits array-literal syntax.
+          return v
+        }
+        if (typeof v === 'object' && !(v instanceof Date) && !Buffer.isBuffer(v)) {
           return JSON.stringify(v)
         }
-        return v ?? null
+        return v
       }),
     )
     await client.query(`INSERT INTO ${fromSql} (${colList}) VALUES ${placeholders}`, values)
