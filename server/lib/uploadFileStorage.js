@@ -151,7 +151,17 @@ export async function persistUploadBuffer(storedPath, buffer) {
   await fsp.writeFile(abs, buffer)
   if (isUploadsOnSpaces()) {
     const key = storedPathToObjectKey(normalized)
-    if (key) await putObjectBuffer(key, buffer)
+    if (key) {
+      try {
+        await putObjectBuffer(key, buffer)
+      } catch (e) {
+        // The local write above already succeeded — don't let a Spaces failure (bad
+        // credentials, network blip) throw away a valid file and make the caller think
+        // nothing was saved at all. Callers that need Spaces durability specifically
+        // should check isUploadsOnSpaces()/probeUploadsStorage() themselves.
+        console.warn('[uploads] Spaces upload failed, local copy kept:', key, e?.message || e)
+      }
+    }
   }
   return normalized
 }
