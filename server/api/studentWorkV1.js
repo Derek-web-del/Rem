@@ -237,7 +237,7 @@ function registerWorkRoutes(router, { requireStudentSession, resolveStudentConte
       )
       if (prior?.file_path) deleteSubmissionFileByUrl(prior.file_path)
 
-      const fileMeta = saveStudentSubmissionFile({
+      const fileMeta = await saveStudentSubmissionFile({
         buffer: file.buffer,
         originalName: file.originalname,
         mime: file.mimetype,
@@ -454,7 +454,7 @@ function registerWorkRoutes(router, { requireStudentSession, resolveStudentConte
       )
       if (prior?.file_path) deleteSubmissionFileByUrl(prior.file_path)
 
-      const fileMeta = saveStudentSubmissionFile({
+      const fileMeta = await saveStudentSubmissionFile({
         buffer: file.buffer,
         originalName: file.originalname,
         mime: file.mimetype,

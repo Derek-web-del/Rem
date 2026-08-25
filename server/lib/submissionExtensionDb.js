@@ -264,7 +264,7 @@ export async function adminUploadSubmissionOnBehalf(
 
   const cfg = ENTITY_CONFIG[type]
   const studentName = await fetchStudentName(pool, sid)
-  const savedMeta = saveStudentSubmissionFile({
+  const savedMeta = await saveStudentSubmissionFile({
     buffer: fileMeta.buffer,
     originalName: fileMeta.originalName,
     mime: fileMeta.mime,
