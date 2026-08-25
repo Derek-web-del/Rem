@@ -14,6 +14,7 @@ const ASSIGNMENT_SELECT = `
   a.title,
   a.description,
   a.subject_id,
+  a.topic_id,
   a.subject_name AS assignment_subject_name,
   a.grade_level AS assignment_grade_level,
   a.semester,

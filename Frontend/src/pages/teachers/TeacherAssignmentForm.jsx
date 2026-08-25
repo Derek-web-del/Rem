@@ -45,7 +45,7 @@ import {
   prefillSubjectFromQuery,
   readCurriculumQuery,
 } from '../../lib/curriculumFormPrefill.js'
-import { fetchGradeComponentsForSubject } from '../../lib/teacherSubjectCurriculum.js'
+import { fetchGradeComponentsForSubject, fetchSubjectTopics } from '../../lib/teacherSubjectCurriculum.js'
 
 import {
   DEFAULT_UPLOAD_LABEL,
@@ -106,6 +106,7 @@ export default function TeacherAssignmentForm({ mode = 'add' }) {
 
   const [gradeOptions, setGradeOptions] = useState(FALLBACK_GRADES)
   const [gradeComponents, setGradeComponents] = useState([])
+  const [topicOptions, setTopicOptions] = useState([])
   const [teacherSubjects, setTeacherSubjects] = useState([])
   const [resolvedSubjectId, setResolvedSubjectId] = useState('')
   const [loadedSubjectId, setLoadedSubjectId] = useState('')
@@ -139,6 +140,7 @@ export default function TeacherAssignmentForm({ mode = 'add' }) {
 
     total_score: '100',
     grade_component_id: '',
+    topic_id: curriculumQuery.topicId || '',
 
   })
 
@@ -261,6 +263,7 @@ export default function TeacherAssignmentForm({ mode = 'add' }) {
             row.grade_component_id != null && String(row.grade_component_id).trim() !== ''
               ? String(row.grade_component_id)
               : '',
+          topic_id: row.topic_id != null && String(row.topic_id).trim() !== '' ? String(row.topic_id) : '',
 
         })
 
@@ -337,7 +340,27 @@ export default function TeacherAssignmentForm({ mode = 'add' }) {
     }
   }, [activeSubjectId, curriculumQuery.subjectId, loadedSubjectId, includeComponentId])
 
-
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      if (!activeSubjectId) {
+        if (!cancelled) setTopicOptions([])
+        return
+      }
+      try {
+        const rows = await fetchSubjectTopics(activeSubjectId)
+        if (!cancelled) setTopicOptions(rows.filter((t) => t.id !== 'uncategorized'))
+      } catch (e) {
+        if (!cancelled) {
+          console.error('[TeacherAssignmentForm] topics', e)
+          setTopicOptions([])
+        }
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [activeSubjectId])
 
   function onFilePick(next) {
     if (!next) {
@@ -568,11 +591,17 @@ export default function TeacherAssignmentForm({ mode = 'add' }) {
 
       if (file) fd.append('file', file)
       if (curriculumQuery.moduleId) fd.append('module_id', curriculumQuery.moduleId)
-      if (curriculumQuery.topicId) fd.append('topic_id', curriculumQuery.topicId)
 
       if (isEdit) {
 
         await updateTeacherAssignment(id, fd)
+        await linkCreatedItemToCurriculum({
+          itemType: 'assignment',
+          itemId: id,
+          moduleId: curriculumQuery.moduleId,
+          topicId: form.topic_id,
+          subjectId: activeSubjectId,
+        })
 
         toastRef.current.success(FACULTY_MSG.assignments.updated, {
 
@@ -589,7 +618,8 @@ export default function TeacherAssignmentForm({ mode = 'add' }) {
           itemType: 'assignment',
           itemId: created?.id,
           moduleId: curriculumQuery.moduleId,
-          topicId: curriculumQuery.topicId,
+          topicId: form.topic_id,
+          subjectId: activeSubjectId,
         })
 
         toastRef.current.success(FACULTY_MSG.assignments.added, {
@@ -914,6 +944,24 @@ export default function TeacherAssignmentForm({ mode = 'add' }) {
                       : 'Select a subject and grade level assigned to your account.'}
                   </p>
                 ) : null}
+              </label>
+            ) : null}
+
+            {activeSubjectId ? (
+              <label className="block max-w-md text-sm font-medium text-neutral-700">
+                Topic
+                <select
+                  className="mt-1 w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
+                  value={form.topic_id}
+                  onChange={(e) => setForm((p) => ({ ...p, topic_id: e.target.value }))}
+                >
+                  <option value="">Unassigned</option>
+                  {topicOptions.map((t) => (
+                    <option key={String(t.id)} value={String(t.id)}>
+                      {t.title}
+                    </option>
+                  ))}
+                </select>
               </label>
             ) : null}
 

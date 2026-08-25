@@ -170,9 +170,9 @@ export default function GradesOverview() {
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <MetricCard label="Section average" value={formatFinalGrade(metrics.sectionAvg)} sub={sectionLabel} />
-            <MetricCard label="Passing (≥75%)" value={String(metrics.passing)} sub={`of ${metrics.total} graded cells`} />
-            <MetricCard label="At risk (60–74%)" value={String(metrics.atRisk)} />
-            <MetricCard label="Failing (&lt;60%)" value={String(metrics.failing)} />
+            <MetricCard label="Passing (≥75)" value={String(metrics.passing)} sub={`of ${metrics.total} graded cells`} />
+            <MetricCard label="At risk (60–74)" value={String(metrics.atRisk)} />
+            <MetricCard label="Failing (&lt;60)" value={String(metrics.failing)} />
           </div>
 
           <section className="overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-sm">

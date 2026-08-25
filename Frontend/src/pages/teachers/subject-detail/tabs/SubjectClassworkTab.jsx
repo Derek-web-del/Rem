@@ -142,6 +142,10 @@ export default function SubjectClassworkTab({ subjectId, subject, onSyllabusUpda
     setDeleteTarget({ kind: 'lesson', data: lesson })
   }
 
+  const handleEditLesson = (lesson) => {
+    navigate(`/teacher/subjects/${encodeURIComponent(subjectId)}/lessons/${encodeURIComponent(lesson.id)}/edit`)
+  }
+
   const handleEditWork = (item) => {
     if (item?.item_type === 'syllabus' || item?.is_syllabus) return
     if (
@@ -444,11 +448,14 @@ export default function SubjectClassworkTab({ subjectId, subject, onSyllabusUpda
             topic={topic}
             subjectId={subjectId}
             editable
+            lessonsEditable
             collapsed={Boolean(collapsed[topic.id])}
             buildQuery={buildQuery}
             onToggle={() => setCollapsed((p) => ({ ...p, [topic.id]: !p[topic.id] }))}
             onEditTopic={(t) => setTopicModal({ open: true, topic: t })}
             onDeleteTopic={handleDeleteTopic}
+            onEditLesson={handleEditLesson}
+            onDeleteLesson={handleDeleteLesson}
             onEditWork={handleEditWork}
             onDeleteWork={handleDeleteWork}
             onTopicDragStart={handleTopicDragStart}

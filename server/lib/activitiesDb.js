@@ -14,6 +14,7 @@ const ACTIVITY_SELECT = `
   a.title,
   a.description,
   a.subject_id,
+  a.topic_id,
   a.subject_name AS activity_subject_name,
   a.grade_level AS activity_grade_level,
   a.semester,

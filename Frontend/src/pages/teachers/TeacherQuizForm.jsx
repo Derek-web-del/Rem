@@ -36,7 +36,7 @@ import {
   prefillSubjectFromQuery,
   readCurriculumQuery,
 } from '../../lib/curriculumFormPrefill.js'
-import { fetchGradeComponentsForSubject } from '../../lib/teacherSubjectCurriculum.js'
+import { fetchGradeComponentsForSubject, fetchSubjectTopics } from '../../lib/teacherSubjectCurriculum.js'
 import { fetchTeacherSubjectsForAssignments } from '../../lib/teacherAssignments.js'
 
 const FALLBACK_SUBJECTS = ['English', 'Math', 'Science', 'Filipino']
@@ -103,6 +103,7 @@ export default function TeacherQuizForm({ mode = 'add' }) {
   const [subjectOptions, setSubjectOptions] = useState(FALLBACK_SUBJECTS)
   const [gradeOptions, setGradeOptions] = useState(FALLBACK_GRADES)
   const [gradeComponents, setGradeComponents] = useState([])
+  const [topicOptions, setTopicOptions] = useState([])
   const [teacherSubjects, setTeacherSubjects] = useState([])
   const [resolvedSubjectId, setResolvedSubjectId] = useState('')
   const [loadedSubjectId, setLoadedSubjectId] = useState('')
@@ -128,6 +129,7 @@ export default function TeacherQuizForm({ mode = 'add' }) {
     deadline_time: '',
     quiz_password: '',
     max_attempts: '1',
+    topic_id: curriculumQuery.topicId || '',
   })
   const [parts, setParts] = useState([emptyPart(0)])
 
@@ -229,6 +231,28 @@ export default function TeacherQuizForm({ mode = 'add' }) {
   }, [activeSubjectId, curriculumQuery.subjectId, loadedSubjectId, includeComponentId])
 
   useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      if (!activeSubjectId) {
+        if (!cancelled) setTopicOptions([])
+        return
+      }
+      try {
+        const rows = await fetchSubjectTopics(activeSubjectId)
+        if (!cancelled) setTopicOptions(rows.filter((t) => t.id !== 'uncategorized'))
+      } catch (e) {
+        if (!cancelled) {
+          console.error('[TeacherQuizForm] topics', e)
+          setTopicOptions([])
+        }
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [activeSubjectId])
+
+  useEffect(() => {
     if (!isEdit || !id) return
     let cancelled = false
     ;(async () => {
@@ -255,6 +279,7 @@ export default function TeacherQuizForm({ mode = 'add' }) {
           deadline_time: time,
           quiz_password: '',
           max_attempts: String(quiz.max_attempts ?? 1),
+          topic_id: quiz.topic_id != null && String(quiz.topic_id).trim() !== '' ? String(quiz.topic_id) : '',
         })
         setHasPassword(Boolean(quiz.has_password))
         setPasswordTouched(false)
@@ -391,6 +416,13 @@ export default function TeacherQuizForm({ mode = 'add' }) {
       )
       if (isEdit && id) {
         await updateTeacherQuiz(id, payload)
+        await linkCreatedItemToCurriculum({
+          itemType: 'quiz',
+          itemId: id,
+          moduleId: curriculumQuery.moduleId,
+          topicId: form.topic_id,
+          subjectId: activeSubjectId || payload.subject_id,
+        })
         navigate('/teacher/quizzes', { state: { quizToast: 'updated' } })
       } else {
         const created = await createTeacherQuiz({
@@ -402,7 +434,7 @@ export default function TeacherQuizForm({ mode = 'add' }) {
           itemType: 'quiz',
           itemId: created?.id,
           moduleId: curriculumQuery.moduleId,
-          topicId: curriculumQuery.topicId,
+          topicId: form.topic_id,
           subjectId: curriculumQuery.subjectId || activeSubjectId || payload.subject_id,
         })
         navigate(curriculumReturnPath(curriculumQuery.subjectId, '/teacher/quizzes'), {
@@ -634,6 +666,24 @@ export default function TeacherQuizForm({ mode = 'add' }) {
                         : 'Select a subject and grade level assigned to your account.'}
                     </p>
                   ) : null}
+                </div>
+              ) : null}
+
+              {activeSubjectId ? (
+                <div className="mt-3 max-w-md">
+                  <label className={labelClass}>Topic</label>
+                  <select
+                    className={inputClass}
+                    value={form.topic_id}
+                    onChange={(e) => patchForm('topic_id', e.target.value)}
+                  >
+                    <option value="">Unassigned</option>
+                    {topicOptions.map((t) => (
+                      <option key={String(t.id)} value={String(t.id)}>
+                        {t.title}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               ) : null}
 

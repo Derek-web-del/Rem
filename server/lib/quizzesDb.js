@@ -3,7 +3,7 @@ import { normalizeGradeLevel } from './studentSession.js'
 const QUIZ_COLUMNS = `
   id, title, description, instructions, activity_type, subject, grade_level,
   branch, semester, duration_mins, deadline, total_points, quiz_password, quiz_password_plain, is_hidden,
-  max_attempts, subject_id, created_by, created_at, updated_at
+  max_attempts, subject_id, topic_id, created_by, created_at, updated_at
 `
 
 const QUIZ_ACCESS_TTL_MS = 4 * 60 * 60 * 1000
@@ -179,6 +179,7 @@ function mapQuizRow(row, extra = {}) {
     is_hidden: Boolean(row.is_hidden),
     has_password: Boolean(String(row.quiz_password ?? '').trim()),
     subject_id: row.subject_id != null ? Number(row.subject_id) : null,
+    topic_id: row.topic_id != null ? String(row.topic_id) : '',
     grade_component_id: row.grade_component_id != null ? Number(row.grade_component_id) : null,
     created_by: String(row.created_by ?? '').trim(),
     created_at: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at ?? null,

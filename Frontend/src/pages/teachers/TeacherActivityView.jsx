@@ -13,6 +13,7 @@ import { fetchTeacherActivityView } from '../../lib/teacherPortalOffline.js'
 import { checkSubmissionPlagiarism } from '../../lib/originalityChecker.js'
 import OfflineCacheIndicator from '../../components/OfflineCacheIndicator.jsx'
 import PdfViewerModal from '../../components/PdfViewerModal.jsx'
+import LateSubmissionModal from '../../components/LateSubmissionModal.jsx'
 import {
   FACULTY_MSG,
   FACULTY_TOAST_ID,
@@ -111,6 +112,7 @@ export default function TeacherActivityView() {
   const [scoreValue, setScoreValue] = useState('')
   const [savingScore, setSavingScore] = useState(false)
   const [pdfViewer, setPdfViewer] = useState(null)
+  const [lateSubmissionTarget, setLateSubmissionTarget] = useState(null)
   const [fromCache, setFromCache] = useState(false)
   const [checkingPlagiarismId, setCheckingPlagiarismId] = useState('')
 
@@ -352,8 +354,8 @@ export default function TeacherActivityView() {
               ) : hasLateExtensionStudents ? (
                 <div className="mt-4 rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
                   <i className="ti ti-clock mr-1.5 inline-block align-middle" aria-hidden="true" />
-                  Some students have an admin-granted late submission window. You can edit their scores until
-                  each student&apos;s extension deadline.
+                  Some students have a late submission window. You can edit their scores until each
+                  student&apos;s extension deadline.
                 </div>
               ) : null}
 
@@ -422,15 +424,30 @@ export default function TeacherActivityView() {
                               {isSubmissionScoreEditable(sub, deadlineIso) ? (
                                 <ActionBtn label="Edit Score" style={BTN_EDIT} onClick={() => openEditScore(sub)} />
                               ) : (
-                                <span
-                                  className="inline-flex items-center gap-1 text-sm text-neutral-600"
-                                  title={SCORE_LOCKED_MSG}
-                                >
-                                  <i className="ti ti-lock" aria-hidden="true" />
-                                  {sub.score != null
-                                    ? `${formatScoreWithPercent(sub.score, totalScore)} (locked)`
-                                    : '— (locked)'}
-                                </span>
+                                <>
+                                  <span
+                                    className="inline-flex items-center gap-1 text-sm text-neutral-600"
+                                    title={SCORE_LOCKED_MSG}
+                                  >
+                                    <i className="ti ti-lock" aria-hidden="true" />
+                                    {sub.score != null
+                                      ? `${formatScoreWithPercent(sub.score, totalScore)} (locked)`
+                                      : '— (locked)'}
+                                  </span>
+                                  {!sub.has_late_extension ? (
+                                    <ActionBtn
+                                      label="Allow Late Submission"
+                                      style={{ background: '#059669' }}
+                                      onClick={() =>
+                                        setLateSubmissionTarget({
+                                          item: { entity_type: 'activity', entity_id: id, title: activity.title },
+                                          studentId: sub.student_id,
+                                          studentName: sub.student_name,
+                                        })
+                                      }
+                                    />
+                                  ) : null}
+                                </>
                               )}
                               <ActionBtn
                                 label="View File"
@@ -530,6 +547,21 @@ export default function TeacherActivityView() {
           fileUrl={pdfViewer.url}
           fileName={pdfViewer.fileName}
           onClose={() => setPdfViewer(null)}
+        />
+      ) : null}
+
+      {lateSubmissionTarget ? (
+        <LateSubmissionModal
+          item={lateSubmissionTarget.item}
+          studentId={lateSubmissionTarget.studentId}
+          studentName={lateSubmissionTarget.studentName}
+          actorRole="teacher"
+          onClose={() => setLateSubmissionTarget(null)}
+          onSuccess={() => {
+            setLateSubmissionTarget(null)
+            toastRef.current.success('Late submission allowed for this student.')
+            void loadData()
+          }}
         />
       ) : null}
     </>
