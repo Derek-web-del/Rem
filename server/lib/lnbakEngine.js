@@ -140,6 +140,8 @@ export const LNBAK_TABLE_ORDER = [
   'account',
   'audit_logs',
   'lms_activity_logs',
+  'security_incidents',
+  'institute_settings',
 
   // Round 2 — depend on Round 1
   'faculties',
@@ -149,6 +151,8 @@ export const LNBAK_TABLE_ORDER = [
   'subject_schedules',
   'curriculum',
   'curriculum_guides',
+  'curriculum_guide_units',
+  'subject_syllabus_weeks',
   'announcements',
 
   // Round 3 — depend on Round 2 (subject_topics MUST precede subject_modules)
@@ -181,6 +185,7 @@ export const LNBAK_TABLE_ORDER = [
   'plagiarism_reports',
   'score_overwrite_requests',
   'google_oauth_tokens',
+  'recycled_files',
 ]
 
 /** Skip child restore when backup has no parent rows (older .lnbak files). */
@@ -197,6 +202,8 @@ const RESTORE_PARENT_KEYS = {
   subject_student_final_grades: 'subjects',
   score_overwrite_requests: 'students',
   google_oauth_tokens: 'user',
+  curriculum_guide_units: 'curriculum_guides',
+  subject_syllabus_weeks: 'subjects',
   quiz_parts: 'quizzes',
   quiz_questions: 'quizzes',
   quiz_choices: 'quizzes',
@@ -244,6 +251,11 @@ const TABLE_FROM_SQL = {
   plagiarism_reports: 'public.plagiarism_reports',
   audit_logs: 'public.audit_logs',
   lms_activity_logs: 'public.lms_activity_logs',
+  security_incidents: 'public.security_incidents',
+  institute_settings: 'public.institute_settings',
+  curriculum_guide_units: 'public.curriculum_guide_units',
+  subject_syllabus_weeks: 'public.subject_syllabus_weeks',
+  recycled_files: 'public.recycled_files',
 }
 
 const TABLE_SELECT_SQL = {
@@ -284,6 +296,11 @@ const TABLE_SELECT_SQL = {
   plagiarism_reports: 'SELECT * FROM public.plagiarism_reports ORDER BY id',
   audit_logs: 'SELECT * FROM public.audit_logs ORDER BY created_at NULLS LAST, id',
   lms_activity_logs: 'SELECT * FROM public.lms_activity_logs ORDER BY "timestamp" NULLS LAST, id',
+  security_incidents: 'SELECT * FROM public.security_incidents ORDER BY id',
+  institute_settings: 'SELECT * FROM public.institute_settings ORDER BY id',
+  curriculum_guide_units: 'SELECT * FROM public.curriculum_guide_units ORDER BY curriculum_guide_id, unit_order ASC, id ASC',
+  subject_syllabus_weeks: 'SELECT * FROM public.subject_syllabus_weeks ORDER BY subject_id, week_order ASC, id ASC',
+  recycled_files: 'SELECT * FROM public.recycled_files ORDER BY id',
 }
 
 const TABLES_WITH_SERIAL_ID = new Set([
@@ -314,6 +331,10 @@ const TABLES_WITH_SERIAL_ID = new Set([
   'quiz_student_answers',
   'plagiarism_reports',
   'audit_logs',
+  'security_incidents',
+  'curriculum_guide_units',
+  'subject_syllabus_weeks',
+  'recycled_files',
 ])
 
 const MIN_RESTORE_TABLE_KEYS = 5

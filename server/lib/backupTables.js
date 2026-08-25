@@ -4,6 +4,8 @@ export const LNBAK_TABLE_KEYS = [
   'account',
   'audit_logs',
   'lms_activity_logs',
+  'security_incidents',
+  'institute_settings',
   'faculties',
   'students',
   'sections',
@@ -11,6 +13,8 @@ export const LNBAK_TABLE_KEYS = [
   'subject_schedules',
   'curriculum',
   'curriculum_guides',
+  'curriculum_guide_units',
+  'subject_syllabus_weeks',
   'announcements',
   'subject_topics',
   'subject_modules',
@@ -37,6 +41,7 @@ export const LNBAK_TABLE_KEYS = [
   'plagiarism_reports',
   'score_overwrite_requests',
   'google_oauth_tokens',
+  'recycled_files',
 ]
 
 /** Included in .lnbak `data` but restored separately (not truncated with roster tables). */

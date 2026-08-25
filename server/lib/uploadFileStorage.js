@@ -252,7 +252,13 @@ export async function deleteUploadByStoredPath(storedPath, { deletedBy = null, d
   }
 }
 
-/** Before backup: pull all Spaces upload objects into local uploads dir for tar pack. */
+/**
+ * Before backup: pull all Spaces upload objects into local uploads dir for tar pack.
+ * Never throws — a Spaces failure (bad credentials, missing bucket) shouldn't crash the
+ * whole backup when the local uploads dir already has everything that was actually
+ * written (persistUploadBuffer always writes locally first). Backing up local-only in
+ * that case beats failing the backup outright.
+ */
 export async function hydrateUploadsDirFromSpaces(uploadsDir = uploadsRoot()) {
   if (!isUploadsOnSpaces()) return { hydrated: 0, skipped: true }
   const cfg = getSpacesConfig()
@@ -263,36 +269,48 @@ export async function hydrateUploadsDirFromSpaces(uploadsDir = uploadsRoot()) {
   let token = undefined
   let hydrated = 0
 
-  do {
-    const list = await client.send(
-      new ListObjectsV2Command({
-        Bucket: cfg.bucket,
-        Prefix: prefix,
-        ContinuationToken: token,
-      }),
-    )
-    for (const obj of list.Contents || []) {
-      const key = String(obj.Key || '')
-      if (!key || key.endsWith('/')) continue
-      const rel = key.startsWith(prefix) ? key.slice(prefix.length) : key
-      if (!rel) continue
-      const dest = path.join(uploadsDir, rel)
-      let needsDownload = true
-      try {
-        const stat = await fsp.stat(dest)
-        if (stat.isFile() && obj.Size != null && stat.size === obj.Size) {
-          needsDownload = false
+  try {
+    do {
+      const list = await client.send(
+        new ListObjectsV2Command({
+          Bucket: cfg.bucket,
+          Prefix: prefix,
+          ContinuationToken: token,
+        }),
+      )
+      for (const obj of list.Contents || []) {
+        const key = String(obj.Key || '')
+        if (!key || key.endsWith('/')) continue
+        const rel = key.startsWith(prefix) ? key.slice(prefix.length) : key
+        if (!rel) continue
+        const dest = path.join(uploadsDir, rel)
+        let needsDownload = true
+        try {
+          const stat = await fsp.stat(dest)
+          if (stat.isFile() && obj.Size != null && stat.size === obj.Size) {
+            needsDownload = false
+          }
+        } catch {
+          needsDownload = true
         }
-      } catch {
-        needsDownload = true
+        if (needsDownload) {
+          try {
+            await downloadObjectToPath(key, dest)
+            hydrated += 1
+          } catch (e) {
+            console.warn('[uploads] Spaces hydrate skipped one file:', key, e?.message || e)
+          }
+        }
       }
-      if (needsDownload) {
-        await downloadObjectToPath(key, dest)
-        hydrated += 1
-      }
-    }
-    token = list.IsTruncated ? list.NextContinuationToken : undefined
-  } while (token)
+      token = list.IsTruncated ? list.NextContinuationToken : undefined
+    } while (token)
+  } catch (e) {
+    console.warn(
+      '[uploads] Spaces hydrate failed — backing up local uploads only:',
+      e?.message || e,
+    )
+    return { hydrated, skipped: false, spacesFailed: true }
+  }
 
   if (hydrated > 0) {
     console.log(`[uploads] Hydrated ${hydrated} file(s) from Spaces into ${uploadsDir}`)
