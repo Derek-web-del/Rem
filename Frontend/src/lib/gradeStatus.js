@@ -103,6 +103,11 @@ export function formatGradeAvg(value) {
   return `${displayGrade(value)}%`
 }
 
+/** Final grade value with no percent sign — the composite grade itself, not a percentage label. */
+export function formatFinalGrade(value) {
+  return String(displayGrade(value))
+}
+
 export function formatSubmittedAt(iso) {
   if (!iso) return '—'
   const d = new Date(iso)

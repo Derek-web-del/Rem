@@ -1,12 +1,12 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { resolvePdfUrl } from '../../../lib/pdfCacheStatus.js'
-import { curriculumGuideLabel } from './shared/curriculumGuideLabel.js'
-import { InlinePdfPreview } from './shared/curriculumGuidePreview.jsx'
+import { curriculumGuideLabel } from './curriculumGuideLabel.js'
+import { InlinePdfPreview } from './curriculumGuidePreview.jsx'
+import { resolvePdfUrl } from '../../../../lib/pdfCacheStatus.js'
 
-/** libraryPath: optional route to a "browse curriculum library" page — omit for roles (e.g.
- * students) that don't have one, and the link is simply hidden. */
-export default function SubjectCurriculumGuideCard({ subject, libraryPath = '' }) {
+/** Detail page for the auto-generated "Course Curriculum Guide" module item — the Canvas/
+ * Instructure-style expanded view of the institute PDF that the admin linked to this subject. */
+export default function CurriculumGuideDetailView({ subject, libraryPath = '', onBack }) {
   const [previewOpen, setPreviewOpen] = useState(false)
 
   if (!subject) return null
@@ -15,41 +15,31 @@ export default function SubjectCurriculumGuideCard({ subject, libraryPath = '' }
   const label = curriculumGuideLabel(subject)
   const fileUrl = String(subject.curriculumGuideFileUrl || subject.curriculum_guide_file_url || '').trim()
   const fileName = String(subject.curriculumGuideFileName || '').trim() || 'curriculum-guide.pdf'
-  const guide = {
-    id: guideId || subject.id,
-    file_url: fileUrl,
-    file_name: fileName,
-    title: label,
-  }
-
-  if (!guideId && !label) {
-    return (
-      <aside className="rounded-xl border border-dashed border-neutral-200 bg-neutral-50 p-4 shadow-sm">
-        <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Curriculum guide (DepEd)</p>
-        <p className="mt-2 text-sm text-neutral-600">
-          No institute curriculum guide is linked to this subject yet.
-        </p>
-        {libraryPath ? (
-          <Link to={libraryPath} className="mt-3 inline-block text-sm font-semibold text-sky-800 hover:underline">
-            Browse curriculum library
-          </Link>
-        ) : null}
-      </aside>
-    )
-  }
+  const guide = { id: guideId || subject.id, file_url: fileUrl, file_name: fileName, title: label }
 
   return (
-    <aside className="rounded-xl border border-neutral-200 bg-white p-4 shadow-sm">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Curriculum guide (DepEd)</p>
-          <p className="mt-1 text-sm font-medium text-neutral-900">{label}</p>
-          <p className="mt-1 text-xs text-neutral-500">Official institute reference used to build this subject syllabus</p>
+    <div className="px-4 py-4">
+      <button
+        type="button"
+        className="mb-4 inline-flex items-center gap-1 text-sm font-medium text-[#185FA5] hover:underline"
+        onClick={onBack}
+      >
+        <i className="ti ti-arrow-left text-sm" aria-hidden="true" />
+        Back to modules
+      </button>
+
+      <div className="flex items-start gap-3 border-b border-neutral-200 pb-4">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-neutral-200 bg-neutral-50 text-neutral-500">
+          <i className="ti ti-file-type-pdf text-lg" aria-hidden="true" />
+        </span>
+        <div className="min-w-0">
+          <h2 className="text-xl font-normal text-neutral-900">Curriculum Guide</h2>
+          <p className="mt-0.5 text-sm text-neutral-500">{label} — Official institute reference used to build this subject syllabus</p>
         </div>
       </div>
 
       {fileUrl ? (
-        <div className="mt-3 border-t border-neutral-100 pt-3">
+        <div className="mt-4">
           <div className="flex items-center gap-2">
             <i className="ti ti-file-type-pdf shrink-0 text-lg text-red-600" aria-hidden="true" />
             <a
@@ -90,10 +80,10 @@ export default function SubjectCurriculumGuideCard({ subject, libraryPath = '' }
           ) : null}
         </div>
       ) : (
-        <p className="mt-3 rounded-lg border border-dashed border-neutral-200 bg-neutral-50 px-3 py-4 text-xs text-neutral-500">
+        <p className="mt-4 rounded-lg border border-dashed border-neutral-200 bg-neutral-50 px-3 py-4 text-xs text-neutral-500">
           Curriculum PDF is linked but not available for preview.
         </p>
       )}
-    </aside>
+    </div>
   )
 }

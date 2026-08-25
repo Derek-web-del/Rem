@@ -3,6 +3,8 @@ import { fetchSubjectTopics } from '../../../../lib/teacherSubjectCurriculum.js'
 import { useFacultyNotify } from '../../../../lib/facultyNotify.js'
 import TopicGroup from '../shared/TopicGroup.jsx'
 import LessonClassroomView from '../shared/LessonClassroomView.jsx'
+import CurriculumGuideTopicCard from '../shared/CurriculumGuideTopicCard.jsx'
+import CurriculumGuideDetailView from '../shared/CurriculumGuideDetailView.jsx'
 
 export default function SubjectModulesTab({ subjectId, subject }) {
   const toast = useFacultyNotify()
@@ -10,6 +12,12 @@ export default function SubjectModulesTab({ subjectId, subject }) {
   const [loading, setLoading] = useState(true)
   const [collapsed, setCollapsed] = useState({})
   const [selectedLesson, setSelectedLesson] = useState(null)
+  const [curriculumGuideOpen, setCurriculumGuideOpen] = useState(false)
+
+  const hasCurriculumGuide = Boolean(
+    String(subject?.curriculumGuideId || subject?.curriculum_guide_id || '').trim() ||
+      String(subject?.curriculumGuideFileUrl || subject?.curriculum_guide_file_url || '').trim(),
+  )
 
   const authorName = String(subject?.faculty_name || subject?.assignedFacultyName || '').trim()
 
@@ -41,6 +49,16 @@ export default function SubjectModulesTab({ subjectId, subject }) {
     return <p className="px-4 py-8 text-sm text-neutral-500">Loading modules…</p>
   }
 
+  if (curriculumGuideOpen) {
+    return (
+      <CurriculumGuideDetailView
+        subject={subject}
+        libraryPath="/teacher/curriculum"
+        onBack={() => setCurriculumGuideOpen(false)}
+      />
+    )
+  }
+
   if (selectedLesson) {
     return (
       <LessonClassroomView
@@ -53,12 +71,15 @@ export default function SubjectModulesTab({ subjectId, subject }) {
     )
   }
 
-  if (topics.length === 0) {
+  if (topics.length === 0 && !hasCurriculumGuide) {
     return <p className="px-4 py-8 text-sm text-neutral-500">No topics posted yet.</p>
   }
 
   return (
     <div className="p-4">
+      {hasCurriculumGuide ? (
+        <CurriculumGuideTopicCard subject={subject} onOpen={() => setCurriculumGuideOpen(true)} />
+      ) : null}
       {topics.map((topic) => (
         <TopicGroup
           key={topic.id}

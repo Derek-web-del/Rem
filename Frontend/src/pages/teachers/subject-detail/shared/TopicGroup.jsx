@@ -161,6 +161,9 @@ export default function TopicGroup({
                   <LessonRow
                     lesson={entry.data}
                     editable={editable && lessonsEditable}
+                    draggable={editable}
+                    onDragStart={onDragStart}
+                    onDragEnd={onItemDragEnd}
                     isDragOver={isOver}
                     onEdit={onEditLesson}
                     onDelete={onDeleteLesson}

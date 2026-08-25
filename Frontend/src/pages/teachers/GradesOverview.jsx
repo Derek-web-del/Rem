@@ -3,7 +3,7 @@ import { useOutletContext } from 'react-router-dom'
 import { fetchSectionGradesOverview } from '../../lib/gradesApi.js'
 import { fetchTeacherAdvisorySections } from '../../lib/teacherPortalOffline.js'
 import OfflineCacheIndicator from '../../components/OfflineCacheIndicator.jsx'
-import { formatGradeAvg } from '../../lib/gradeStatus.js'
+import { formatFinalGrade } from '../../lib/gradeStatus.js'
 import TeacherMainHeader from './TeacherMainHeader.jsx'
 
 function MetricCard({ label, value, sub }) {
@@ -21,7 +21,7 @@ function SubjectGradeCell({ overallAvg, hasScoredItems }) {
     return <span className="text-neutral-400">—</span>
   }
   return (
-    <span className="font-medium tabular-nums text-neutral-900">{formatGradeAvg(overallAvg)}</span>
+    <span className="font-medium tabular-nums text-neutral-900">{formatFinalGrade(overallAvg)}</span>
   )
 }
 
@@ -169,7 +169,7 @@ export default function GradesOverview() {
           <OfflineCacheIndicator fromCache={fromCache} className="mb-2" />
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <MetricCard label="Section average" value={formatGradeAvg(metrics.sectionAvg)} sub={sectionLabel} />
+            <MetricCard label="Section average" value={formatFinalGrade(metrics.sectionAvg)} sub={sectionLabel} />
             <MetricCard label="Passing (≥75%)" value={String(metrics.passing)} sub={`of ${metrics.total} graded cells`} />
             <MetricCard label="At risk (60–74%)" value={String(metrics.atRisk)} />
             <MetricCard label="Failing (&lt;60%)" value={String(metrics.failing)} />
