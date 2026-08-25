@@ -129,18 +129,3 @@ export async function reorderUnits(pool, guideId, orderedUnitIds) {
   }
   return listUnitsForGuide(pool, guideId)
 }
-
-/** Normalizes written_work_pct/performance_task_pct/exam_pct from a request body. Returns null fields untouched. */
-export function readGradingWeights(body) {
-  const pick = (v) => {
-    if (v === undefined) return undefined
-    if (v === null || v === '') return null
-    const n = Number(v)
-    return Number.isFinite(n) ? Math.max(0, Math.min(100, Math.round(n))) : null
-  }
-  return {
-    written_work_pct: pick(body?.written_work_pct ?? body?.writtenWorkPct),
-    performance_task_pct: pick(body?.performance_task_pct ?? body?.performanceTaskPct),
-    exam_pct: pick(body?.exam_pct ?? body?.examPct),
-  }
-}

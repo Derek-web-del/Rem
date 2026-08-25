@@ -89,11 +89,8 @@ function subjectsForGrade(subjects, grade) {
 }
 
 function gradingWeightsSummary(item) {
-  const parts = []
-  if (item.writtenWorkPct != null && item.writtenWorkPct !== '') parts.push(`Written Work ${item.writtenWorkPct}%`)
-  if (item.performanceTaskPct != null && item.performanceTaskPct !== '') parts.push(`Performance Task ${item.performanceTaskPct}%`)
-  if (item.examPct != null && item.examPct !== '') parts.push(`Exam ${item.examPct}%`)
-  return parts.join(' · ')
+  const criteria = Array.isArray(item.gradingCriteria) ? item.gradingCriteria : []
+  return criteria.map((c) => `${c.name} ${c.percentage}%`).join(' · ')
 }
 
 function curriculumCardTitle(item) {
@@ -338,59 +335,107 @@ function UnitsEditor({ units, onChange }) {
   )
 }
 
-function gradingWeightsSum(weights) {
-  return ['writtenWorkPct', 'performanceTaskPct', 'examPct'].reduce((sum, key) => {
-    const n = Number(weights[key])
+function newDraftCriterionId() {
+  return `new-${Math.random().toString(36).slice(2)}-${Date.now()}`
+}
+
+function criteriaSum(criteria) {
+  return criteria.reduce((sum, c) => {
+    const n = Number(c.percentage)
     return sum + (Number.isFinite(n) ? n : 0)
   }, 0)
 }
 
-/** Written Work / Performance Task / Exam percentage inputs with a live sum check. */
-function GradingWeightsFields({ weights, onChange }) {
-  const sum = gradingWeightsSum(weights)
-  const anySet = weights.writtenWorkPct !== '' || weights.performanceTaskPct !== '' || weights.examPct !== ''
-  const isValid = !anySet || sum === 100
+/** Custom, addable grading criteria editor (title + %) — same add/remove/reorder pattern as
+ * UnitsEditor above. Empty list means "no grading criteria set for this guide" (optional). */
+function CriteriaEditor({ criteria, onChange }) {
+  const sum = criteriaSum(criteria)
+  const isValid = criteria.length === 0 || sum === 100
+
+  function addCriterion() {
+    onChange([...criteria, { id: newDraftCriterionId(), name: '', percentage: '' }])
+  }
+  function updateCriterion(id, patch) {
+    onChange(criteria.map((c) => (c.id === id ? { ...c, ...patch } : c)))
+  }
+  function removeCriterion(id) {
+    onChange(criteria.filter((c) => c.id !== id))
+  }
+  function moveCriterion(index, dir) {
+    const target = index + dir
+    if (target < 0 || target >= criteria.length) return
+    const next = [...criteria]
+    ;[next[index], next[target]] = [next[target], next[index]]
+    onChange(next)
+  }
+
   return (
     <div>
       <p className="text-sm font-medium text-neutral-700">Grading criteria (optional)</p>
-      <div className="mt-1 grid grid-cols-3 gap-2">
-        <label className="text-xs text-neutral-600">
-          Written Work %
-          <input
-            type="number"
-            min="0"
-            max="100"
-            className="mt-1 w-full rounded border px-2 py-1.5 text-sm"
-            value={weights.writtenWorkPct}
-            onChange={(e) => onChange({ ...weights, writtenWorkPct: e.target.value })}
-          />
-        </label>
-        <label className="text-xs text-neutral-600">
-          Performance Task %
-          <input
-            type="number"
-            min="0"
-            max="100"
-            className="mt-1 w-full rounded border px-2 py-1.5 text-sm"
-            value={weights.performanceTaskPct}
-            onChange={(e) => onChange({ ...weights, performanceTaskPct: e.target.value })}
-          />
-        </label>
-        <label className="text-xs text-neutral-600">
-          Exam %
-          <input
-            type="number"
-            min="0"
-            max="100"
-            className="mt-1 w-full rounded border px-2 py-1.5 text-sm"
-            value={weights.examPct}
-            onChange={(e) => onChange({ ...weights, examPct: e.target.value })}
-          />
-        </label>
+      <p className="mt-0.5 text-xs text-neutral-500">
+        Add each category this curriculum grades on. Once published, this replaces the grading
+        criteria of every subject this guide is linked to.
+      </p>
+      <div className="mt-2 space-y-2">
+        {criteria.map((c, index) => (
+          <div key={c.id} className="flex items-center gap-2">
+            <input
+              type="text"
+              className="flex-1 rounded border px-2 py-1.5 text-sm"
+              placeholder="Criterion title (e.g. Written Work)"
+              value={c.name}
+              onChange={(e) => updateCriterion(c.id, { name: e.target.value })}
+            />
+            <div className="relative w-24 shrink-0">
+              <input
+                type="number"
+                min="0"
+                max="100"
+                className="w-full rounded border px-2 py-1.5 text-sm"
+                placeholder="%"
+                value={c.percentage}
+                onChange={(e) => updateCriterion(c.id, { percentage: e.target.value })}
+              />
+            </div>
+            <button
+              type="button"
+              className="shrink-0 rounded border px-2 py-1 text-xs text-neutral-600 disabled:opacity-30"
+              onClick={() => moveCriterion(index, -1)}
+              disabled={index === 0}
+              aria-label="Move criterion up"
+            >
+              ↑
+            </button>
+            <button
+              type="button"
+              className="shrink-0 rounded border px-2 py-1 text-xs text-neutral-600 disabled:opacity-30"
+              onClick={() => moveCriterion(index, 1)}
+              disabled={index === criteria.length - 1}
+              aria-label="Move criterion down"
+            >
+              ↓
+            </button>
+            <button
+              type="button"
+              className="shrink-0 rounded border border-red-300 px-2 py-1 text-xs text-red-700"
+              onClick={() => removeCriterion(c.id)}
+              aria-label="Remove criterion"
+            >
+              ✕
+            </button>
+          </div>
+        ))}
       </div>
-      {anySet ? (
+      <button
+        type="button"
+        className="mt-2 rounded-lg border border-emerald-600 px-3 py-1.5 text-sm font-semibold text-emerald-700"
+        onClick={addCriterion}
+      >
+        + Criteria
+      </button>
+      {criteria.length ? (
         <p className={`mt-1 text-xs ${isValid ? 'text-neutral-500' : 'text-red-600'}`}>
-          Total: {sum}% {isValid ? '' : '— must add up to 100% (or leave all three blank)'}
+          Total: {sum}% {isValid ? '' : '— must add up to 100%'}
         </p>
       ) : null}
     </div>
@@ -413,9 +458,7 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
     description: '',
     file: null,
     units: [],
-    writtenWorkPct: '',
-    performanceTaskPct: '',
-    examPct: '',
+    criteria: [],
   })
   const [editId, setEditId] = useState('')
   const [editForm, setEditForm] = useState({
@@ -424,9 +467,7 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
     description: '',
     file: null,
     units: [],
-    writtenWorkPct: '',
-    performanceTaskPct: '',
-    examPct: '',
+    criteria: [],
   })
   const [editingError, setEditingError] = useState('')
   const [filterGrade, setFilterGrade] = useState('')
@@ -511,10 +552,11 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
       return
     }
     const cleanUnits = uploadForm.units.filter((u) => u.title.trim())
-    const weightsSum = gradingWeightsSum(uploadForm)
-    const anyWeightSet = uploadForm.writtenWorkPct !== '' || uploadForm.performanceTaskPct !== '' || uploadForm.examPct !== ''
-    if (anyWeightSet && weightsSum !== 100) {
-      setFormError('Grading criteria percentages must add up to 100%, or leave all three blank.')
+    const cleanCriteria = uploadForm.criteria
+      .map((c) => ({ name: c.name.trim(), percentage: Number(c.percentage) }))
+      .filter((c) => c.name)
+    if (cleanCriteria.length && criteriaSum(cleanCriteria) !== 100) {
+      setFormError('Grading criteria percentages must add up to 100%.')
       return
     }
     setIsUploading(true)
@@ -530,9 +572,9 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
         if (cleanUnits.length) {
           body.append('units', JSON.stringify(cleanUnits.map((u) => ({ title: u.title.trim(), description: u.description || '' }))))
         }
-        if (uploadForm.writtenWorkPct !== '') body.append('written_work_pct', uploadForm.writtenWorkPct)
-        if (uploadForm.performanceTaskPct !== '') body.append('performance_task_pct', uploadForm.performanceTaskPct)
-        if (uploadForm.examPct !== '') body.append('exam_pct', uploadForm.examPct)
+        if (cleanCriteria.length) {
+          body.append('grading_criteria', JSON.stringify(cleanCriteria))
+        }
         const res = await fetch(apiUrl('/api/admin/curriculum-guides'), {
           method: 'POST',
           credentials: 'include',
@@ -562,13 +604,11 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
           uploadedBy:
             String(sessionUser?.name || sessionUser?.email || sessionUser?.id || '').trim() || 'Administrator',
           units: cleanUnits.map((u, i) => ({ id: u.id, title: u.title.trim(), description: u.description || '', unit_order: i })),
-          writtenWorkPct: uploadForm.writtenWorkPct || null,
-          performanceTaskPct: uploadForm.performanceTaskPct || null,
-          examPct: uploadForm.examPct || null,
+          gradingCriteria: cleanCriteria,
         }
         setCurriculums((prev) => [newItem, ...prev])
       }
-      setUploadForm({ grade: '', subject: '', description: '', file: null, units: [], writtenWorkPct: '', performanceTaskPct: '', examPct: '' })
+      setUploadForm({ grade: '', subject: '', description: '', file: null, units: [], criteria: [] })
       setCurriculumPage('manage')
       toast.created('Curriculum guide saved and published for faculty.')
     } catch (err) {
@@ -593,9 +633,11 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
         title: u.title || '',
         description: u.description || '',
       })),
-      writtenWorkPct: item.writtenWorkPct != null ? String(item.writtenWorkPct) : '',
-      performanceTaskPct: item.performanceTaskPct != null ? String(item.performanceTaskPct) : '',
-      examPct: item.examPct != null ? String(item.examPct) : '',
+      criteria: (Array.isArray(item.gradingCriteria) ? item.gradingCriteria : []).map((c) => ({
+        id: newDraftCriterionId(),
+        name: c.name || '',
+        percentage: c.percentage != null ? String(c.percentage) : '',
+      })),
     })
   }
 
@@ -615,10 +657,11 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
       setEditingError('File must be PDF.')
       return
     }
-    const weightsSum = gradingWeightsSum(editForm)
-    const anyWeightSet = editForm.writtenWorkPct !== '' || editForm.performanceTaskPct !== '' || editForm.examPct !== ''
-    if (anyWeightSet && weightsSum !== 100) {
-      setEditingError('Grading criteria percentages must add up to 100%, or leave all three blank.')
+    const cleanCriteria = editForm.criteria
+      .map((c) => ({ name: c.name.trim(), percentage: Number(c.percentage) }))
+      .filter((c) => c.name)
+    if (cleanCriteria.length && criteriaSum(cleanCriteria) !== 100) {
+      setEditingError('Grading criteria percentages must add up to 100%.')
       return
     }
     let resolvedGuideId = String(target?.id ?? '').trim()
@@ -630,11 +673,6 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
       }
       try {
         let res
-        const weightFields = {
-          written_work_pct: editForm.writtenWorkPct,
-          performance_task_pct: editForm.performanceTaskPct,
-          exam_pct: editForm.examPct,
-        }
         if (editForm.file) {
           const body = new FormData()
           body.append('title', editForm.subject)
@@ -642,7 +680,7 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
           body.append('grade_level', editForm.grade)
           body.append('description', editForm.description.trim())
           body.append('file', editForm.file)
-          for (const [k, v] of Object.entries(weightFields)) if (v !== '') body.append(k, v)
+          if (cleanCriteria.length) body.append('grading_criteria', JSON.stringify(cleanCriteria))
           res = await fetch(apiUrl(`/api/admin/curriculum-guides/${encodeURIComponent(resolvedGuideId)}`), {
             method: 'PUT',
             credentials: 'include',
@@ -658,7 +696,7 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
               subject: editForm.subject,
               grade_level: editForm.grade,
               description: editForm.description.trim(),
-              ...Object.fromEntries(Object.entries(weightFields).filter(([, v]) => v !== '')),
+              grading_criteria: cleanCriteria,
             }),
           })
         }
@@ -745,9 +783,7 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
                 fileName: nextFileName,
                 fileType: nextFileType,
                 units: editForm.units.filter((u) => u.title.trim()),
-                writtenWorkPct: editForm.writtenWorkPct || null,
-                performanceTaskPct: editForm.performanceTaskPct || null,
-                examPct: editForm.examPct || null,
+                gradingCriteria: cleanCriteria,
               }
             : item,
         ),
@@ -756,7 +792,7 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
 
     setEditId('')
     setCurriculumPage('manage')
-    setEditForm({ grade: '', subject: '', description: '', file: null, units: [], writtenWorkPct: '', performanceTaskPct: '', examPct: '' })
+    setEditForm({ grade: '', subject: '', description: '', file: null, units: [], criteria: [] })
     toast.updated('You have updated Curriculum Guide.')
   }
 
@@ -940,9 +976,9 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
                   <UnitsEditor units={uploadForm.units} onChange={(units) => setUploadForm((prev) => ({ ...prev, units }))} />
                 </div>
               </div>
-              <GradingWeightsFields
-                weights={uploadForm}
-                onChange={(next) => setUploadForm((prev) => ({ ...prev, ...next }))}
+              <CriteriaEditor
+                criteria={uploadForm.criteria}
+                onChange={(criteria) => setUploadForm((prev) => ({ ...prev, criteria }))}
               />
               <label className="text-sm font-medium text-neutral-700">
                 Reference PDF (optional)
@@ -1039,7 +1075,7 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
                 <UnitsEditor units={editForm.units} onChange={(units) => setEditForm((prev) => ({ ...prev, units }))} />
               </div>
             </div>
-            <GradingWeightsFields weights={editForm} onChange={(next) => setEditForm((prev) => ({ ...prev, ...next }))} />
+            <CriteriaEditor criteria={editForm.criteria} onChange={(criteria) => setEditForm((prev) => ({ ...prev, criteria }))} />
             <label className="text-sm font-medium text-neutral-700">
               Replace reference PDF (optional)
               <div className="mt-1 flex items-center gap-2 rounded-lg border bg-white px-3 py-2 text-sm">

@@ -19,6 +19,7 @@ import {
 } from '../../lib/subjectSchedulesDb.js'
 import { assertNoScheduleConflicts } from '../../lib/scheduleConflict.js'
 import { syncCurriculumGuideLessonForSubject } from '../../lib/syncCurriculumGuideLesson.js'
+import { syncCurriculumGuideGradingCriteriaForSubject } from '../../lib/syncCurriculumGuideGradingCriteria.js'
 
 const SUBJECT_SELECT_WITH_FACULTY = `
   SELECT
@@ -146,6 +147,7 @@ export function registerSubjectsRoutes(router, ctx) {
       })
       if (row?.id && guideIdParam) {
         await syncCurriculumGuideLessonForSubject(pool, row.id, guideIdParam)
+        await syncCurriculumGuideGradingCriteriaForSubject(pool, row.id, guideIdParam)
       }
       res.status(201).json({
         ok: true,
@@ -252,6 +254,7 @@ export function registerSubjectsRoutes(router, ctx) {
         })
       }
       await syncCurriculumGuideLessonForSubject(pool, id, guideIdParam)
+      await syncCurriculumGuideGradingCriteriaForSubject(pool, id, guideIdParam)
       res.json({ ok: true, subject: (await attachSchedules([updatedRow]))[0] })
     } catch (e) {
       subjectPgError(res, e)

@@ -209,11 +209,8 @@ function CurriculumPdfModal({ guide, onClose }) {
 }
 
 function gradingWeightsSummary(guide) {
-  const parts = []
-  if (guide.written_work_pct != null) parts.push(`Written Work ${guide.written_work_pct}%`)
-  if (guide.performance_task_pct != null) parts.push(`Performance Task ${guide.performance_task_pct}%`)
-  if (guide.exam_pct != null) parts.push(`Exam ${guide.exam_pct}%`)
-  return parts.join(' · ')
+  const criteria = Array.isArray(guide.grading_criteria) ? guide.grading_criteria : []
+  return criteria.map((c) => `${c.name} ${c.percentage}%`).join(' · ')
 }
 
 function CurriculumGuideCard({ guide, onView }) {

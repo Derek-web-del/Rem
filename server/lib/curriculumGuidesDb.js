@@ -43,6 +43,49 @@ export async function ensureCurriculumGuidesPublishColumns(pool) {
   }
 }
 
+/** Normalize a stored grading_criteria value (JSONB, already parsed by `pg`) to a clean array. */
+export function normalizeGradingCriteria(raw) {
+  const list = Array.isArray(raw) ? raw : []
+  return list
+    .map((row) => ({
+      name: String(row?.name ?? '').trim(),
+      percentage: Number(row?.percentage ?? 0),
+    }))
+    .filter((row) => row.name)
+}
+
+/**
+ * Validates a custom criteria list: {name, percentage}[] — unique names, each
+ * percentage 0-100, summing to exactly 100. Mirrors the same rule already used
+ * for subject-level grade components, minus the assignment/activity/quiz
+ * mapping fields (curriculum guides don't route work items, so they don't need it).
+ */
+export function validateGradingCriteria(list) {
+  if (!Array.isArray(list) || !list.length) {
+    return { ok: false, message: 'At least one grading criterion is required.' }
+  }
+  const names = new Set()
+  let total = 0
+  const cleaned = []
+  for (const row of list) {
+    const name = String(row?.name ?? '').trim()
+    if (!name) return { ok: false, message: 'Each criterion needs a title.' }
+    const key = name.toLowerCase()
+    if (names.has(key)) return { ok: false, message: `Duplicate criterion title: ${name}` }
+    names.add(key)
+    const pct = Number(row?.percentage ?? row?.percent ?? 0)
+    if (!Number.isFinite(pct) || pct < 0 || pct > 100) {
+      return { ok: false, message: 'Each percentage must be between 0 and 100.' }
+    }
+    total += pct
+    cleaned.push({ name, percentage: pct })
+  }
+  if (total !== 100) {
+    return { ok: false, message: `Grading criteria must sum to 100% (currently ${total}%).` }
+  }
+  return { ok: true, criteria: cleaned }
+}
+
 function mapGuideRow(row) {
   if (!row) return null
   const fileUrlRaw = String(row.file_url ?? '').trim()
@@ -69,9 +112,7 @@ function mapGuideRow(row) {
     is_published: row.is_published === true,
     source: String(row.source ?? 'app_state').trim(),
     created_at: created,
-    written_work_pct: row.written_work_pct ?? null,
-    performance_task_pct: row.performance_task_pct ?? null,
-    exam_pct: row.exam_pct ?? null,
+    grading_criteria: normalizeGradingCriteria(row.grading_criteria),
   }
 }
 
@@ -131,23 +172,22 @@ export async function insertAdminCurriculumGuide(pool, payload) {
     uploaded_by,
     uploaded_by_name,
     is_published,
-    written_work_pct,
-    performance_task_pct,
-    exam_pct,
+    grading_criteria,
   } = payload
   const descriptionText = String(description ?? title ?? subject ?? file_name ?? '').trim()
+  const criteria = normalizeGradingCriteria(grading_criteria)
   await pool.query(
     `
     INSERT INTO curriculum_guides (
       id, grade, subject, description, file_name, file_type, file_data_url,
       uploaded_at, uploaded_by, updated_at,
       title, file_url, grade_level, is_published, uploaded_by_name, source, created_at,
-      written_work_pct, performance_task_pct, exam_pct
+      grading_criteria
     ) VALUES (
       $1, $2, $3, $4, $5, $6, $7,
       $8, $9, NOW(),
       $10, $11, $12, $13, $14, 'admin_upload', NOW(),
-      $15, $16, $17
+      $15
     )
     `,
     [
@@ -165,9 +205,7 @@ export async function insertAdminCurriculumGuide(pool, payload) {
       grade_level || null,
       is_published === true,
       uploaded_by_name || null,
-      written_work_pct ?? null,
-      performance_task_pct ?? null,
-      exam_pct ?? null,
+      criteria.length ? JSON.stringify(criteria) : null,
     ],
   )
   return mapGuideRow({
@@ -182,9 +220,7 @@ export async function insertAdminCurriculumGuide(pool, payload) {
     is_published,
     source: 'admin_upload',
     created_at: new Date(),
-    written_work_pct,
-    performance_task_pct,
-    exam_pct,
+    grading_criteria: criteria,
   })
 }
 
@@ -200,10 +236,9 @@ export async function updateAdminCurriculumGuide(pool, id, payload) {
   const file_name = String(payload.file_name ?? existing.file_name ?? '').trim()
   const file_url = String(payload.file_url ?? existing.file_url ?? '').trim()
   const file_type = file_name ? curriculumMimeForFileName(file_name) : null
-  const written_work_pct = payload.written_work_pct !== undefined ? payload.written_work_pct : existing.written_work_pct
-  const performance_task_pct =
-    payload.performance_task_pct !== undefined ? payload.performance_task_pct : existing.performance_task_pct
-  const exam_pct = payload.exam_pct !== undefined ? payload.exam_pct : existing.exam_pct
+  const criteria = normalizeGradingCriteria(
+    payload.grading_criteria !== undefined ? payload.grading_criteria : existing.grading_criteria,
+  )
   const uploaded_by_name = payload.uploaded_by_name ?? existing.uploaded_by_name ?? null
 
   /** Any admin edit claims ownership from the legacy app_state mirror so it can't be silently resurrected/overwritten by a future state sync. */
@@ -220,10 +255,8 @@ export async function updateAdminCurriculumGuide(pool, id, payload) {
         file_url = $9,
         grade_level = $10,
         source = 'admin_upload',
-        written_work_pct = $11,
-        performance_task_pct = $12,
-        exam_pct = $13,
-        uploaded_by_name = $14,
+        grading_criteria = $11,
+        uploaded_by_name = $12,
         updated_at = NOW()
     WHERE id = $1
     `,
@@ -238,9 +271,7 @@ export async function updateAdminCurriculumGuide(pool, id, payload) {
       title,
       file_url || null,
       grade_level,
-      written_work_pct ?? null,
-      performance_task_pct ?? null,
-      exam_pct ?? null,
+      criteria.length ? JSON.stringify(criteria) : null,
       uploaded_by_name,
     ],
   )

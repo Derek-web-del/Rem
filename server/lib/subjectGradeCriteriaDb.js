@@ -251,6 +251,15 @@ export async function validateGradeComponentForWork(pool, subjectId, componentId
   return { ok: true, component: mapComponentRow(row) }
 }
 
+/**
+ * Replace a subject's grading components with the incoming list. All-or-nothing: every
+ * component the incoming list would drop is checked for in-use assignments/activities/quizzes
+ * *before* any write happens, and the whole replace runs in one transaction — so a component
+ * that can't be safely removed aborts the entire replace instead of leaving the subject with a
+ * broken mix of old and new rows (which is exactly what happened before this existed: the
+ * inserts ran unconditionally, then the delete loop could bail out partway through and return
+ * an error, but the already-run inserts were never rolled back).
+ */
 export async function replaceSubjectGradeComponents(pool, subjectId, payload) {
   await ensureSubjectGradeCriteriaSchema(pool)
   const sid = Number(subjectId)
@@ -266,51 +275,71 @@ export async function replaceSubjectGradeComponents(pool, subjectId, payload) {
     [sid],
   )
   const existingIds = new Set((existing || []).map((r) => String(r.id)))
-  const keptIds = new Set()
+  const incomingIds = new Set(
+    incoming
+      .map((row) => (row.id != null && String(row.id).trim() !== '' ? String(Number(row.id)) : null))
+      .filter((id) => id && existingIds.has(id)),
+  )
+  const toRemove = [...existingIds].filter((eid) => !incomingIds.has(eid))
 
-  for (let i = 0; i < incoming.length; i++) {
-    const row = incoming[i]
-    const id = row.id != null && String(row.id).trim() !== '' ? Number(row.id) : null
-    const name = String(row.name || '').trim()
-    const pct = Number(row.percentage ?? 0)
-    const color = String(row.color || '#3B82F6').trim()
-    const mapsA = Boolean(row.maps_to_assignment)
-    const mapsAct = Boolean(row.maps_to_activity)
-    const isQuiz = Boolean(row.is_quiz)
-
-    if (id && existingIds.has(String(id))) {
-      await pool.query(
-        `
-        UPDATE subject_grade_components SET
-          name = $1, percentage = $2, color = $3, component_order = $4,
-          maps_to_assignment = $5, maps_to_activity = $6, is_quiz = $7
-        WHERE id = $8 AND subject_id = $9
-        `,
-        [name, pct, color, i, mapsA, mapsAct, isQuiz, id, sid],
-      )
-      keptIds.add(String(id))
-    } else {
-      const { rows: ins } = await pool.query(
-        `
-        INSERT INTO subject_grade_components (
-          subject_id, name, percentage, color, component_order,
-          maps_to_assignment, maps_to_activity, is_quiz
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-        RETURNING id
-        `,
-        [sid, name, pct, color, i, mapsA, mapsAct, isQuiz],
-      )
-      keptIds.add(String(ins[0].id))
-    }
-  }
-
-  for (const eid of existingIds) {
-    if (keptIds.has(eid)) continue
+  for (const eid of toRemove) {
     const usage = await countComponentUsage(pool, eid)
     if (usage > 0) {
       return { ok: false, message: `Component is used by ${usage} assignment(s)/activity(ies)/quiz(zes). Reassign them first.` }
     }
-    await pool.query(`DELETE FROM subject_grade_components WHERE id = $1 AND subject_id = $2`, [Number(eid), sid])
+  }
+
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    const keptIds = new Set()
+
+    for (let i = 0; i < incoming.length; i++) {
+      const row = incoming[i]
+      const id = row.id != null && String(row.id).trim() !== '' ? Number(row.id) : null
+      const name = String(row.name || '').trim()
+      const pct = Number(row.percentage ?? 0)
+      const color = String(row.color || '#3B82F6').trim()
+      const mapsA = Boolean(row.maps_to_assignment)
+      const mapsAct = Boolean(row.maps_to_activity)
+      const isQuiz = Boolean(row.is_quiz)
+
+      if (id && existingIds.has(String(id))) {
+        await client.query(
+          `
+          UPDATE subject_grade_components SET
+            name = $1, percentage = $2, color = $3, component_order = $4,
+            maps_to_assignment = $5, maps_to_activity = $6, is_quiz = $7
+          WHERE id = $8 AND subject_id = $9
+          `,
+          [name, pct, color, i, mapsA, mapsAct, isQuiz, id, sid],
+        )
+        keptIds.add(String(id))
+      } else {
+        const { rows: ins } = await client.query(
+          `
+          INSERT INTO subject_grade_components (
+            subject_id, name, percentage, color, component_order,
+            maps_to_assignment, maps_to_activity, is_quiz
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+          RETURNING id
+          `,
+          [sid, name, pct, color, i, mapsA, mapsAct, isQuiz],
+        )
+        keptIds.add(String(ins[0].id))
+      }
+    }
+
+    for (const eid of toRemove) {
+      await client.query(`DELETE FROM subject_grade_components WHERE id = $1 AND subject_id = $2`, [Number(eid), sid])
+    }
+
+    await client.query('COMMIT')
+  } catch (err) {
+    await client.query('ROLLBACK')
+    throw err
+  } finally {
+    client.release()
   }
 
   const criteria = await fetchSubjectGradeComponents(pool, sid)

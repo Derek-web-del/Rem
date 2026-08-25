@@ -21,10 +21,10 @@ import {
   deleteUnit,
   listUnitsForGuide,
   listUnitsForGuides,
-  readGradingWeights,
   reorderUnits,
   updateUnit,
 } from '../lib/curriculumGuideUnitsDb.js'
+import { validateGradingCriteria } from '../lib/curriculumGuidesDb.js'
 import { requireAdminSession, auditInstituteRecord, purgeCurriculumFromAppStateJson } from './state/shared.js'
 import {
   curriculumAuditDescription,
@@ -32,6 +32,24 @@ import {
   curriculumGuideRowSnapshot,
 } from '../lib/curriculumAudit.js'
 import { syncCurriculumGuideLessonForAllSubjects } from '../lib/syncCurriculumGuideLesson.js'
+import { syncCurriculumGuideGradingCriteriaForAllSubjects } from '../lib/syncCurriculumGuideGradingCriteria.js'
+
+/** Parses the grading_criteria JSON string sent alongside multipart form fields. Returns
+ * { criteria, error } — error is set only when criteria were actually supplied and invalid;
+ * omitting the field entirely is fine (grading criteria stay optional). */
+function parseGradingCriteriaField(raw) {
+  if (raw === undefined || raw === null || String(raw).trim() === '') return { criteria: undefined }
+  let parsed
+  try {
+    parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
+  } catch {
+    return { error: 'Grading criteria must be a valid list.' }
+  }
+  if (!Array.isArray(parsed) || parsed.length === 0) return { criteria: [] }
+  const validated = validateGradingCriteria(parsed)
+  if (!validated.ok) return { error: validated.message }
+  return { criteria: validated.criteria }
+}
 
 function adminDisplayName(session) {
   const u = session?.user ?? session?.data?.user ?? {}
@@ -108,6 +126,12 @@ export function createAdminCurriculumGuidesRouter(express, auth) {
         return
       }
 
+      const parsedCriteria = parseGradingCriteriaField(req.body?.grading_criteria)
+      if (parsedCriteria.error) {
+        res.status(400).json({ error: 'BAD_REQUEST', message: parsedCriteria.error })
+        return
+      }
+
       let file_url = null
       let file_name = null
       if (file) {
@@ -125,7 +149,6 @@ export function createAdminCurriculumGuidesRouter(express, auth) {
         }
       }
 
-      const weights = readGradingWeights(req.body)
       const id = randomUUID()
       const pool = getPgPool()
       const guide = await insertAdminCurriculumGuide(pool, {
@@ -139,9 +162,7 @@ export function createAdminCurriculumGuidesRouter(express, auth) {
         uploaded_by: String(session.user?.id || ''),
         uploaded_by_name: adminDisplayName(session),
         is_published: publishNow,
-        written_work_pct: weights.written_work_pct,
-        performance_task_pct: weights.performance_task_pct,
-        exam_pct: weights.exam_pct,
+        grading_criteria: parsedCriteria.criteria,
       })
 
       const snap = curriculumGuideRowSnapshot(guide)
@@ -156,6 +177,7 @@ export function createAdminCurriculumGuidesRouter(express, auth) {
 
       if (publishNow) {
         await syncCurriculumGuideLessonForAllSubjects(pool, id)
+        await syncCurriculumGuideGradingCriteriaForAllSubjects(pool, id)
       }
 
       let units = []
@@ -237,7 +259,11 @@ export function createAdminCurriculumGuidesRouter(express, auth) {
         }
       }
 
-      const weights = readGradingWeights(req.body)
+      const parsedCriteria = parseGradingCriteriaField(req.body?.grading_criteria)
+      if (parsedCriteria.error) {
+        res.status(400).json({ error: 'BAD_REQUEST', message: parsedCriteria.error })
+        return
+      }
       const guide = await updateAdminCurriculumGuide(pool, id, {
         title,
         subject,
@@ -245,9 +271,7 @@ export function createAdminCurriculumGuidesRouter(express, auth) {
         description,
         file_name,
         file_url,
-        written_work_pct: weights.written_work_pct,
-        performance_task_pct: weights.performance_task_pct,
-        exam_pct: weights.exam_pct,
+        grading_criteria: parsedCriteria.criteria,
         uploaded_by_name: adminDisplayName(session),
       })
 
@@ -268,6 +292,7 @@ export function createAdminCurriculumGuidesRouter(express, auth) {
 
       if (guide?.is_published === true) {
         await syncCurriculumGuideLessonForAllSubjects(pool, id)
+        await syncCurriculumGuideGradingCriteriaForAllSubjects(pool, id)
       }
 
       const units = await listUnitsForGuide(pool, id)
@@ -321,6 +346,7 @@ export function createAdminCurriculumGuidesRouter(express, auth) {
         })
       }
       await syncCurriculumGuideLessonForAllSubjects(pool, id)
+      await syncCurriculumGuideGradingCriteriaForAllSubjects(pool, id)
       res.json(guide)
     } catch (e) {
       sendSafeServerError(res, e, 'PATCH /api/admin/curriculum-guides/:id')
