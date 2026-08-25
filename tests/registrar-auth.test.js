@@ -26,8 +26,8 @@ function mockRes() {
 }
 
 describe('registrar role access helpers', () => {
-  it('homePathForRole sends registrar to students', () => {
-    assert.equal(homePathForRole('registrar'), '/admin/students')
+  it('homePathForRole sends registrar to the dashboard', () => {
+    assert.equal(homePathForRole('registrar'), '/admin/institute_dashboard')
   })
 
   it('portalMatchesUserRole pairs REGISTRAR portal with registrar role', () => {

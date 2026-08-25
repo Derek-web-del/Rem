@@ -4,7 +4,7 @@ export const ACCESS_DENIED_STORAGE_KEY = 'lenlearn:access-denied'
 
 export const ROLE_HOME = {
   admin: '/admin/institute_dashboard',
-  registrar: '/admin/students',
+  registrar: '/admin/institute_dashboard',
   faculty: '/teacher/dashboard',
   teacher: '/teacher/dashboard',
   student: '/student/dashboard',

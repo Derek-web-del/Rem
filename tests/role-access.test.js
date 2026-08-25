@@ -35,7 +35,7 @@ describe('roleAccess portal RBAC', () => {
     assert.equal(loginPathForPortal('REGISTRAR'), '/login/registrar?id=4')
     assert.equal(homePathForRole('student'), '/student/dashboard')
     assert.equal(homePathForRole('admin'), '/admin/institute_dashboard')
-    assert.equal(homePathForRole('registrar'), '/admin/students')
+    assert.equal(homePathForRole('registrar'), '/admin/institute_dashboard')
   })
 
   test('isNavAllowedForRole scopes registrar accounts nav to admin only', () => {
