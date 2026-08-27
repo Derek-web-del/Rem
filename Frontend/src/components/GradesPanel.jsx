@@ -4,10 +4,8 @@ import {
   formatGradeAvg,
   formatSubmittedAt,
   gradeStatusFromPercent,
-  supportsLateSubmission,
 } from '../lib/gradeStatus.js'
 import GradeOverrideModal from './GradeOverrideModal.jsx'
-import LateSubmissionModal from './LateSubmissionModal.jsx'
 
 function SummaryTile({ label, value }) {
   return (
@@ -33,7 +31,7 @@ function ScoreBar({ percent, noScoresYet = false }) {
   )
 }
 
-function GradeItemRow({ item, readOnly, isAdmin, studentId, studentName, onOverrideClick, onLateSubmissionClick }) {
+function GradeItemRow({ item, readOnly, isAdmin, studentId, studentName, onOverrideClick }) {
   return (
     <div className="flex flex-col gap-2 border-b border-neutral-100 py-3 last:border-0 sm:flex-row sm:items-center sm:justify-between">
       <div className="min-w-0 flex-1">
@@ -72,15 +70,6 @@ function GradeItemRow({ item, readOnly, isAdmin, studentId, studentName, onOverr
         </div>
         {isAdmin && item.is_locked && item.entity_id ? (
           <div className="flex shrink-0 flex-wrap gap-2">
-            {supportsLateSubmission(item.entity_type) ? (
-              <button
-                type="button"
-                onClick={() => onLateSubmissionClick?.(item)}
-                className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700"
-              >
-                Allow Late Submission
-              </button>
-            ) : null}
             <button
               type="button"
               onClick={() => onOverrideClick?.(item)}
@@ -104,7 +93,6 @@ function CollapsibleSection({
   studentId,
   studentName,
   onOverrideClick,
-  onLateSubmissionClick,
 }) {
   const [open, setOpen] = useState(defaultOpen)
   const count = Array.isArray(items) ? items.length : 0
@@ -136,7 +124,6 @@ function CollapsibleSection({
                 studentId={studentId}
                 studentName={studentName}
                 onOverrideClick={onOverrideClick}
-                onLateSubmissionClick={onLateSubmissionClick}
               />
             ))
           )}
@@ -173,7 +160,6 @@ export default function GradesPanel({
   onGradesRefresh,
 }) {
   const [overrideItem, setOverrideItem] = useState(null)
-  const [lateSubmissionItem, setLateSubmissionItem] = useState(null)
   const [overrideSuccess, setOverrideSuccess] = useState('')
 
   if (loading) return <GradesPanelSkeleton />
@@ -222,7 +208,6 @@ export default function GradesPanel({
         studentId={studentId}
         studentName={studentName}
         onOverrideClick={setOverrideItem}
-        onLateSubmissionClick={setLateSubmissionItem}
       />
       <CollapsibleSection
         title="Assignments"
@@ -232,7 +217,6 @@ export default function GradesPanel({
         studentId={studentId}
         studentName={studentName}
         onOverrideClick={setOverrideItem}
-        onLateSubmissionClick={setLateSubmissionItem}
       />
       <CollapsibleSection
         title="Activities"
@@ -242,7 +226,6 @@ export default function GradesPanel({
         studentId={studentId}
         studentName={studentName}
         onOverrideClick={setOverrideItem}
-        onLateSubmissionClick={setLateSubmissionItem}
       />
 
       {overrideItem ? (
@@ -254,20 +237,6 @@ export default function GradesPanel({
           onSuccess={() => {
             setOverrideSuccess('Score overwritten and logged.')
             setOverrideItem(null)
-            onGradesRefresh?.()
-          }}
-        />
-      ) : null}
-
-      {lateSubmissionItem ? (
-        <LateSubmissionModal
-          item={lateSubmissionItem}
-          studentId={studentId}
-          studentName={studentName}
-          onClose={() => setLateSubmissionItem(null)}
-          onSuccess={() => {
-            setOverrideSuccess('Late submission allowed and logged.')
-            setLateSubmissionItem(null)
             onGradesRefresh?.()
           }}
         />

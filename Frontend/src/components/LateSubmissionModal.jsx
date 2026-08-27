@@ -1,10 +1,5 @@
 import { useMemo, useState } from 'react'
-import {
-  adminGrantSubmissionExtension,
-  adminUploadSubmissionOnBehalf,
-  teacherGrantSubmissionExtension,
-  teacherUploadSubmissionOnBehalf,
-} from '../lib/gradesApi.js'
+import { teacherGrantSubmissionExtension, teacherUploadSubmissionOnBehalf } from '../lib/gradesApi.js'
 
 function defaultUntilLocal() {
   const d = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000)
@@ -18,7 +13,6 @@ export default function LateSubmissionModal({
   studentName,
   onClose,
   onSuccess,
-  actorRole = 'admin',
 }) {
   const [until, setUntil] = useState(defaultUntilLocal)
   const [reason, setReason] = useState('')
@@ -34,10 +28,6 @@ export default function LateSubmissionModal({
     if (t === 'activity') return 'Activity'
     return 'Assignment'
   }, [item?.entity_type])
-
-  const isTeacher = actorRole === 'teacher'
-  const grantExtension = isTeacher ? teacherGrantSubmissionExtension : adminGrantSubmissionExtension
-  const uploadOnBehalf = isTeacher ? teacherUploadSubmissionOnBehalf : adminUploadSubmissionOnBehalf
 
   async function handleSave() {
     const trimmed = String(reason).trim()
@@ -57,7 +47,7 @@ export default function LateSubmissionModal({
     setSaving(true)
     setError('')
     try {
-      await grantExtension({
+      await teacherGrantSubmissionExtension({
         entity_type: item.entity_type,
         entity_id: item.entity_id,
         student_id: Number(studentId),
@@ -66,7 +56,7 @@ export default function LateSubmissionModal({
       })
 
       if (file && canUpload) {
-        await uploadOnBehalf({
+        await teacherUploadSubmissionOnBehalf({
           entity_type: item.entity_type,
           entity_id: item.entity_id,
           student_id: Number(studentId),

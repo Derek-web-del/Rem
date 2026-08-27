@@ -13,8 +13,8 @@ function WorkItemRow({ item, isAdmin, canAllowLateSubmission, onOverrideClick, o
   const scoreLabel =
     item.score != null && item.max_score != null ? `${item.score}/${item.max_score}` : '—'
   const typeLabel = entityTypeLabel(item.entity_type)
-  const showLateSubmission =
-    (isAdmin || canAllowLateSubmission) && item.is_locked && supportsLateSubmission(item.entity_type)
+  const showLateSubmission = canAllowLateSubmission && item.is_locked && supportsLateSubmission(item.entity_type)
+  const showOverride = isAdmin && item.is_locked && supportsLateSubmission(item.entity_type)
 
   return (
     <div className="flex flex-col gap-2 py-2 sm:flex-row sm:items-center sm:justify-between">
@@ -48,27 +48,25 @@ function WorkItemRow({ item, isAdmin, canAllowLateSubmission, onOverrideClick, o
           </span>
         ) : null}
       </p>
-      {(isAdmin || canAllowLateSubmission) && item.entity_id ? (
+      {(showLateSubmission || showOverride) && item.entity_id ? (
         <div className="flex shrink-0 flex-wrap gap-2 self-start sm:self-center">
           {showLateSubmission ? (
-            <>
-              <button
-                type="button"
-                onClick={() => onLateSubmissionClick?.(item)}
-                className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700"
-              >
-                Allow Late Submission
-              </button>
-              {isAdmin ? (
-                <button
-                  type="button"
-                  onClick={() => onOverrideClick?.(item)}
-                  className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700"
-                >
-                  Overwrite Score
-                </button>
-              ) : null}
-            </>
+            <button
+              type="button"
+              onClick={() => onLateSubmissionClick?.(item)}
+              className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700"
+            >
+              Allow Late Submission
+            </button>
+          ) : null}
+          {showOverride ? (
+            <button
+              type="button"
+              onClick={() => onOverrideClick?.(item)}
+              className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700"
+            >
+              Overwrite Score
+            </button>
           ) : null}
         </div>
       ) : null}

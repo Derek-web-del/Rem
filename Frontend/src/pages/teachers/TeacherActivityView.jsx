@@ -555,7 +555,6 @@ export default function TeacherActivityView() {
           item={lateSubmissionTarget.item}
           studentId={lateSubmissionTarget.studentId}
           studentName={lateSubmissionTarget.studentName}
-          actorRole="teacher"
           onClose={() => setLateSubmissionTarget(null)}
           onSuccess={() => {
             setLateSubmissionTarget(null)
