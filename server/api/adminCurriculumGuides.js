@@ -106,23 +106,21 @@ export function createAdminCurriculumGuidesRouter(express, auth) {
         return
       }
 
-      const title = String(req.body?.title || req.body?.subject || '').trim()
+      // Subject is optional now — a guide can be created for a whole grade level, with each
+      // unit connected to its own subject later (see units below).
       const grade_level = String(req.body?.grade_level || req.body?.grade || '').trim()
-      const subject = String(req.body?.subject || title).trim()
+      const subject = String(req.body?.subject || '').trim()
+      const title = String(req.body?.title || subject || (grade_level ? `${grade_level} Curriculum` : '')).trim()
       const description = String(req.body?.description || title).trim()
       const publishNow =
         String(req.body?.is_published ?? req.body?.publish ?? 'true').toLowerCase() !== 'false'
 
-      if (!title) {
-        res.status(400).json({ error: 'BAD_REQUEST', message: 'Title is required.' })
-        return
-      }
       if (!grade_level) {
         res.status(400).json({ error: 'BAD_REQUEST', message: 'Grade level is required.' })
         return
       }
-      if (!subject) {
-        res.status(400).json({ error: 'BAD_REQUEST', message: 'Subject is required.' })
+      if (!title) {
+        res.status(400).json({ error: 'BAD_REQUEST', message: 'Title is required.' })
         return
       }
 
@@ -194,7 +192,18 @@ export function createAdminCurriculumGuidesRouter(express, auth) {
           for (const u of draftUnits) {
             const unitTitle = String(u?.title || '').trim()
             if (!unitTitle) continue
-            await createUnit(pool, id, { title: unitTitle, description: u?.description, unit_order: order })
+            const unitCriteria = parseGradingCriteriaField(u?.grading_criteria)
+            if (unitCriteria.error) {
+              res.status(400).json({ error: 'BAD_REQUEST', message: `Unit "${unitTitle}": ${unitCriteria.error}` })
+              return
+            }
+            await createUnit(pool, id, {
+              title: unitTitle,
+              description: u?.description,
+              unit_order: order,
+              subject_id: u?.subject_id,
+              grading_criteria: unitCriteria.criteria,
+            })
             order += 1
           }
           units = await listUnitsForGuide(pool, id)
@@ -418,12 +427,19 @@ export function createAdminCurriculumGuidesRouter(express, auth) {
         res.status(400).json({ error: 'BAD_REQUEST', message: 'Unit title is required.' })
         return
       }
+      const parsedCriteria = parseGradingCriteriaField(req.body?.grading_criteria)
+      if (parsedCriteria.error) {
+        res.status(400).json({ error: 'BAD_REQUEST', message: parsedCriteria.error })
+        return
+      }
       const pool = getPgPool()
       const existing = await listUnitsForGuide(pool, id)
       const unit = await createUnit(pool, id, {
         title,
         description: req.body?.description,
         unit_order: req.body?.unit_order ?? existing.length,
+        subject_id: req.body?.subject_id,
+        grading_criteria: parsedCriteria.criteria,
       })
       if (!unit) {
         res.status(404).json({ error: 'NOT_FOUND', message: 'Curriculum guide not found.' })
@@ -442,11 +458,18 @@ export function createAdminCurriculumGuidesRouter(express, auth) {
       if (!session) return
       const id = String(req.params.id || '').trim()
       const unitId = req.params.unitId
+      const parsedCriteria = parseGradingCriteriaField(req.body?.grading_criteria)
+      if (parsedCriteria.error) {
+        res.status(400).json({ error: 'BAD_REQUEST', message: parsedCriteria.error })
+        return
+      }
       const pool = getPgPool()
       const unit = await updateUnit(pool, unitId, id, {
         title: req.body?.title,
         description: req.body?.description,
         unit_order: req.body?.unit_order,
+        subject_id: req.body?.subject_id !== undefined ? req.body.subject_id : undefined,
+        grading_criteria: req.body?.grading_criteria !== undefined ? parsedCriteria.criteria : undefined,
       })
       if (!unit) {
         res.status(404).json({ error: 'NOT_FOUND', message: 'Unit not found.' })

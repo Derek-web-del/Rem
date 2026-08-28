@@ -303,6 +303,8 @@ function buildSubjectApiBody(payload) {
     faculty_id: String(payload.assignedFacultyId || '').trim(),
     curriculumGuideId: String(payload.curriculumGuideId || '').trim(),
     curriculum_guide_id: String(payload.curriculumGuideId || '').trim(),
+    curriculumGuideUnitId: String(payload.curriculumGuideUnitId || '').trim(),
+    curriculum_guide_unit_id: String(payload.curriculumGuideUnitId || '').trim(),
     sectionId: String(payload.sectionId || '').trim(),
     section_id: String(payload.sectionId || '').trim(),
     scheduleDays,
@@ -2144,6 +2146,52 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
     toast.created('You have created Section.', { title: 'Section created', durationMs: 4500 })
   }
 
+  /** Quick-create a section inline from the Subject form (Dr. Heintjie: "Sections and subject
+   * should be one" — an admin shouldn't have to leave Subject creation to add a missing
+   * section first). Mirrors submitSectionAsync's server call, without navigating pages. */
+  async function quickCreateSection(grade, name) {
+    const cleanGrade = String(grade || '').trim()
+    const cleanName = String(name || '').trim()
+    if (!cleanGrade || !cleanName) return { error: 'Select grade level and enter a section name.' }
+    const duplicate = sections.some(
+      (s) => s.grade === cleanGrade && s.name.toLowerCase() === cleanName.toLowerCase(),
+    )
+    if (duplicate) return { error: 'Section already exists for this grade.' }
+
+    let postgresSectionId = null
+    if (persistenceMode === 'server') {
+      try {
+        const res = await fetch(apiUrl('/api/v1/sections'), {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ section_name: cleanName, grade_level: cleanGrade }),
+        })
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok) {
+          return { error: String(data?.message || data?.error || 'Could not create section.') }
+        }
+        postgresSectionId = data?.id != null ? Number(data.id) : null
+      } catch (err) {
+        return { error: String(err?.message || err || 'Could not create section.') }
+      }
+    }
+
+    const item = {
+      id: crypto.randomUUID(),
+      grade: cleanGrade,
+      name: cleanName,
+      students: 0,
+      ...(postgresSectionId != null && Number.isFinite(postgresSectionId) ? { postgresSectionId } : {}),
+    }
+    setSections((prev) => [...prev, item])
+    if (persistenceMode === 'server') {
+      await refreshSectionsFromPostgres()
+    }
+    toast.created('You have created Section.', { title: 'Section created', durationMs: 4500 })
+    return { ok: true, section: item }
+  }
+
   function editSection(item) {
     setSectionEditTarget(item)
     setSectionEditName(item?.name || '')
@@ -3223,6 +3271,7 @@ export default function InstituteDashboard({ onLogout, schoolName = 'Glendale Sc
               onAddSubject={addSubject}
               onUpdateSubject={updateSubject}
               onDeleteSubject={deleteSubject}
+              onCreateSection={quickCreateSection}
               onBack={() => navigateToNav('dashboard')}
             />
           ) : activeNav === 'updates' ? (

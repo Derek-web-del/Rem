@@ -13,10 +13,6 @@ import {
   scheduleTimesFromSubject,
 } from './lib/subjectScheduleDisplay.js'
 
-function normalizeSubjectKey(name) {
-  return String(name || '').trim().toLowerCase()
-}
-
 function TextField({ label, required, disabled, value, onChange, type = 'text', helper, placeholder }) {
   return (
     <label className="block text-sm font-medium text-neutral-700">
@@ -61,6 +57,7 @@ export default function SubjectDetails({
   facultyOptions,
   curriculumGuideOptions = [],
   sectionOptions = [],
+  onCreateSection,
   initial,
   onBack,
   onSave,
@@ -69,6 +66,10 @@ export default function SubjectDetails({
 }) {
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [newSectionOpen, setNewSectionOpen] = useState(false)
+  const [newSectionName, setNewSectionName] = useState('')
+  const [newSectionError, setNewSectionError] = useState('')
+  const [creatingSection, setCreatingSection] = useState(false)
   const [form, setForm] = useState(() => {
     const times = scheduleTimesFromSubject(initial)
     return {
@@ -79,6 +80,7 @@ export default function SubjectDetails({
       semCode: initial.semCode || '',
       assignedFacultyId: initial.assignedFacultyId || '',
       curriculumGuideId: initial.curriculumGuideId || '',
+      curriculumGuideUnitId: initial.curriculumGuideUnitId || '',
       sectionId: initial.sectionId || '',
       scheduleDays: scheduleDaysFromSubject(initial).length ? scheduleDaysFromSubject(initial) : ['1'],
       scheduleStartTime: times.scheduleStartTime,
@@ -97,6 +99,7 @@ export default function SubjectDetails({
       semCode: initial.semCode || '',
       assignedFacultyId: initial.assignedFacultyId || '',
       curriculumGuideId: initial.curriculumGuideId || '',
+      curriculumGuideUnitId: initial.curriculumGuideUnitId || '',
       sectionId: initial.sectionId || '',
       scheduleDays: scheduleDaysFromSubject(initial).length ? scheduleDaysFromSubject(initial) : ['1'],
       scheduleStartTime: times.scheduleStartTime,
@@ -111,19 +114,37 @@ export default function SubjectDetails({
     [facultyOptions, form.assignedFacultyId],
   )
 
+  /**
+   * Guides for this Subject's grade. Filtered by grade only, not subject name — a guide can
+   * now cover a whole grade level with several subjects' units inside it (Dr. Heintjie), so
+   * the old "only show guides whose subject label matches" rule would hide exactly the
+   * grade-level guides this form is meant to surface. Subject-specificity now happens one
+   * level down, in the Subject Unit (template) picker below.
+   */
   const matchingCurriculumGuides = useMemo(() => {
     const grade = String(form.grade || '').trim()
-    const subject = normalizeSubjectKey(form.subjectName)
     const list = Array.isArray(curriculumGuideOptions) ? curriculumGuideOptions : []
-    if (!grade && !subject) return list
+    if (!grade) return list
     return list.filter((g) => {
       const gGrade = String(g.grade ?? g.grade_level ?? '').trim()
-      const gSubject = normalizeSubjectKey(g.subject ?? g.title)
-      if (grade && gGrade && gGrade !== grade) return false
-      if (subject && gSubject && gSubject !== subject) return false
-      return true
+      return !gGrade || gGrade === grade
     })
-  }, [curriculumGuideOptions, form.grade, form.subjectName])
+  }, [curriculumGuideOptions, form.grade])
+
+  const selectedGuide = useMemo(
+    () => matchingCurriculumGuides.find((g) => String(g.id) === String(form.curriculumGuideId)) || null,
+    [matchingCurriculumGuides, form.curriculumGuideId],
+  )
+
+  /** Units on the chosen guide — these are what "after choosing the curriculum, show a
+   * template" (Dr. Heintjie) picks from. Selecting one previews its grading criteria and, on
+   * save, connects that unit to this Subject (pertaining to the system). */
+  const guideUnits = useMemo(() => (Array.isArray(selectedGuide?.units) ? selectedGuide.units : []), [selectedGuide])
+
+  const selectedTemplateUnit = useMemo(
+    () => guideUnits.find((u) => String(u.id) === String(form.curriculumGuideUnitId)) || null,
+    [guideUnits, form.curriculumGuideUnitId],
+  )
 
   const matchingSections = useMemo(() => {
     const grade = String(form.grade || '').trim().toLowerCase()
@@ -184,6 +205,7 @@ export default function SubjectDetails({
       facultyCode: faculty?.facultyUsername || faculty?.facultyCode || '',
       facultyEmail: faculty?.email || '',
       curriculumGuideId: form.curriculumGuideId,
+      curriculumGuideUnitId: form.curriculumGuideUnitId,
       sectionId: form.sectionId,
       scheduleDays: form.scheduleDays,
       scheduleStartTime: form.scheduleStartTime,
@@ -209,6 +231,38 @@ export default function SubjectDetails({
       onBack()
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  /** Sections and Subject are one flow now (Dr. Heintjie) — an admin can create a missing
+   * section right here instead of leaving to the Sections page first. */
+  async function submitNewSection() {
+    setNewSectionError('')
+    if (typeof onCreateSection !== 'function') return
+    if (!form.grade) {
+      setNewSectionError('Select a Subject Grade Level first.')
+      return
+    }
+    const name = newSectionName.trim()
+    if (!name) {
+      setNewSectionError('Enter a section name or number.')
+      return
+    }
+    setCreatingSection(true)
+    try {
+      const res = await onCreateSection(form.grade, name)
+      if (res?.error) {
+        setNewSectionError(res.error)
+        return
+      }
+      const createdId = res?.section?.postgresSectionId
+      if (createdId != null) {
+        setForm((p) => ({ ...p, sectionId: String(createdId) }))
+      }
+      setNewSectionName('')
+      setNewSectionOpen(false)
+    } finally {
+      setCreatingSection(false)
     }
   }
 
@@ -325,7 +379,7 @@ export default function SubjectDetails({
             <SelectField
               label="Institute Curriculum Guide"
               value={form.curriculumGuideId}
-              onChange={(e) => setForm((p) => ({ ...p, curriculumGuideId: e.target.value }))}
+              onChange={(e) => setForm((p) => ({ ...p, curriculumGuideId: e.target.value, curriculumGuideUnitId: '' }))}
               disabled={submitting}
             >
               <option value="">
@@ -333,29 +387,119 @@ export default function SubjectDetails({
               </option>
               {matchingCurriculumGuides.map((g) => (
                 <option key={g.id} value={g.id}>
-                  {g.grade} — {g.subject}
+                  {g.grade}
+                  {g.subject ? ` — ${g.subject}` : ' — Whole grade level'}
                 </option>
               ))}
             </SelectField>
           </div>
 
+          {form.curriculumGuideId && guideUnits.length > 0 ? (
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+              <SelectField
+                label="Subject Unit (template)"
+                value={form.curriculumGuideUnitId}
+                onChange={(e) => setForm((p) => ({ ...p, curriculumGuideUnitId: e.target.value }))}
+                disabled={submitting}
+                helper="Pick this subject's unit from the curriculum — its grading criteria and syllabus weeks become this subject's starting template."
+              >
+                <option value="">No template — leave grading criteria as-is</option>
+                {guideUnits.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.title}
+                  </option>
+                ))}
+              </SelectField>
+              {selectedTemplateUnit ? (
+                <div className="mt-3 rounded-lg border border-emerald-300 bg-white p-3">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-emerald-700">Template preview</p>
+                  {selectedTemplateUnit.description ? (
+                    <p className="mt-1 text-sm text-neutral-700">{selectedTemplateUnit.description}</p>
+                  ) : null}
+                  {Array.isArray(selectedTemplateUnit.grading_criteria) && selectedTemplateUnit.grading_criteria.length ? (
+                    <ul className="mt-2 space-y-1 text-sm text-neutral-700">
+                      {selectedTemplateUnit.grading_criteria.map((c, i) => (
+                        <li key={`${c.name}-${i}`} className="flex items-center justify-between">
+                          <span>{c.name}</span>
+                          <span className="font-semibold tabular-nums">{c.percentage}%</span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="mt-1 text-xs text-neutral-500">
+                      This unit has no grading criteria of its own — the subject keeps its current grading setup.
+                    </p>
+                  )}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
           <div className="grid gap-4 md:grid-cols-2">
-            <SelectField
-              label="Section"
-              value={form.sectionId}
-              onChange={(e) => setForm((p) => ({ ...p, sectionId: e.target.value }))}
-              disabled={submitting}
-              helper="Leave blank to keep this subject visible to the whole grade level. Set a section to scope its classwork to just that section."
-            >
-              <option value="">
-                {matchingSections.length ? 'All sections in this grade (default)' : 'No sections for this grade yet'}
-              </option>
-              {matchingSections.map((s) => (
-                <option key={s.postgresSectionId} value={s.postgresSectionId}>
-                  {s.name}
+            <div>
+              <SelectField
+                label="Section"
+                value={form.sectionId}
+                onChange={(e) => setForm((p) => ({ ...p, sectionId: e.target.value }))}
+                disabled={submitting}
+                helper="Leave blank to keep this subject visible to the whole grade level. Set a section to scope its classwork to just that section."
+              >
+                <option value="">
+                  {matchingSections.length ? 'All sections in this grade (default)' : 'No sections for this grade yet'}
                 </option>
-              ))}
-            </SelectField>
+                {matchingSections.map((s) => (
+                  <option key={s.postgresSectionId} value={s.postgresSectionId}>
+                    {s.name}
+                  </option>
+                ))}
+              </SelectField>
+              {typeof onCreateSection === 'function' ? (
+                newSectionOpen ? (
+                  <div className="mt-2 flex items-start gap-2">
+                    <div className="flex-1">
+                      <input
+                        type="text"
+                        className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
+                        placeholder="Section name (e.g. Rizal)"
+                        value={newSectionName}
+                        onChange={(e) => setNewSectionName(e.target.value)}
+                        disabled={creatingSection}
+                      />
+                      {newSectionError ? <p className="mt-1 text-xs text-red-600">{newSectionError}</p> : null}
+                    </div>
+                    <button
+                      type="button"
+                      className="shrink-0 rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white disabled:opacity-60"
+                      onClick={submitNewSection}
+                      disabled={creatingSection}
+                    >
+                      {creatingSection ? 'Adding…' : 'Add'}
+                    </button>
+                    <button
+                      type="button"
+                      className="shrink-0 rounded-lg border border-neutral-200 px-3 py-2 text-sm font-semibold text-neutral-600"
+                      onClick={() => {
+                        setNewSectionOpen(false)
+                        setNewSectionName('')
+                        setNewSectionError('')
+                      }}
+                      disabled={creatingSection}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    className="mt-2 text-sm font-semibold text-blue-700 hover:underline"
+                    onClick={() => setNewSectionOpen(true)}
+                    disabled={submitting || !form.grade}
+                  >
+                    + New Section
+                  </button>
+                )
+              ) : null}
+            </div>
           </div>
 
           <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-4">

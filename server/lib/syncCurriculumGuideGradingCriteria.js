@@ -41,7 +41,17 @@ export async function syncCurriculumGuideGradingCriteriaForSubject(pool, subject
   const guide = rows?.[0]
   if (!guide || guide.is_published !== true) return { ok: false, reason: 'not_published' }
 
-  const criteria = normalizeGradingCriteria(guide.grading_criteria)
+  // A unit connected to this exact subject carries its own grading template — prefer that
+  // over the guide's shared criteria, so a grade-level guide can serve several subjects
+  // each with their own weighting.
+  const { rows: unitRows } = await pool.query(
+    `SELECT grading_criteria FROM curriculum_guide_units
+     WHERE curriculum_guide_id = $1 AND subject_id = $2 AND grading_criteria IS NOT NULL
+     ORDER BY unit_order ASC, id ASC LIMIT 1`,
+    [gid, sid],
+  )
+  const unitCriteria = normalizeGradingCriteria(unitRows?.[0]?.grading_criteria)
+  const criteria = unitCriteria.length ? unitCriteria : normalizeGradingCriteria(guide.grading_criteria)
   if (!criteria.length) return { ok: false, reason: 'no_criteria' }
 
   const total = criteria.reduce((s, c) => s + c.percentage, 0)

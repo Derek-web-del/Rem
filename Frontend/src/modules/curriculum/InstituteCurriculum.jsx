@@ -88,6 +88,27 @@ function subjectsForGrade(subjects, grade) {
   )
 }
 
+/**
+ * Actual Subject records (pertaining to the system — real `subjects` table rows, not just a
+ * name string) for a specific grade, so a curriculum unit can connect to the exact Subject it
+ * belongs to. Includes semester in the label since one grade can have multiple offerings of
+ * the same subject name across semesters.
+ */
+function subjectRecordOptionsForGrade(subjects, grade) {
+  const list = Array.isArray(subjects) ? subjects : []
+  const filtered = grade ? list.filter((row) => subjectGradeLabel(row) === grade) : list
+  return filtered
+    .map((row) => {
+      const id = String(row?.id ?? '').trim()
+      const name = subjectOptionValue(row)
+      if (!id || !name) return null
+      const semester = String(row?.semester ?? '').trim()
+      return { id, label: semester ? `${name} — ${semester}` : name }
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.label.localeCompare(b.label))
+}
+
 function gradingWeightsSummary(item) {
   const criteria = Array.isArray(item.gradingCriteria) ? item.gradingCriteria : []
   return criteria.map((c) => `${c.name} ${c.percentage}%`).join(' · ')
@@ -247,10 +268,12 @@ function isDraftUnitId(id) {
 }
 
 /** Ordered unit list editor — shared by the upload and edit forms. Persistence (API vs local
- * draft state) is the caller's responsibility; this component only edits the array in memory. */
-function UnitsEditor({ units, onChange }) {
+ * draft state) is the caller's responsibility; this component only edits the array in memory.
+ * Each unit can connect to a real Subject record (`subjectId`) and carry its own grading
+ * template (`criteria`), so one grade-level guide can serve several subjects at once. */
+function UnitsEditor({ units, onChange, subjectOptions = [] }) {
   function addUnit() {
-    onChange([...units, { id: newDraftUnitId(), title: '', description: '' }])
+    onChange([...units, { id: newDraftUnitId(), title: '', description: '', subjectId: '', criteria: [] }])
   }
   function updateUnit(id, patch) {
     onChange(units.map((u) => (u.id === id ? { ...u, ...patch } : u)))
@@ -291,6 +314,30 @@ function UnitsEditor({ units, onChange }) {
                   value={unit.description || ''}
                   onChange={(e) => updateUnit(unit.id, { description: e.target.value })}
                 />
+                <label className="block text-xs font-medium text-neutral-600">
+                  Connect to Subject (optional)
+                  <select
+                    className="mt-1 w-full rounded border px-2 py-1.5 text-sm"
+                    value={unit.subjectId || ''}
+                    onChange={(e) => updateUnit(unit.id, { subjectId: e.target.value })}
+                  >
+                    <option value="">Not connected</option>
+                    {subjectOptions.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.label}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="mt-0.5 block text-[11px] text-neutral-500">
+                    Connecting a Subject makes this unit its template: syllabus weeks and grading criteria are pulled from it automatically.
+                  </span>
+                </label>
+                <div className="rounded border border-dashed bg-white p-2">
+                  <CriteriaEditor
+                    criteria={unit.criteria || []}
+                    onChange={(criteria) => updateUnit(unit.id, { criteria })}
+                  />
+                </div>
               </div>
               <div className="flex flex-col gap-1">
                 <button
@@ -509,6 +556,14 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
   )
   const editSubjects = useMemo(() => subjectsForGrade(subjects, editForm.grade), [subjects, editForm.grade])
   const filterSubjects = useMemo(() => subjectsForGrade(subjects, filterGrade), [subjects, filterGrade])
+  const uploadSubjectRecords = useMemo(
+    () => subjectRecordOptionsForGrade(subjects, uploadForm.grade),
+    [subjects, uploadForm.grade],
+  )
+  const editSubjectRecords = useMemo(
+    () => subjectRecordOptionsForGrade(subjects, editForm.grade),
+    [subjects, editForm.grade],
+  )
 
   const filteredCurriculums = useMemo(() => {
     return curriculums.filter((item) => {
@@ -543,8 +598,10 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
   async function submitUpload(e) {
     e.preventDefault()
     setFormError('')
-    if (!uploadForm.grade || !uploadForm.subject || !uploadForm.description.trim()) {
-      setFormError('Please complete Grade Level, Subject, and Description.')
+    // Subject is optional at the guide level now — a guide can cover a whole grade level,
+    // with each unit connected to its own Subject below.
+    if (!uploadForm.grade || !uploadForm.description.trim()) {
+      setFormError('Please complete Grade Level and Description.')
       return
     }
     if (uploadForm.file && !isAllowedCurriculumGuideFile(uploadForm.file)) {
@@ -552,6 +609,15 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
       return
     }
     const cleanUnits = uploadForm.units.filter((u) => u.title.trim())
+    for (const u of cleanUnits) {
+      const unitCriteria = (u.criteria || [])
+        .map((c) => ({ name: c.name.trim(), percentage: Number(c.percentage) }))
+        .filter((c) => c.name)
+      if (unitCriteria.length && criteriaSum(unitCriteria) !== 100) {
+        setFormError(`Unit "${u.title.trim()}": grading criteria percentages must add up to 100%.`)
+        return
+      }
+    }
     const cleanCriteria = uploadForm.criteria
       .map((c) => ({ name: c.name.trim(), percentage: Number(c.percentage) }))
       .filter((c) => c.name)
@@ -564,13 +630,26 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
       if (persistenceMode === 'server') {
         const body = new FormData()
         if (uploadForm.file) body.append('file', uploadForm.file)
-        body.append('title', uploadForm.subject)
-        body.append('subject', uploadForm.subject)
+        const titleValue = uploadForm.subject.trim() || `${uploadForm.grade} Curriculum`
+        body.append('title', titleValue)
+        if (uploadForm.subject.trim()) body.append('subject', uploadForm.subject.trim())
         body.append('grade_level', uploadForm.grade)
         body.append('description', uploadForm.description.trim())
         body.append('is_published', 'true')
         if (cleanUnits.length) {
-          body.append('units', JSON.stringify(cleanUnits.map((u) => ({ title: u.title.trim(), description: u.description || '' }))))
+          body.append(
+            'units',
+            JSON.stringify(
+              cleanUnits.map((u) => ({
+                title: u.title.trim(),
+                description: u.description || '',
+                subject_id: u.subjectId || null,
+                grading_criteria: (u.criteria || [])
+                  .map((c) => ({ name: c.name.trim(), percentage: Number(c.percentage) }))
+                  .filter((c) => c.name),
+              })),
+            ),
+          )
         }
         if (cleanCriteria.length) {
           body.append('grading_criteria', JSON.stringify(cleanCriteria))
@@ -632,6 +711,12 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
         id: String(u.id),
         title: u.title || '',
         description: u.description || '',
+        subjectId: u.subject_id != null ? String(u.subject_id) : '',
+        criteria: (Array.isArray(u.grading_criteria) ? u.grading_criteria : []).map((c) => ({
+          id: newDraftCriterionId(),
+          name: c.name || '',
+          percentage: c.percentage != null ? String(c.percentage) : '',
+        })),
       })),
       criteria: (Array.isArray(item.gradingCriteria) ? item.gradingCriteria : []).map((c) => ({
         id: newDraftCriterionId(),
@@ -649,13 +734,23 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
       setEditingError('Curriculum not found.')
       return
     }
-    if (!editForm.grade || !editForm.subject || !editForm.description.trim()) {
-      setEditingError('Please complete Grade Level, Subject, and Description.')
+    if (!editForm.grade || !editForm.description.trim()) {
+      setEditingError('Please complete Grade Level and Description.')
       return
     }
     if (editForm.file && !isAllowedCurriculumGuideFile(editForm.file)) {
       setEditingError('File must be PDF.')
       return
+    }
+    for (const u of editForm.units) {
+      if (!u.title.trim()) continue
+      const unitCriteria = (u.criteria || [])
+        .map((c) => ({ name: c.name.trim(), percentage: Number(c.percentage) }))
+        .filter((c) => c.name)
+      if (unitCriteria.length && criteriaSum(unitCriteria) !== 100) {
+        setEditingError(`Unit "${u.title.trim()}": grading criteria percentages must add up to 100%.`)
+        return
+      }
     }
     const cleanCriteria = editForm.criteria
       .map((c) => ({ name: c.name.trim(), percentage: Number(c.percentage) }))
@@ -672,11 +767,12 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
         return
       }
       try {
+        const editTitleValue = editForm.subject.trim() || `${editForm.grade} Curriculum`
         let res
         if (editForm.file) {
           const body = new FormData()
-          body.append('title', editForm.subject)
-          body.append('subject', editForm.subject)
+          body.append('title', editTitleValue)
+          if (editForm.subject.trim()) body.append('subject', editForm.subject.trim())
           body.append('grade_level', editForm.grade)
           body.append('description', editForm.description.trim())
           body.append('file', editForm.file)
@@ -692,8 +788,8 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
             credentials: 'include',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              title: editForm.subject,
-              subject: editForm.subject,
+              title: editTitleValue,
+              subject: editForm.subject.trim() || null,
               grade_level: editForm.grade,
               description: editForm.description.trim(),
               grading_criteria: cleanCriteria,
@@ -711,23 +807,46 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
           id: String(u.id),
           title: u.title || '',
           description: u.description || '',
+          subjectId: u.subject_id != null ? String(u.subject_id) : '',
+          criteriaKey: JSON.stringify(
+            (Array.isArray(u.grading_criteria) ? u.grading_criteria : []).map((c) => ({
+              name: c.name || '',
+              percentage: c.percentage,
+            })),
+          ),
         }))
         const originalById = new Map(originalUnits.map((u) => [u.id, u]))
         const keptIds = new Set()
         for (let i = 0; i < editForm.units.length; i += 1) {
           const u = editForm.units[i]
           if (!u.title.trim()) continue
+          const unitCriteria = (u.criteria || [])
+            .map((c) => ({ name: c.name.trim(), percentage: Number(c.percentage) }))
+            .filter((c) => c.name)
+          const unitCriteriaKey = JSON.stringify(unitCriteria)
+          const payload = {
+            title: u.title.trim(),
+            description: u.description || '',
+            unit_order: i,
+            subject_id: u.subjectId || null,
+            grading_criteria: unitCriteria,
+          }
           if (isDraftUnitId(u.id)) {
             await fetch(apiUrl(`/api/admin/curriculum-guides/${encodeURIComponent(resolvedGuideId)}/units`), {
               method: 'POST',
               credentials: 'include',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ title: u.title.trim(), description: u.description || '', unit_order: i }),
+              body: JSON.stringify(payload),
             })
           } else {
             keptIds.add(u.id)
             const original = originalById.get(u.id)
-            const changed = !original || original.title !== u.title || original.description !== (u.description || '')
+            const changed =
+              !original ||
+              original.title !== u.title ||
+              original.description !== (u.description || '') ||
+              original.subjectId !== (u.subjectId || '') ||
+              original.criteriaKey !== unitCriteriaKey
             if (changed) {
               await fetch(
                 apiUrl(`/api/admin/curriculum-guides/${encodeURIComponent(resolvedGuideId)}/units/${encodeURIComponent(u.id)}`),
@@ -735,7 +854,7 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
                   method: 'PUT',
                   credentials: 'include',
                   headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ title: u.title.trim(), description: u.description || '', unit_order: i }),
+                  body: JSON.stringify(payload),
                 },
               )
             }
@@ -943,20 +1062,23 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
                 </select>
               </label>
               <label className="text-sm font-medium text-neutral-700">
-                Subject
+                Subject label (optional)
                 <select
                   className="mt-1 w-full rounded-lg border px-3 py-2"
                   value={uploadForm.subject}
                   onChange={(e) => setUploadForm((prev) => ({ ...prev, subject: e.target.value }))}
                   disabled={!uploadForm.grade}
                 >
-                  <option value="">Select Subject</option>
+                  <option value="">Whole grade level (no single subject)</option>
                   {uploadSubjects.map((subject) => (
                     <option key={subject.value} value={subject.value}>
                       {subject.label}
                     </option>
                   ))}
                 </select>
+                <span className="mt-1 block text-xs text-neutral-500">
+                  Leave blank for a grade-level guide — connect each unit below to its own Subject instead.
+                </span>
               </label>
               <label className="text-sm font-medium text-neutral-700">
                 Description
@@ -973,7 +1095,11 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
                   Add the topics this curriculum covers — this becomes the editable content faculty see, instead of a file.
                 </p>
                 <div className="mt-2">
-                  <UnitsEditor units={uploadForm.units} onChange={(units) => setUploadForm((prev) => ({ ...prev, units }))} />
+                  <UnitsEditor
+                    units={uploadForm.units}
+                    onChange={(units) => setUploadForm((prev) => ({ ...prev, units }))}
+                    subjectOptions={uploadSubjectRecords}
+                  />
                 </div>
               </div>
               <CriteriaEditor
@@ -1046,14 +1172,14 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
               </select>
             </label>
             <label className="text-sm font-medium text-neutral-700">
-              Subject
+              Subject label (optional)
               <select
                 className="mt-1 w-full rounded-lg border px-3 py-2"
                 value={editForm.subject}
                 onChange={(e) => setEditForm((prev) => ({ ...prev, subject: e.target.value }))}
                 disabled={!editForm.grade}
               >
-                <option value="">Select Subject</option>
+                <option value="">Whole grade level (no single subject)</option>
                 {editSubjects.map((subject) => (
                   <option key={subject.value} value={subject.value}>
                     {subject.label}
@@ -1072,7 +1198,11 @@ const InstituteCurriculum = forwardRef(function InstituteCurriculum(
             <div>
               <p className="text-sm font-medium text-neutral-700">Units</p>
               <div className="mt-2">
-                <UnitsEditor units={editForm.units} onChange={(units) => setEditForm((prev) => ({ ...prev, units }))} />
+                <UnitsEditor
+                  units={editForm.units}
+                  onChange={(units) => setEditForm((prev) => ({ ...prev, units }))}
+                  subjectOptions={editSubjectRecords}
+                />
               </div>
             </div>
             <CriteriaEditor criteria={editForm.criteria} onChange={(criteria) => setEditForm((prev) => ({ ...prev, criteria }))} />

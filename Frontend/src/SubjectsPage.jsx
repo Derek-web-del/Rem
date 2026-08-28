@@ -42,6 +42,7 @@ export default function SubjectsPage({
   onAddSubject,
   onUpdateSubject,
   onDeleteSubject,
+  onCreateSection,
   onBack,
 }) {
   const [filterGrade, setFilterGrade] = useState('')
@@ -117,6 +118,7 @@ export default function SubjectsPage({
             syllabusFileType: '',
             syllabusDataUrl: '',
             curriculumGuideId: '',
+            curriculumGuideUnitId: '',
             sectionId: '',
             scheduleDays: ['1', '2', '3', '4', '5'],
             scheduleStartTime: '08:00',
@@ -131,6 +133,7 @@ export default function SubjectsPage({
         facultyOptions={facultyOptions}
         curriculumGuideOptions={curriculumGuideOptions}
         sectionOptions={sectionOptions}
+        onCreateSection={onCreateSection}
         initial={initial}
         disableIdentity={mode === 'edit'}
         onBack={() => setScreen('list')}

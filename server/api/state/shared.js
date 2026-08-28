@@ -1398,6 +1398,12 @@ export function readSubjectBodyFields(b) {
     readStudentField(b, 'facultyId', 'faculty_id')
   const curriculum_guide_id =
     readStudentField(b, 'curriculumGuideId', 'curriculum_guide_id') || null
+  const curriculum_guide_unit_id_raw =
+    readStudentField(b, 'curriculumGuideUnitId', 'curriculum_guide_unit_id') || null
+  const curriculum_guide_unit_id =
+    curriculum_guide_unit_id_raw && Number.isFinite(Number(curriculum_guide_unit_id_raw))
+      ? Number(curriculum_guide_unit_id_raw)
+      : null
   const section_id_raw = readStudentField(b, 'sectionId', 'section_id')
   const section_id = section_id_raw && Number.isFinite(Number(section_id_raw)) ? Number(section_id_raw) : null
   const syllabus_pdf = readSubjectSyllabus(b)
@@ -1452,6 +1458,7 @@ export function readSubjectBodyFields(b) {
     semester,
     faculty_id,
     curriculum_guide_id,
+    curriculum_guide_unit_id,
     section_id,
     syllabus_pdf,
     schedule_spec,

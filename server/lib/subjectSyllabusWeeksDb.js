@@ -60,7 +60,14 @@ export async function generateFromCurriculumIfEmpty(pool, subjectId) {
     return { weeks: existing, derivedFrom: existing.length > 0 ? derivedFrom : null }
   }
 
-  const units = await listUnitsForGuide(pool, guide.id)
+  const guideUnits = await listUnitsForGuide(pool, guide.id)
+  // A grade-level guide can hold units for several subjects — once any unit in it is
+  // connected to a specific subject, only that subject's units seed its syllabus. A guide
+  // with no subject-connected units at all falls back to the old one-guide-one-subject
+  // behavior of using every unit.
+  const subjectUnits = guideUnits.filter((u) => Number(u.subject_id) === Number(subjectId))
+  const hasAnyConnectedUnit = guideUnits.some((u) => u.subject_id != null)
+  const units = hasAnyConnectedUnit ? subjectUnits : guideUnits
   if (!units.length) {
     return { weeks: [], derivedFrom: null }
   }

@@ -20,6 +20,18 @@ import {
 import { assertNoScheduleConflicts } from '../../lib/scheduleConflict.js'
 import { syncCurriculumGuideLessonForSubject } from '../../lib/syncCurriculumGuideLesson.js'
 import { syncCurriculumGuideGradingCriteriaForSubject } from '../../lib/syncCurriculumGuideGradingCriteria.js'
+import { updateUnit } from '../../lib/curriculumGuideUnitsDb.js'
+
+/** Back-link a curriculum unit to the subject that just picked it as its template
+ * (Admin's "choose curriculum → get a template" flow) — best-effort, never blocks the save. */
+async function linkCurriculumUnitToSubject(pool, unitId, guideId, subjectId) {
+  if (!unitId || !guideId || !subjectId) return
+  try {
+    await updateUnit(pool, unitId, guideId, { subject_id: subjectId })
+  } catch (err) {
+    console.warn('[subjectsRouter] Could not link curriculum unit to subject:', err?.message || err)
+  }
+}
 
 const SUBJECT_SELECT_WITH_FACULTY = `
   SELECT
@@ -103,8 +115,19 @@ export function registerSubjectsRoutes(router, ctx) {
       const adminSession = await requireAdminSession(req, res, auth)
       if (!adminSession) return
       const b = req.body || {}
-      const { subject_code, subject_name, grade_level, semester, faculty_id, curriculum_guide_id, section_id, syllabus_pdf, schedule_spec, has_schedule_fields } =
-        readSubjectBodyFields(b)
+      const {
+        subject_code,
+        subject_name,
+        grade_level,
+        semester,
+        faculty_id,
+        curriculum_guide_id,
+        curriculum_guide_unit_id,
+        section_id,
+        syllabus_pdf,
+        schedule_spec,
+        has_schedule_fields,
+      } = readSubjectBodyFields(b)
 
       if (!subject_code || !subject_name || !grade_level || !semester) {
         res.status(400).json({
@@ -146,6 +169,9 @@ export function registerSubjectsRoutes(router, ctx) {
         details: subjectAuditDetails(createdSnap),
       })
       if (row?.id && guideIdParam) {
+        if (curriculum_guide_unit_id) {
+          await linkCurriculumUnitToSubject(pool, curriculum_guide_unit_id, guideIdParam, row.id)
+        }
         await syncCurriculumGuideLessonForSubject(pool, row.id, guideIdParam)
         await syncCurriculumGuideGradingCriteriaForSubject(pool, row.id, guideIdParam)
       }
@@ -169,8 +195,19 @@ export function registerSubjectsRoutes(router, ctx) {
         return
       }
       const b = req.body || {}
-      const { subject_code, subject_name, grade_level, semester, faculty_id, curriculum_guide_id, section_id, syllabus_pdf, schedule_spec, has_schedule_fields } =
-        readSubjectBodyFields(b)
+      const {
+        subject_code,
+        subject_name,
+        grade_level,
+        semester,
+        faculty_id,
+        curriculum_guide_id,
+        curriculum_guide_unit_id,
+        section_id,
+        syllabus_pdf,
+        schedule_spec,
+        has_schedule_fields,
+      } = readSubjectBodyFields(b)
       const hasSyllabusField = ['syllabusDataUrl', 'syllabus_data_url', 'syllabus_pdf', 'syllabusPdf'].some((key) =>
         Object.prototype.hasOwnProperty.call(b, key),
       )
@@ -252,6 +289,9 @@ export function registerSubjectsRoutes(router, ctx) {
             changed_fields: updatedFields,
           },
         })
+      }
+      if (curriculum_guide_unit_id && guideIdParam) {
+        await linkCurriculumUnitToSubject(pool, curriculum_guide_unit_id, guideIdParam, id)
       }
       await syncCurriculumGuideLessonForSubject(pool, id, guideIdParam)
       await syncCurriculumGuideGradingCriteriaForSubject(pool, id, guideIdParam)
